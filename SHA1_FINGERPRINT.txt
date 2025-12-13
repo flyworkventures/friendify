@@ -1,0 +1,34 @@
+═══════════════════════════════════════════════════════════════
+  SHA-1 FINGERPRINT - Firebase Console için
+═══════════════════════════════════════════════════════════════
+
+Debug SHA-1 Fingerprint:
+───────────────────────────────────────────────────────────────
+C7:A6:48:26:D6:91:7C:31:B6:3E:0E:A9:3D:0A:44:90:EE:9A:5F:FA
+
+SHA-256 Fingerprint (isteğe bağlı):
+───────────────────────────────────────────────────────────────
+2C:A9:D3:C7:E1:47:E3:D8:88:E3:FC:70:8B:79:71:10:97:FE:EE:18:F3:FC:84:8B:CC:DE:BC:B4:7F:EB:6F:C0
+
+═══════════════════════════════════════════════════════════════
+  Firebase Console'da Nasıl Eklenir:
+═══════════════════════════════════════════════════════════════
+
+1. Firebase Console'a gidin: https://console.firebase.google.com/
+2. Projenizi seçin
+3. ⚙️ Project Settings > Your apps > Android app bölümüne gidin
+4. "Add fingerprint" butonuna tıklayın
+5. Yukarıdaki SHA-1 değerini (C7:A6:48:26:D6:91:7C:31:B6:3E:0E:A9:3D:0A:44:90:EE:9A:5F:FA) yapıştırın
+6. "Save" butonuna tıklayın
+
+═══════════════════════════════════════════════════════════════
+  Önemli Notlar:
+═══════════════════════════════════════════════════════════════
+
+- Bu SHA-1 debug keystore için geçerlidir
+- Production build için release keystore'dan SHA-1 almanız gerekir
+- SHA-1 ekledikten sonra google-services.json dosyasını yeniden indirmeniz gerekebilir
+
+═══════════════════════════════════════════════════════════════
+
+

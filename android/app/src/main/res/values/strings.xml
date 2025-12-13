@@ -1,0 +1,7 @@
+
+<resources>
+<string name="app_name">Friendify</string>
+<string name="facebook_app_id">857430126746092</string>
+<string name="fb_login_protocol_scheme">fb857430126746092</string>
+<string name="facebook_client_token">015d731a1de8bf71bb6a11b2eef89687</string>
+</resources>

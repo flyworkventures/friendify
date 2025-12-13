@@ -1,0 +1,57 @@
+{
+  "premium_user_examples": {
+    "premium_paid_user": [
+      {
+        "startDate": "2025-01-15T10:00:00.000Z",
+        "endDate": "2026-01-15T10:00:00.000Z",
+        "productId": "premium_monthly",
+        "type": "paid",
+        "isActive": true,
+        "purchasedAt": "2025-01-15T10:00:00.000Z"
+      }
+    ],
+    "premium_free_trial_user": [
+      {
+        "startDate": "2025-01-20T08:00:00.000Z",
+        "endDate": "2025-01-27T08:00:00.000Z",
+        "productId": "free_trial_123",
+        "type": "freeTrial",
+        "isActive": true,
+        "purchasedAt": null
+      }
+    ],
+    "premium_user_with_history": [
+      {
+        "startDate": "2024-12-01T10:00:00.000Z",
+        "endDate": "2025-01-01T10:00:00.000Z",
+        "productId": "premium_monthly",
+        "type": "paid",
+        "isActive": false,
+        "purchasedAt": "2024-12-01T10:00:00.000Z"
+      },
+      {
+        "startDate": "2025-01-15T10:00:00.000Z",
+        "endDate": "2026-01-15T10:00:00.000Z",
+        "productId": "premium_yearly",
+        "type": "paid",
+        "isActive": true,
+        "purchasedAt": "2025-01-15T10:00:00.000Z"
+      }
+    ],
+    "non_premium_user": []
+  },
+  "database_format": {
+    "description": "MySQL users tablosunda memberships kolonu için JSON formatı",
+    "column_type": "JSON veya TEXT",
+    "example_single_premium": "[{\"startDate\":\"2025-01-15T10:00:00.000Z\",\"endDate\":\"2026-01-15T10:00:00.000Z\",\"productId\":\"premium_monthly\",\"type\":\"paid\",\"isActive\":true,\"purchasedAt\":\"2025-01-15T10:00:00.000Z\"}]",
+    "example_multiple_premium": "[{\"startDate\":\"2024-12-01T10:00:00.000Z\",\"endDate\":\"2025-01-01T10:00:00.000Z\",\"productId\":\"premium_monthly\",\"type\":\"paid\",\"isActive\":false,\"purchasedAt\":\"2024-12-01T10:00:00.000Z\"},{\"startDate\":\"2025-01-15T10:00:00.000Z\",\"endDate\":\"2026-01-15T10:00:00.000Z\",\"productId\":\"premium_yearly\",\"type\":\"paid\",\"isActive\":true,\"purchasedAt\":\"2025-01-15T10:00:00.000Z\"}]",
+    "example_free_trial": "[{\"startDate\":\"2025-01-20T08:00:00.000Z\",\"endDate\":\"2025-01-27T08:00:00.000Z\",\"productId\":\"free_trial_123\",\"type\":\"freeTrial\",\"isActive\":true,\"purchasedAt\":null}]",
+    "example_empty": "[]"
+  },
+  "sql_update_examples": {
+    "add_premium_to_user": "UPDATE users SET memberships = '[{\"startDate\":\"2025-01-15T10:00:00.000Z\",\"endDate\":\"2026-01-15T10:00:00.000Z\",\"productId\":\"premium_monthly\",\"type\":\"paid\",\"isActive\":true,\"purchasedAt\":\"2025-01-15T10:00:00.000Z\"}]' WHERE id = 123;",
+    "note": "Backend API üzerinden güncelleme yapılması önerilir. SQL direkt güncelleme sadece test amaçlıdır."
+  }
+}
+
+

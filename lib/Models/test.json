@@ -1,0 +1,91 @@
+{
+  "name": "AI Chat Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "lastNode",
+        "options": {
+          "responseContentType": "application/json"
+        }
+      },
+      "id": "Webhook_Chat",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "propertyName": "botId",
+        "rules": [
+          { "operation": "equal", "value": "mert" },
+          { "operation": "equal", "value": "alex" }
+        ]
+      },
+      "id": "Switch_Bot",
+      "name": "Switch Bot ID",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    messages: [\n      {\n        role: \"system\",\n        content: \"Sen Mert adında ciddi, mantıklı, analitik bir karaktersin.\"\n      },\n      {\n        role: \"user\",\n        content: $json.text\n      }\n    ]\n  }\n}];"
+      },
+      "id": "Func_Mert",
+      "name": "Mert - Function",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    messages: [\n      {\n        role: \"system\",\n        content: \"Sen Alex adında eğlenceli, samimi, arkadaş canlısı bir karaktersin.\"\n      },\n      {\n        role: \"user\",\n        content: $json.text\n      }\n    ]\n  }\n}];"
+      },
+      "id": "Func_Alex",
+      "name": "Alex - Function",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "inputType": "json",
+        "json": "={{$json.messages}}"
+      },
+      "id": "AI_Message",
+      "name": "Message a model",
+      "type": "n8n-nodes-openai.messageModel",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { reply: $json.data.choices[0].message.content } }];"
+      },
+      "id": "Func_Format",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Switch Bot ID", "type": "main", "index": 0 }]] },
+    "Switch Bot ID": {
+      "main": [
+        [{ "node": "Mert - Function", "type": "main", "index": 0 }],
+        [{ "node": "Alex - Function", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mert - Function": { "main": [[{ "node": "Message a model", "type": "main", "index": 0 }]] },
+    "Alex - Function": { "main": [[{ "node": "Message a model", "type": "main", "index": 0 }]] },
+    "Message a model": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {},
+  "id": "AIWebhookFlow"
+}
