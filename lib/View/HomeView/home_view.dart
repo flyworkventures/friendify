@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:friendfy/Services/revenuecat_service.dart';
+import 'package:friendfy/View/PremiumScreen/premium_screen.dart';
 import 'package:shimmer/shimmer.dart';
 
 class HomeView extends ConsumerStatefulWidget {
@@ -94,7 +96,16 @@ pushPremium()async{
     }
     
     debugPrint("💰 Premium paywall açılıyor...");
-    await RevenueCatUI.presentPaywall();
+    // Android'de close butonu gözükmediği için PremiumScreen kullanıyoruz
+    if (Platform.isAndroid) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => PremiumScreen(),
+        ),
+      );
+    } else {
+      await RevenueCatUI.presentPaywall(displayCloseButton: true);
+    }
     debugPrint("💰 Premium paywall kapandı, customerInfo kontrol ediliyor...");
     
     // Paywall kapandıktan sonra biraz bekle (RevenueCat'in güncellemesi için)

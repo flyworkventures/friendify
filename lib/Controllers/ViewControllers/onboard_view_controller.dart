@@ -26,43 +26,92 @@ class OnboardViewController extends StateNotifier<OnboardViewModel>{
   HttpService httpService = HttpService();
 
   googleAuth ()async{
-    LocalService localService = LocalService(prefs: await SharedPreferences.getInstance());
-   GoogleSignInAccount? googleSignInAccount = await authRepository.googleSignIn();
-   if (googleSignInAccount != null) {
-    debugPrint("Account not null");
-   Response response = await httpService.post(path: AppConstants.checkMailURL,body: {"email": googleSignInAccount.email},headers: {"Content-type":"application/json"});
-   if (response.statusCode == 200) {
-    debugPrint("Account 200");
-    // UserModel? userModel;
-    ref.read(AllControllers.registerViewController.notifier).updateEmail(googleSignInAccount.email);
-    ref.read(AllControllers.registerViewController.notifier).updateCredential("google");
-   // ref.read(AllControllers.registerViewController.notifier).updateUsername(googleSignInAccount.displayName);
-      await navigatorKey.currentState?.pushNamed('/register');
-   } else {
-      debugPrint("Account 2001");
-     
-      var json = jsonDecode(response.body);
-       log("Usermodel: ${json["model"][0]}");
-       UserModel userModel = UserModel.fromMap(json["model"][0]);
+    try {
+      debugPrint("🔵 [Google Auth] Starting Google authentication flow...");
+      LocalService localService = LocalService(prefs: await SharedPreferences.getInstance());
       
-      localService.setToken(userModel.token!);
-      ref.read(AllControllers.userController.notifier).updateUserModel(userModel);
-      debugPrint("✅ UserController updated with user ID: ${userModel.id}");
+      debugPrint("🔵 [Google Auth] Calling authRepository.googleSignIn()...");
+      GoogleSignInAccount? googleSignInAccount = await authRepository.googleSignIn();
       
-      // State güncellemesini bekle
-      await Future.delayed(Duration(milliseconds: 200));
-      
-      debugPrint("🔄 Fetching user data...");
-               await ref.read(AllControllers.chatViewController.notifier).getConversations();
-         await ref.read(AllControllers.agentsViewController.notifier).getAgents();
-         await ref.read(AllControllers.agentsViewController.notifier).getRecentAgents();
-      
-      debugPrint("✨ All data fetched, navigating to home");
-        await navigatorKey.currentState?.pushNamed('/bottomNavbar');
-   }
-   } else {
-     
-   }
+      if (googleSignInAccount != null) {
+        debugPrint("✅ [Google Auth] Google Sign-In account received");
+        debugPrint("✅ [Google Auth] Email: ${googleSignInAccount.email}");
+        debugPrint("✅ [Google Auth] Display Name: ${googleSignInAccount.displayName}");
+        debugPrint("✅ [Google Auth] ID: ${googleSignInAccount.id}");
+        
+        debugPrint("🌐 [Google Auth] Checking email on server...");
+        debugPrint("🌐 [Google Auth] Endpoint: ${AppConstants.checkMailURL}");
+        debugPrint("🌐 [Google Auth] Email to check: ${googleSignInAccount.email}");
+        
+        Response response = await httpService.post(
+          path: AppConstants.checkMailURL,
+          body: {"email": googleSignInAccount.email},
+          headers: {"Content-type":"application/json"}
+        );
+        
+        debugPrint("📡 [Google Auth] Server response status: ${response.statusCode}");
+        debugPrint("📡 [Google Auth] Server response body: ${response.body}");
+        
+        if (response.statusCode == 200) {
+          debugPrint("✨ [Google Auth] New user detected (status 200)");
+          debugPrint("✨ [Google Auth] Navigating to registration...");
+          
+          ref.read(AllControllers.registerViewController.notifier).updateEmail(googleSignInAccount.email);
+          ref.read(AllControllers.registerViewController.notifier).updateCredential("google");
+          
+          // Set display name as username if available
+          if (googleSignInAccount.displayName != null && googleSignInAccount.displayName!.isNotEmpty) {
+            ref.read(AllControllers.registerViewController.notifier).updateUsername(googleSignInAccount.displayName!);
+            debugPrint("✅ [Google Auth] Username set to: ${googleSignInAccount.displayName}");
+          }
+          
+          await navigatorKey.currentState?.pushNamed('/register');
+        } else {
+          debugPrint("✨ [Google Auth] Existing user detected (status ${response.statusCode})");
+          debugPrint("✨ [Google Auth] Logging in existing user...");
+          
+          var json = jsonDecode(response.body);
+          log("📦 [Google Auth] UserModel data: ${json["model"][0]}");
+          
+          UserModel userModel = UserModel.fromMap(json["model"][0]);
+          debugPrint("✅ [Google Auth] UserModel created");
+          debugPrint("✅ [Google Auth] User ID: ${userModel.id}");
+          debugPrint("✅ [Google Auth] User Email: ${userModel.email}");
+          
+          localService.setToken(userModel.token!);
+          debugPrint("✅ [Google Auth] Token saved to local storage");
+          
+          ref.read(AllControllers.userController.notifier).updateUserModel(userModel);
+          debugPrint("✅ [Google Auth] UserController updated with user ID: ${userModel.id}");
+          
+          // State güncellemesini bekle
+          await Future.delayed(Duration(milliseconds: 200));
+          
+          debugPrint("🔄 [Google Auth] Fetching user data...");
+          await ref.read(AllControllers.chatViewController.notifier).getConversations();
+          debugPrint("✅ [Google Auth] Conversations fetched");
+          
+          await ref.read(AllControllers.agentsViewController.notifier).getAgents();
+          debugPrint("✅ [Google Auth] Agents fetched");
+          
+          await ref.read(AllControllers.agentsViewController.notifier).getRecentAgents();
+          debugPrint("✅ [Google Auth] Recent agents fetched");
+          
+          debugPrint("✨ [Google Auth] All data fetched, navigating to home");
+          await navigatorKey.currentState?.pushNamed('/bottomNavbar');
+        }
+      } else {
+        debugPrint("⚠️ [Google Auth] Google Sign-In account is null");
+        debugPrint("⚠️ [Google Auth] User may have cancelled the sign-in");
+      }
+    } catch (e, stackTrace) {
+      debugPrint("❌ [Google Auth] Error in googleAuth method");
+      debugPrint("❌ [Google Auth] Error Type: ${e.runtimeType}");
+      debugPrint("❌ [Google Auth] Error: $e");
+      debugPrint("📍 [Google Auth] StackTrace: $stackTrace");
+      log("❌ [Google Auth] Error in googleAuth: $e");
+      log("📍 [Google Auth] StackTrace: $stackTrace");
+    }
   }
 
   facebookAuth ()async{
