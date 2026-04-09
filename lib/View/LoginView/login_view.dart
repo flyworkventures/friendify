@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/Themes/fonts.dart';
@@ -17,6 +19,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:ionicons/ionicons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:substring_highlight/substring_highlight.dart';
+import 'package:url_launcher/url_launcher.dart';
 class LoginView extends ConsumerStatefulWidget {
   const LoginView({super.key});
 
@@ -31,89 +35,223 @@ class LoginViewState extends ConsumerState<LoginView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-    backgroundColor: Colors.white,
-      body: SafeArea(
+
+      body: BackgroundWidget(
+        child: SafeArea(
         
-        child: SingleChildScrollView(
-          padding: EdgeInsets.only(right: 30,left: 30,top: 70),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Text("Welcome 👋",style: GoogleFonts.poppins(fontWeight: FontWeight.w600,fontSize: 24.sp)),
-              Text("I am happy to see you. You can continue where you left off by logging in",style: GoogleFonts.poppins(color: Colors.black,fontWeight: FontWeight.w300,fontSize: 14.sp)),
-         
-              SizedBox(height: 40.h,),
-                    
-              Column(
-                children: [
-                           
-                              MyTextField(
-                                onChanged: (a) => ref.read(AllControllers.loginViewController.notifier).changeButtonState(),
-                                prefixIcon: Icon(Ionicons.mail_outline),
-              hintText: "Enter email",
-              controller: ref.read(AllControllers.loginViewController.notifier).emailController),
-                              
-               SizedBox(height: 20.h,),
-                              
-                MyTextField(
-                   onChanged: (a) => ref.read(AllControllers.loginViewController.notifier).changeButtonState(),
-                  prefixIcon: Icon(Ionicons.lock_closed_outline),
-              hintText: "Password",
-              controller: ref.read(AllControllers.loginViewController.notifier).passwordController),
-                ],
-              ),
-           
-                    
-                 SizedBox(height: 10.h,),
-                    
-                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+               SizedBox(
+                height: 337.h,
+                width: 385.w,
+                child: Stack(
                   children: [
-                 // rememberMe(),
-                 SizedBox(),
-                  GestureDetector(
-                    child: Text("Forgot Password?",style: GoogleFonts.poppins(color: MyColors.purple,fontWeight: FontWeight.w400,fontSize: 12.sp),),
-                  )
+                    Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Image.asset("assets/images/daisy.png",width: 212.w,height: 263.7.h,)),
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: Image.asset("assets/images/lara.png",width: 207.w,height: 257.31.h,)),
                   ],
-                 ),
-                  
-                 SizedBox(height: 30.h,),
-                  
-                 GestureDetector(
-                  onTap: () {
-                    login();
-                  },
-                  child: Container(
-                    width: MediaQuery.sizeOf(context).width,
-                    height: 50.h,
-                    margin: EdgeInsets.symmetric(horizontal: 20.w),
-                    decoration: BoxDecoration(
-                      color: ref.watch(AllControllers.loginViewController.notifier).buttonActive ? MyColors.purple : MyColors.purple.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(50.r)
-                    ),
-                    child: Center(
-                      child: loading ? SizedBox(width: 32,height: 32,child: CircularProgressIndicator(color: Colors.white,),)  :  Text("Sign In",style: GoogleFonts.poppins(color: Colors.white,fontWeight: FontWeight.w500,fontSize: 15.sp),),
+                ),
+               ),
+
+               SizedBox(height: 20.h,),
+
+
+
+             Text("Let's Get Started",style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w700,fontSize: 24.sp),) ,
+               Text("Find the perfect match for you and start chatting right away",style: GoogleFonts.quicksand(color: Colors.white,fontSize: 16.sp,fontWeight: FontWeight.w400,),textAlign: TextAlign.center,) ,
+          
+          SizedBox(height: 40.h,),
+          
+          
+              if(Platform.isIOS)...[
+          
+                   MyButton(
+                    onTap: ()async{
+                             debugPrint("🍎 Apple button clicked");
+              await ref.read(AllControllers.onboardViewController.notifier).appleAuth();
+              
+                    },
+                    boxBorder: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    margin: EdgeInsets.symmetric(horizontal: 20),
+                    radius: BorderRadius.circular(50),
+                    backgroundColor: Colors.black,
+                    
+                    
+                    size:Size(double.infinity, 50.h),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                        SvgPicture.asset("assets/apple.svg",color: Colors.white,width: 22.w,),
+                       SizedBox(width: 10.w,),
+                          Text("Apple",style: GoogleFonts.quicksand(color: Colors.white,fontSize: 16.sp,fontWeight: FontWeight.w600),),
+                            SizedBox.shrink(),
+                        
+                      
+                        ],
+                      ),
                     ),
                   ),
-                 ),
-                  
-                  
-                 SizedBox(height: 30.h,),
-                 signUpWithWidget(),
-                 SizedBox(height: 30.h,),
-                 
-                 Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                 socialButtons(Image.asset("assets/google.png",height: 30.h,fit: BoxFit.cover,),"Sign In with Google"),
-                 socialButtons(Image.asset("assets/facebook.png",height: 30.h,),"Sign In with Facebook"),
-                  socialButtons(SvgPicture.asset("assets/apple.svg",height: 30.h),"Sign In with Apple"),
-                  ],
-                 ),
-                  
-                 
-                  
+          
+                     SizedBox(height: 20.h,),
+          
+                      MyButton(
+                    onTap: ()async{
+                await ref.read(AllControllers.onboardViewController.notifier).googleAuth();
+                    },
+                    margin: EdgeInsets.symmetric(horizontal: 20),
+                    radius: BorderRadius.circular(50),
+                    backgroundColor: Colors.white,
+                    
+                    size:Size(double.infinity, 50.h),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                     
+                        children: [
+                        Image.asset("assets/google.png",width: 22.w,),
+                        SizedBox(width: 10.w,),
+                       
+                          Text("Google",style: GoogleFonts.quicksand(color: Colors.black,fontSize: 16.sp,fontWeight: FontWeight.w600),),
+                       
+                        
+                      
+                        ],
+                      ),
+                    ),
+                  ),
+          
+          
+          
+                
+          
+              
+          
+            // Misafir giriş butonu
+                   MyButton(
+                    onTap: () async {
+                      debugPrint("👤 Guest button clicked");
+                      await ref.read(AllControllers.onboardViewController.notifier).guestLogin();
+                    },
+                    margin: EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 20),
+                    radius: BorderRadius.circular(50),
+                    backgroundColor: Colors.transparent,
+                    size: Size(250.w, 45.h),
+                    child: Center(
+                      child: Text(
+                        Translate.translate("continue_as_guest", context),
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+            
+            ],
+          
+          
+          
+            if(Platform.isAndroid)...[
+          
+                   MyButton(
+                    onTap: (){
+          
+          
+          
+                      ref.read(AllControllers.onboardViewController.notifier).googleAuth();
+                    },
+                    margin: EdgeInsets.symmetric(horizontal: 20),
+                    radius: BorderRadius.circular(50),
+                    backgroundColor: Colors.white,
+                    size:Size(MediaQuery.sizeOf(context).width, 50.h),
+                    child: Center(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                        Image.asset("assets/google.png",width: 30.w,),
+                          SizedBox(width: 10.h,),
+                          Text(Translate.translate("continue_with_google", context),style: GoogleFonts.quicksand(color: Colors.black,fontSize: 14.sp,fontWeight: FontWeight.w500),),
+                         
+                        
+          
+                        ],
+                      ),
+                    ),
+                  ),
+                        SizedBox(height: 20.h,),
+          
+                      MyButton(
+                    onTap: () async {
+                      debugPrint("👤 Guest button clicked");
+                      await ref.read(AllControllers.onboardViewController.notifier).guestLogin();
+                    },
+                    margin: EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 20),
+                    radius: BorderRadius.circular(50),
+                    backgroundColor: Colors.transparent,
+                    size: Size(500.w, 45.h),
+                    child: Center(
+                      child: Text(
+                        Translate.translate("continue_as_guest", context),
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+          
+          
+          
+                   SizedBox(height: 5.h,),
+          
+          
+              socialAuthAreaAndroid()
+            ],
+          
+          
+           GestureDetector(
+              onTap: () async{
+               await launchUrl(Uri.parse("https://fly-work.com/friendify/terms/"));
+              },
+              child: SubstringHighlight(
+              text: Translate.translate("terms_signup_text", context),
+              term: Translate.translate("terms_signup_highlight", context),
+              textAlign: TextAlign.center,
+              textStyle: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w400,fontSize: 12.sp),
+              textStyleHighlight: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w600,decoration: TextDecoration.underline,fontSize: 12.sp),
+            ),
+            ),
+          
+          
+            
+            GestureDetector(
+                  onTap: () async{
+              await  launchUrl(Uri.parse("https://fly-work.com/friendify/privacy-policy/"));
+              },
+              child: SubstringHighlight(
+              text: Translate.translate("privacy_data_text", context),
+              term: Translate.translate("privacy_data_highlight", context),
+              textAlign: TextAlign.center,
+              textStyle: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w400,fontSize: 12.sp),
+              textStyleHighlight: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w600,decoration: TextDecoration.underline,fontSize: 12.sp),
+                    ),
+            ),
+          
+          
             ],
           ),
         ),
@@ -222,4 +360,81 @@ Widget signUpWithWidget(){
       ],
     );
   }
+
+
+
+
+  Widget socialAuthAreaAndroid(){
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        /*
+        socialButton(onTap: (){}, child: Center(child: Image.asset("assets/google.png",width: 20.w,),), backgroundColor: Colors.white),
+        SizedBox(width: 15.w,),
+        */
+        socialButton(onTap: () async{
+          debugPrint("🔵 Facebook button clicked");
+         
+           await ref.read(AllControllers.onboardViewController.notifier).facebookAuth();
+          
+          debugPrint("🔵 Facebook auth completed");
+        }, child: Center(child: SvgPicture.asset("assets/facebook.svg"),), backgroundColor: Color(0xff1877F2)),
+        SizedBox(width: 15.w,),
+        socialButton(onTap: () async{
+          debugPrint("🍎 Apple button clicked");
+          await ref.read(AllControllers.onboardViewController.notifier).appleAuth();
+          debugPrint("🍎 Apple auth completed");
+        }, child: Center(child: SvgPicture.asset("assets/apple.svg",color: Colors.white,width: 18.w,),), backgroundColor: Colors.black)
+      ],
+    );
+  }
+
+
+
+  Widget socialAuthAreaIOS(){
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        
+        socialButton(onTap: (){}, child: Center(child: Image.asset("assets/google.png",width: 20.w,),), backgroundColor: Colors.white),
+        SizedBox(width: 15.w,),
+        /*
+        socialButton(onTap: () async{
+          debugPrint("🔵 Facebook button clicked");
+         
+           await ref.read(AllControllers.onboardViewController.notifier).facebookAuth();
+          
+          debugPrint("🔵 Facebook auth completed");
+        }, child: Center(child: SvgPicture.asset("assets/facebook.svg"),), backgroundColor: Color(0xff1877F2)),
+        */
+        SizedBox(width: 15.w,),
+        socialButton(onTap: () async{
+    ref.read(AllControllers.onboardViewController.notifier).googleAuth();
+        }, child: Center(child: Image.asset("assets/google.png",width: 24.w,),), backgroundColor: Colors.white)
+      ],
+    );
+  }
+
+
+
+Widget socialButton({required Function() onTap,required Widget child,required Color backgroundColor}){
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 45.w,
+      height: 45.h,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(50),
+      ),
+      child: Center(
+        child: child,
+      ),
+    ),
+  );
+}
+
+
 }

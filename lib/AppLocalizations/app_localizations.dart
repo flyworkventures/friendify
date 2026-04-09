@@ -33,7 +33,8 @@ static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalization
 
 
 String translate(String key){
-  return localizedStrings![key];
+  // Null-safe: Eğer key bulunamazsa key'i döndür (fallback)
+  return localizedStrings![key] ?? key;
 }
 }
 

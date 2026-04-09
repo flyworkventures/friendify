@@ -22,6 +22,7 @@ import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/Services/local_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -33,8 +34,9 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel>{
   bool loadingScreen = false;
   TextEditingController messageController = TextEditingController();
  RecorderController recorderController = RecorderController();
- final ImagePicker _picker = ImagePicker();
+  final ImagePicker _picker = ImagePicker();
 XFile? selectedImage;
+  DateTime? _recordingStartTime; // Kayıt başlangıç zamanı
 
   
   getConversations()async{
@@ -92,6 +94,19 @@ XFile? selectedImage;
   if (res.statusCode == 200) {
     List messagesJson = jsonDecode(res.body);
     List<MessageModel> messages = messagesJson.map((a) => MessageModel.fromMap(a)).toList();
+    
+    // Mesajları createdAt'e göre sırala (en eski üstte)
+    messages.sort((a, b) {
+      try {
+        final dateA = DateTime.parse(a.createdAt);
+        final dateB = DateTime.parse(b.createdAt);
+        return dateA.compareTo(dateB);
+      } catch (e) {
+        log("Error parsing dates: $e");
+        return 0;
+      }
+    });
+    
     state = state.copyWith(messages: messages);
   }else{
     log("Mesajlar getirilirken hata oluştu");
@@ -114,6 +129,19 @@ final mergedMessages = [
   ...oldMessages,
   ...newMessages.where((m) => !oldMessages.any((old) => old.id == m.id))
 ];
+
+// Mesajları createdAt'e göre sırala (en eski üstte)
+mergedMessages.sort((a, b) {
+  try {
+    final dateA = DateTime.parse(a.createdAt);
+    final dateB = DateTime.parse(b.createdAt);
+    return dateA.compareTo(dateB);
+  } catch (e) {
+    log("Error parsing dates: $e");
+    return 0;
+  }
+});
+
     ChatState chatState = _chatStateFormatter( json["conversation_state"]);
     state = state.copyWith(chatState: chatState,messages: mergedMessages);
    // Sadece mesajlar varsa debug print yap
@@ -143,16 +171,7 @@ final mergedMessages = [
       return true; // Premium üye sınırsız mesaj gönderebilir
     }
     
-    // Bedava premium kontrolü
-    final canUseTrial = PremiumService.canUseFreeTrial(user);
-    log("🎁 [PREMIUM CHECK] Bedava premium kullanılabilir mi: $canUseTrial");
-    
-    if (canUseTrial) {
-      log("✅ [PREMIUM CHECK] Bedava premium süresince - Sınırsız mesaj gönderebilir");
-      return true; // Bedava premium süresince sınırsız
-    }
-    
-    // Günlük mesaj limiti kontrolü
+    // Günlük mesaj limiti kontrolü (free trial dahil)
     final prefs = await SharedPreferences.getInstance();
     final localService = LocalService(prefs: prefs);
     final todayMessageCount = await localService.getDailyMessageCount();
@@ -163,7 +182,14 @@ final mergedMessages = [
     
     if (limit != null && todayMessageCount >= limit) {
       log("❌ [PREMIUM CHECK] Günlük mesaj limiti aşıldı! ($todayMessageCount >= $limit)");
-      // Limit aşıldı, premium ekranına yönlendir
+      
+      // Misafir kullanıcı ise oturum açma ekranına yönlendir
+      if (user?.credential == "guest") {
+        await _showGuestLimitDialog();
+        return false;
+      }
+      
+      // Free trial veya normal kullanıcı ise premium ekranına yönlendir
       try {
         log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
         await RevenueCatUI.presentPaywall();
@@ -193,16 +219,7 @@ final mergedMessages = [
       return true;
     }
     
-    // Bedava premium kontrolü
-    final canUseTrial = PremiumService.canUseFreeTrial(user);
-    log("🎁 [PREMIUM CHECK] Bedava premium kullanılabilir mi: $canUseTrial");
-    
-    if (canUseTrial) {
-      log("✅ [PREMIUM CHECK] Bedava premium süresince - Sınırsız fotoğraf gönderebilir");
-      return true;
-    }
-    
-    // Günlük fotoğraf limiti kontrolü
+    // Günlük fotoğraf limiti kontrolü (free trial dahil)
     final prefs = await SharedPreferences.getInstance();
     final localService = LocalService(prefs: prefs);
     final todayPhotoCount = await localService.getDailyPhotoCount();
@@ -215,7 +232,14 @@ final mergedMessages = [
     
     if (!canSend) {
       log("❌ [PREMIUM CHECK] Günlük fotoğraf limiti aşıldı! ($todayPhotoCount >= $limit)");
-      // Limit aşıldı, premium ekranına yönlendir
+      
+      // Misafir kullanıcı ise oturum açma ekranına yönlendir
+      if (user?.credential == "guest") {
+        await _showGuestLimitDialog();
+        return false;
+      }
+      
+      // Free trial veya normal kullanıcı ise premium ekranına yönlendir
       try {
         log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
         await RevenueCatUI.presentPaywall();
@@ -324,6 +348,9 @@ final mergedMessages = [
           final localService = LocalService(prefs: prefs);
           await localService.incrementDailyPhotoCount();
           log("📊 [IMAGE] Günlük fotoğraf sayacı artırıldı");
+          
+          // Conversation listesini güncelle
+          getConversations();
         } else if (res != null && res.statusCode == 403) {
           // Misafir kullanıcı günlük limit hatası
           try {
@@ -335,7 +362,7 @@ final mergedMessages = [
           } catch (e) {
             log("Error parsing error response: $e");
           }
-          log("❌ [IMAGE] Fotoğraf gönderilemedi - HTTP Status: ${res?.statusCode}");
+          log("❌ [IMAGE] Fotoğraf gönderilemedi - HTTP Status: ${res.statusCode}");
         } else {
           log("❌ [IMAGE] Fotoğraf gönderilemedi - HTTP Status: ${res?.statusCode}");
         }
@@ -362,6 +389,9 @@ final mergedMessages = [
         final prefs = await SharedPreferences.getInstance();
         final localService = LocalService(prefs: prefs);
         await localService.incrementDailyMessageCount();
+        
+        // Conversation listesini güncelle
+        getConversations();
       } else if (res.statusCode == 403) {
         // Misafir kullanıcı günlük limit hatası
         try {
@@ -399,12 +429,15 @@ pushFromMessages(ChatModel chatModel,AgentModel selectedAgent)async{
 
 
   sendAudio(String path)async{
-    // Premium ve limit kontrolü
-    final canSend = await _canSendMessage();
-    if (!canSend) {
+    // Sesli mesaj limiti kontrolü (ÖNCE kontrol et, sonra gönder)
+    final canSendAudio = await _canSendAudio();
+    if (!canSendAudio) {
+      log("❌ [AUDIO] Sesli mesaj gönderilemedi - Limit kontrolü başarısız");
       state = state.copyWith(responseWaiting: false);
       return;
     }
+    
+    log("✅ [AUDIO] Sesli mesaj limiti kontrolü başarılı, gönderiliyor...");
   
     HttpService httpService = HttpService(ref: ref);
     state = state.copyWith(responseWaiting: true);
@@ -417,24 +450,107 @@ pushFromMessages(ChatModel chatModel,AgentModel selectedAgent)async{
     );
     
     if (res != null && res.statusCode == 200) {
-      // Günlük mesaj sayısını artır
+      // Günlük sesli mesaj sayısını artır
       final prefs = await SharedPreferences.getInstance();
       final localService = LocalService(prefs: prefs);
-      await localService.incrementDailyMessageCount();
+      await localService.incrementDailyAudioCount();
+      
+      // Conversation listesini güncelle
+      getConversations();
     } else if (res != null && res.statusCode == 403) {
-      // Misafir kullanıcı günlük limit hatası
+      // Sesli mesaj limiti hatası
       try {
         final body = await res.stream.bytesToString();
         final errorJson = jsonDecode(body);
-        if (errorJson["error"] == "GUEST_MESSAGE_LIMIT") {
-          await _showGuestLimitDialog();
+        final errorType = errorJson["error"];
+        
+        log("❌ [AUDIO] Backend'den limit hatası: $errorType");
+        
+        if (errorType == "GUEST_MESSAGE_LIMIT" || errorType == "AUDIO_MESSAGE_LIMIT") {
+          final user = ref?.read(AllControllers.userController);
+          
+          // Misafir kullanıcı ise oturum açma ekranına yönlendir
+          if (user?.credential == "guest") {
+            await _showGuestLimitDialog();
+          } else {
+            // Standart paket veya free trial kullanıcı ise premium ekranına yönlendir
+            try {
+              log("💳 [AUDIO] Premium ekranı açılıyor...");
+              await RevenueCatUI.presentPaywall();
+              log("✅ [AUDIO] Premium ekranı açıldı");
+            } catch (e) {
+              log("⚠️ [AUDIO] Premium ekranı açılamadı: $e");
+            }
+          }
         }
       } catch (e) {
         log("Error parsing error response: $e");
+        // Hata parse edilemezse bile premium ekranını göster
+        try {
+          await RevenueCatUI.presentPaywall();
+        } catch (e) {
+          log("⚠️ [AUDIO] Premium ekranı açılamadı: $e");
+        }
       }
     }
     
     state = state.copyWith(responseWaiting: false);
+  }
+  
+  /// Sesli mesaj gönderebilir mi kontrol eder
+  Future<bool> _canSendAudio() async {
+    final user = ref?.read(AllControllers.userController);
+    
+    log("🔍 [AUDIO CHECK] Sesli mesaj gönderme kontrolü başladı");
+    log("👤 [AUDIO CHECK] User ID: ${user?.id}, Email: ${user?.email}");
+    log("👤 [AUDIO CHECK] User credential: ${user?.credential}");
+    
+    // Premium kontrolü
+    final isPremium = PremiumService.isPremiumActive(user);
+    log("💎 [AUDIO CHECK] Premium aktif mi: $isPremium");
+    
+    if (isPremium) {
+      log("✅ [AUDIO CHECK] Premium üye - Sınırsız sesli mesaj gönderebilir");
+      return true; // Premium üye sınırsız sesli mesaj gönderebilir
+    }
+    
+    // Free trial kontrolü
+    final canUseTrial = PremiumService.canUseFreeTrial(user);
+    log("🎁 [AUDIO CHECK] Free trial kullanılabilir mi: $canUseTrial");
+    
+    // Günlük sesli mesaj limiti kontrolü
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    final todayAudioCount = await localService.getDailyAudioCount();
+    final limit = PremiumService.getDailyAudioLimit(user);
+    
+    log("📊 [AUDIO CHECK] Bugünkü sesli mesaj sayısı: $todayAudioCount");
+    log("📊 [AUDIO CHECK] Günlük sesli mesaj limiti: $limit");
+    log("📊 [AUDIO CHECK] Limit kontrolü: ${limit != null ? '$todayAudioCount >= $limit' : 'limit null'}");
+    
+    // Limit kontrolü (free trial dahil)
+    if (limit != null && todayAudioCount >= limit) {
+      log("❌ [AUDIO CHECK] Günlük sesli mesaj limiti aşıldı! ($todayAudioCount >= $limit)");
+      
+      // Misafir kullanıcı ise oturum açma ekranına yönlendir
+      if (user?.credential == "guest") {
+        await _showGuestLimitDialog();
+        return false;
+      }
+      
+      // Free trial veya normal kullanıcı ise premium ekranına yönlendir
+      try {
+        log("💳 [AUDIO CHECK] Premium ekranı açılıyor...");
+        await RevenueCatUI.presentPaywall();
+        log("✅ [AUDIO CHECK] Premium ekranı açıldı");
+      } catch (e) {
+        log("⚠️ [AUDIO CHECK] Premium ekranı açılamadı: $e");
+      }
+      return false;
+    }
+    
+    log("✅ [AUDIO CHECK] Sesli mesaj gönderebilir (${todayAudioCount + 1}/$limit)");
+    return true;
   }
 
 
@@ -443,12 +559,99 @@ audioButton()async{
   if (state.recordState == RecordState.none ) {
    await recordAudio();
   }else if(state.recordState == RecordState.stopped){
-   state = state.copyWith(recordState: RecordState.none);
+   // Stopped state'inde audioButton çağrılırsa iptal et
+   cancelStoppedRecording();
   }else if(state.recordState == RecordState.recording){
   await  stoppingAudio();
   }
 }
 
+/// Instagram tarzı: Basıldığında kayıt başlat
+Future<void> startRecording() async {
+  if (state.recordState == RecordState.recording) {
+    return; // Zaten kayıt yapılıyor
+  }
+  
+  if (recorderController.hasPermission) {
+    _recordingStartTime = DateTime.now(); // Kayıt başlangıç zamanını kaydet
+    await recorderController.record();
+    state = state.copyWith(recordState: RecordState.recording);
+    log("🎤 Recording started");
+  } else {
+    await recorderController.checkPermission();
+    // İzin verildiyse tekrar dene
+    if (recorderController.hasPermission) {
+      _recordingStartTime = DateTime.now(); // Kayıt başlangıç zamanını kaydet
+      await recorderController.record();
+      state = state.copyWith(recordState: RecordState.recording);
+      log("🎤 Recording started after permission granted");
+    }
+  }
+}
+
+/// Instagram tarzı: Bırakıldığında kayıt durdur ve gönder
+Future<void> stopRecordingAndSend() async {
+  log("🎤 stopRecordingAndSend çağrıldı. Current state: ${state.recordState}, isRecording: ${recorderController.isRecording}");
+  
+  if (state.recordState != RecordState.recording) {
+    log("⚠️ Kayıt yapılmıyor, state: ${state.recordState}");
+    return; // Kayıt yapılmıyor
+  }
+  
+  if (recorderController.isRecording) {
+    log("🎤 Kayıt durduruluyor...");
+    String? path = await recorderController.stop();
+    log("🎤 Kayıt durduruldu. Path: $path");
+    
+    // State'i hemen güncelle (UI'ın güncellenmesi için)
+    state = state.copyWith(recordState: RecordState.none);
+    
+    if (path != null) {
+      log("🎤 Audio recorded. Path: $path");
+      // Minimum kayıt süresi kontrolü (0.5 saniye)
+      if (_recordingStartTime != null) {
+        final duration = DateTime.now().difference(_recordingStartTime!);
+        log("🎤 Kayıt süresi: ${duration.inMilliseconds}ms");
+        if (duration.inMilliseconds > 500) {
+          // Yeterli süre kaydedildi, gönder
+          log("🎤 Kayıt gönderiliyor...");
+          await sendAudio(path);
+        } else {
+          log("⚠️ Recording too short (${duration.inMilliseconds}ms), cancelled");
+          // Çok kısa kayıt, iptal et (state zaten none)
+        }
+      } else {
+        // Başlangıç zamanı yoksa gönder (fallback)
+        log("🎤 Başlangıç zamanı yok, gönderiliyor...");
+        await sendAudio(path);
+      }
+      _recordingStartTime = null; // Temizle
+    } else {
+      log("⚠️ No audio path returned");
+      _recordingStartTime = null; // Temizle
+    }
+  } else {
+    log("⚠️ RecorderController.isRecording false, state güncelleniyor");
+    state = state.copyWith(recordState: RecordState.none);
+    _recordingStartTime = null; // Temizle
+  }
+  
+  log("✅ stopRecordingAndSend tamamlandı. Final state: ${state.recordState}");
+}
+
+/// Instagram tarzı: İptal edildiğinde kayıt durdur (gönderme)
+Future<void> cancelRecording() async {
+  if (state.recordState != RecordState.recording) {
+    return; // Kayıt yapılmıyor
+  }
+  
+  if (recorderController.isRecording) {
+    await recorderController.stop();
+    log("🎤 Recording cancelled");
+    state = state.copyWith(recordState: RecordState.none);
+    _recordingStartTime = null; // Temizle
+  }
+}
 
 recordAudio()async{
   if (recorderController.hasPermission) {
@@ -461,14 +664,47 @@ recordAudio()async{
 
 stoppingAudio()async{
   if (recorderController.isRecording) {
-  String? path = await recorderController.stop();
-  if (path != null) {
-    log("Audio recorded. Path: $path");
-     sendAudio(path);
-  } else {
-    
+    String? path = await recorderController.stop();
+    if (path != null) {
+      log("🎤 Audio recorded. Path: $path - Stopped, waiting for send");
+      // Kaydı durdur ama gönderme - path'i state'e kaydet
+      state = state.copyWith(
+        recordState: RecordState.stopped,
+        recordedAudioPath: path,
+      );
+    } else {
+      log("⚠️ No audio path returned");
+      state = state.copyWith(recordState: RecordState.none);
+    }
+    _recordingStartTime = null; // Temizle
   }
-   state = state.copyWith(recordState: RecordState.stopped);
+}
+
+/// Durdurulmuş kaydı gönder
+Future<void> sendStoppedRecording() async {
+  if (state.recordedAudioPath != null && state.recordState == RecordState.stopped) {
+    final path = state.recordedAudioPath!;
+    log("🎤 Sending stopped recording. Path: $path");
+    // State'i temizle
+    state = state.copyWith(
+      recordState: RecordState.none,
+      recordedAudioPath: null,
+    );
+    // Sesli mesajı gönder
+    await sendAudio(path);
+  }
+}
+
+/// Durdurulmuş kaydı iptal et
+void cancelStoppedRecording() {
+  if (state.recordState == RecordState.stopped) {
+    log("🎤 Cancelling stopped recording");
+    // State'i temizle
+    state = state.copyWith(
+      recordState: RecordState.none,
+      recordedAudioPath: null,
+    );
+    _recordingStartTime = null; // Temizle
   }
 }
 
@@ -544,6 +780,169 @@ Future<void> pickImage() async {
     }
   }
 
+  Future<void> pickImageFromCamera() async {
+    try {
+      log("📷 [CAMERA] Kamera açılıyor...");
+      // ImagePicker'ın native preview ekranını atlamak için direkt kamera açıyoruz
+      // Fotoğraf çekildikten sonra özel preview ekranımızı gösteriyoruz
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+        preferredCameraDevice: CameraDevice.rear,
+      );
+      
+      if (image != null) {
+        log("✅ [CAMERA] Fotoğraf seçildi: ${image.path}");
+        // Fotoğraf çekildi, şimdi özel preview ekranını göster
+        final context = navigatorKey.currentContext;
+        if (context != null) {
+          final usePhoto = await _showCameraPreview(context, image);
+          if (usePhoto == true) {
+            // Kullanıcı "Fotoğrafı Kullan" dedi
+            state = state.copyWith(image: image);
+            selectedImage = image;
+          } else if (usePhoto == false) {
+            // Kullanıcı "Yeniden Çek" dedi, tekrar kamera aç
+            await pickImageFromCamera(); // Recursive call
+          }
+          // usePhoto == null ise kullanıcı dialog'u kapattı, hiçbir şey yapma
+        } else {
+          // Context yoksa direkt kullan
+          state = state.copyWith(image: image);
+          selectedImage = image;
+        }
+      } else {
+        log("ℹ️ [CAMERA] Kullanıcı fotoğraf çekmeyi iptal etti");
+      }
+    } catch (e, stackTrace) {
+      log("❌ [CAMERA] Kamera hatası: $e");
+      log("❌ [CAMERA] Stack trace: $stackTrace");
+      
+      // Hata mesajını kullanıcıya göster
+      final context = navigatorKey.currentContext;
+      if (context != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Kamera açılamadı. Lütfen kamera izinlerini kontrol edin.',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Özel kamera preview ekranı - "Yeniden Çek" ve "Fotoğrafı Kullan" butonları ile
+  Future<bool?> _showCameraPreview(BuildContext context, XFile imageFile) async {
+    return await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (BuildContext dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: EdgeInsets.zero,
+          child: Container(
+            width: MediaQuery.of(context).size.width,
+            height: MediaQuery.of(context).size.height,
+            color: Colors.black,
+            child: Stack(
+              children: [
+                // Fotoğraf önizlemesi
+                Center(
+                  child: Image.file(
+                    File(imageFile.path),
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                // Alt butonlar
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 30.h),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.8),
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Yeniden Çek butonu
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.of(dialogContext).pop(false); // false = yeniden çek
+                            },
+                            child: Container(
+                              padding: EdgeInsets.symmetric(vertical: 15.h),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(30.r),
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  Translate.translate(TranslateKeys.retake, context),
+                                  style: GoogleFonts.quicksand(
+                                    color: Colors.white,
+                                    fontSize: 16.sp,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 20.w),
+                        // Fotoğrafı Kullan butonu
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.of(dialogContext).pop(true); // true = kullan
+                            },
+                            child: Container(
+                              padding: EdgeInsets.symmetric(vertical: 15.h),
+                              decoration: BoxDecoration(
+                                color: MyColors.purple,
+                                borderRadius: BorderRadius.circular(30.r),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  Translate.translate(TranslateKeys.usePhoto, context),
+                                  style: GoogleFonts.quicksand(
+                                    color: Colors.white,
+                                    fontSize: 16.sp,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
 
 
  removeImage()  async{
@@ -586,6 +985,7 @@ class ChatScreenViewModel {
   final bool isSearching;
   final RecordState recordState;
   final XFile? image;
+  final String? recordedAudioPath; // Durdurulmuş kayıt path'i
   ChatScreenViewModel({
     this.chatModel,
     this.agent,
@@ -596,7 +996,8 @@ class ChatScreenViewModel {
     this.filteredConversations,
     this.isSearching = false,
     this.recordState = RecordState.none,
-    this.image
+    this.image,
+    this.recordedAudioPath,
   });
   
 
@@ -611,6 +1012,7 @@ class ChatScreenViewModel {
     bool? isSearching,
     RecordState? recordState,
     XFile? image,
+    Object? recordedAudioPath = const _Sentinel(), // Object? kullanarak null değerini set edebilmek için
   }) {
     return ChatScreenViewModel(
       chatModel: chatModel ?? this.chatModel,
@@ -622,7 +1024,8 @@ class ChatScreenViewModel {
       filteredConversations: filteredConversations ?? this.filteredConversations,
       isSearching: isSearching ?? this.isSearching,
       recordState: recordState ?? this.recordState,
-      image: image ?? this.image
+      image: image ?? this.image,
+      recordedAudioPath: recordedAudioPath is _Sentinel ? this.recordedAudioPath : (recordedAudioPath as String?),
     );
   }
 
@@ -645,3 +1048,6 @@ enum RecordState{
 
 }
 
+class _Sentinel {
+  const _Sentinel();
+} // Null'ı açıkça set etmek için özel bir sınıf

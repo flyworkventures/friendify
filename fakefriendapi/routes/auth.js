@@ -371,7 +371,7 @@ const middleware = require('../middleware/checkAuth');
 
 router.post('/update-profile', middleware, async (req, res) => {
     try {
-        const { userId, username, photoURL } = req.body;
+        const { userId, username, photoURL, birthdate, gender } = req.body;
 
         if (!userId) {
             return res.status(400).json({
@@ -403,6 +403,18 @@ router.post('/update-profile', middleware, async (req, res) => {
         if (photoURL !== undefined && photoURL !== null) {
             updateFields.push("photoURL = ?");
             updateValues.push(photoURL);
+        }
+
+        if (birthdate !== undefined && birthdate !== null) {
+            updateFields.push("birthdate = ?");
+            updateValues.push(birthdate);
+        }
+
+        if (gender !== undefined) {
+            // gender null olabilir (kullanıcı "belirtmeyi tercih etmiyorum" seçebilir)
+            // null değerini de güncelleyebilmek için undefined kontrolü yeterli
+            updateFields.push("gender = ?");
+            updateValues.push(gender === null ? null : gender);
         }
 
         if (updateFields.length === 0) {

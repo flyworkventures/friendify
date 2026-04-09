@@ -21,8 +21,10 @@ import 'package:friendfy/AppLocalizations/app_localizations.dart';
 class AppConstants {
   static const String appName = "friendfy";
 // 10.0.2.2:
-  static const String baseURL = "https://friendfy.fly-work.com";
+ 
+  static const String baseURL = "http://localhost:3000";
   // "http://localhost:3000";
+  // "https://friendfy.fly-work.com"
   static const String configURL = "/server/config"; 
   static const String loginURL = "/auth/login"; 
   static const String signupURL = "/auth/signup"; 
@@ -54,6 +56,8 @@ class AppConstants {
   static const String reportConversation = "/chat/report-conversation"; 
   static const String deleteConversation = "/chat/delete-conversation"; 
 
+  /// İlgi alanları (herkese açık, kimlik gerekmez)
+  static const String interestsListLocalized = "/interests/list-localized";
 
 
 static List<Locale> supportedLocales = const[
@@ -85,7 +89,7 @@ static Map<String, Widget Function(BuildContext)> routes = {
 '/profileSettings': (_)=> ProfileSettings(),
 '/faqView': (_)=> FaqView(),
 '/accountDeletedView': (_) => AccountDeletedView(),
-'/accountCreatedView': (_) => AccountCreatedView(),
+'/accountCreatedView': (_) => const AccountCreatedView(),
 '/notificationsView': (_) => NotificationsView(),
 };
 

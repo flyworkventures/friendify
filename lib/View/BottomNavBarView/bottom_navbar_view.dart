@@ -8,6 +8,7 @@ import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Services/notification_service.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/View/BottomNavBarView/bottom_nav_bar.dart';
+import 'package:friendfy/Widgets/background.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:ionicons/ionicons.dart';
@@ -132,29 +133,29 @@ class _BottomNavbarViewState extends ConsumerState<BottomNavbarView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      extendBody: true,
-      
-      
-      body: Stack(
-        children: [
-          ref.read(AllControllers.bottomNavbarController.notifier).pages[ref.watch(AllControllers.bottomNavbarController).currentIndex],
-          SafeArea(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: MyBottomNavBar(
 
-                currentIndex: ref.watch(AllControllers.bottomNavbarController).currentIndex,
-                items: [
-                  MyBottomNavBarItem(icon: HeroIcons.squares2x2,onTap: () => ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(0),),
-                  MyBottomNavBarItem(icon: HeroIcons.userGroup,onTap: () => ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(1),),
-                  MyBottomNavBarItem(icon: HeroIcons.chatBubbleOvalLeft,onTap: () => ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(2),),
-                  MyBottomNavBarItem(icon: HeroIcons.user,onTap: () => ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(3),),
-                ],
-                width: MediaQuery.sizeOf(context).width)
-            ),
-          )
-        ],
+      extendBody: true,
+      body: BackgroundWidget(
+        child: Stack(
+          children: [
+            ref.read(AllControllers.bottomNavbarController.notifier).pages[ref.watch(AllControllers.bottomNavbarController).currentIndex],
+            SafeArea(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: MyBottomNavBar(
+        
+                  currentIndex: ref.watch(AllControllers.bottomNavbarController).currentIndex,
+                  items: [
+                    MyBottomNavBarItem(icon: "assets/icons/home.svg",onTap: () => ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(0),),
+                    MyBottomNavBarItem(icon: "assets/icons/ai-users.svg",onTap: () => ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(1),),
+                    MyBottomNavBarItem(icon: "assets/icons/messages-2.svg",onTap: () => ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(2),),
+                    MyBottomNavBarItem(icon: "assets/icons/user.svg",onTap: () => ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(3),),
+                  ],
+                  width: MediaQuery.sizeOf(context).width)
+              ),
+            )
+          ],
+        ),
       ),
     );
   }

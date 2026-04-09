@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/View/AgentsScreen/agents_screen.dart';
 import 'package:friendfy/View/HomeView/home_view.dart';
 import 'package:friendfy/View/MessagesView/messages_view.dart';
@@ -24,6 +25,50 @@ class BottomNavbarController extends StateNotifier<BottomNavbarModel> {
   }
 
 
+  List<PremiumCardModel> titles(BuildContext context) => [
+    PremiumCardModel(
+      Translate.translate("premium_advantage", context),
+      Translate.translate("premium_advantage_subtitle", context),
+    ),
+    PremiumCardModel(
+      Translate.translate("unlimited_conversation", context),
+      Translate.translate("unlimited_conversation_subtitle", context),
+    ),
+    PremiumCardModel(
+      Translate.translate("create_new_friends", context),
+      Translate.translate("create_new_friends_subtitle", context),
+    ),
+  ];
+  PageController pageController = PageController();
+  int index = 0;
+
+  nextPage(BuildContext context)async{
+
+
+
+
+if (index != 2) {
+  index = index+1;
+   pageController.nextPage(duration: Duration(milliseconds: 500), curve: Curves.ease);
+ }else{
+
+    index = 0;
+        pageController.jumpToPage(0);
+
+ }
+debugPrint("Index: $index");
+  
+    }
+
+
+}
+
+
+class PremiumCardModel{
+  final String title;
+  final String subtitle;
+
+  PremiumCardModel(this.title, this.subtitle);
 }
 
 class BottomNavbarModel {

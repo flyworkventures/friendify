@@ -351,30 +351,78 @@ router.post('/send-audio-message', upload.single('file'), async (req, res) => {
       }
     }
     
-    if (user && user.credential === 'guest') {
-      console.log(`👤 Guest user detected (audio): ${actualUserId}`);
-      
-      // Bugün gönderilen mesaj sayısını kontrol et - CURDATE() kullan
-      const todayMessages = await getQuery(
+    // Premium kontrolü için memberships parse et
+    let isPremium = false;
+    let isFreeTrial = false;
+    
+    if (user && user.memberships) {
+      try {
+        const memberships = typeof user.memberships === 'string' 
+          ? JSON.parse(user.memberships) 
+          : user.memberships;
+        
+        if (Array.isArray(memberships)) {
+          const now = new Date();
+          for (const membership of memberships) {
+            if (membership.isActive) {
+              const startDate = new Date(membership.startDate);
+              const endDate = membership.endDate ? new Date(membership.endDate) : null;
+              
+              if (now >= startDate && (!endDate || now <= endDate)) {
+                if (membership.type === 'paid') {
+                  isPremium = true;
+                  break;
+                } else if (membership.type === 'freeTrial') {
+                  isFreeTrial = true;
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error parsing memberships:', e);
+      }
+    }
+    
+    // Premium kullanıcı sınırsız gönderebilir
+    if (isPremium) {
+      console.log(`💎 Premium user ${actualUserId} (audio) - Unlimited`);
+    } else {
+      // Bugün gönderilen sesli mesaj sayısını kontrol et
+      const todayAudioMessages = await getQuery(
         "SELECT COUNT(*) as count FROM `messages` m " +
         "INNER JOIN `coversations` c ON m.conversationId = c.id " +
-        "WHERE c.userId = ? AND DATE(m.created_at) = CURDATE() AND m.sender = 'user'",
+        "WHERE c.userId = ? AND DATE(m.created_at) = CURDATE() AND m.sender = 'user' AND m.message_type = 'voice'",
         [actualUserId]
       );
       
-      const messageCount = todayMessages && todayMessages.length > 0 ? todayMessages[0].count : 0;
+      const audioCount = todayAudioMessages && todayAudioMessages.length > 0 ? todayAudioMessages[0].count : 0;
       
-      console.log(`👤 Guest user ${actualUserId} (audio) - Today's message count: ${messageCount}/10`);
+      // Limit belirleme
+      let limit = 2; // Standart paket için varsayılan limit
       
-      // Günlük limit: 10 mesaj
-      if (messageCount >= 10) {
-        console.log(`❌ Guest message limit reached for user ${actualUserId} (audio) - Blocking message`);
+      if (user && user.credential === 'guest') {
+        limit = 2; // Misafir kullanıcı için 2 sesli mesaj
+        console.log(`👤 Guest user ${actualUserId} (audio) - Today's audio count: ${audioCount}/${limit}`);
+      } else if (isFreeTrial) {
+        limit = 10; // Free trial için 10 sesli mesaj
+        console.log(`🎁 Free trial user ${actualUserId} (audio) - Today's audio count: ${audioCount}/${limit}`);
+      } else {
+        limit = 2; // Standart paket için 2 sesli mesaj
+        console.log(`📦 Standard user ${actualUserId} (audio) - Today's audio count: ${audioCount}/${limit}`);
+      }
+      
+      // Limit kontrolü
+      if (audioCount >= limit) {
+        console.log(`❌ Audio message limit reached for user ${actualUserId} - Blocking message (count: ${audioCount}/${limit})`);
         return res.status(403).json({
-          msg: "Daily message limit reached",
-          error: "GUEST_MESSAGE_LIMIT",
-          limit: 10,
-          current: messageCount,
-          message: "Misafir kullanıcılar günlük maksimum 10 mesaj gönderebilir. Devam etmek için lütfen oturum açın."
+          msg: "Daily audio message limit reached",
+          error: "AUDIO_MESSAGE_LIMIT",
+          limit: limit,
+          current: audioCount,
+          message: user && user.credential === 'guest' 
+            ? "Misafir kullanıcılar günlük maksimum 2 sesli mesaj gönderebilir. Devam etmek için lütfen oturum açın."
+            : "Günlük sesli mesaj limitinize ulaştınız. Premium üyelik ile sınırsız sesli mesaj gönderebilirsiniz."
         });
       }
     }

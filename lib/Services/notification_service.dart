@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:io' show Platform;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:friendfy/Models/notification_model.dart';
+import 'package:friendfy/Local/local_db_keys.dart';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notifications =
@@ -13,6 +14,11 @@ class NotificationService {
   static const String _channelId = 'Friendify_reminder';
   static const String _channelName = 'Friendify Reminders';
   static const String _channelDescription = 'Notifications to remind you to check Friendify';
+  
+  // Sistem bildirimleri için channel
+  static const String _systemChannelId = 'Friendify_system';
+  static const String _systemChannelName = 'Friendify System Notifications';
+  static const String _systemChannelDescription = 'System notifications from Friendify';
 
 
   /// Initialize notification service
@@ -156,7 +162,9 @@ class NotificationService {
   /// Handle notification tap
   static void _onNotificationTapped(NotificationResponse response) {
     log('Notification tapped: ${response.payload}');
-    // Buraya bildirime tıklandığında yapılacak işlemler eklenebilir
+    
+    // Bildirime tıklandığında yapılacak işlemler
+    // (Örneğin: belirli bir ekrana yönlendirme)
   }
 
   /// Show a notification
@@ -194,6 +202,196 @@ class NotificationService {
     );
 
     log('Notification shown: $title - $body');
+  }
+
+  /// Show a system notification (with app icon)
+  /// System notifications are shown in the notifications screen
+  static Future<void> showSystemNotification({
+    required String title,
+    required String body,
+    String? payload,
+    int? notificationId,
+  }) async {
+    // Android için sistem bildirimi (uygulama ikonu ile)
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      _systemChannelId,
+      _systemChannelName,
+      channelDescription: _systemChannelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      showWhen: true,
+      icon: '@mipmap/ic_launcher', // Uygulama ikonu
+    );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    final id = notificationId ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    
+    await _notifications.show(
+      id,
+      title,
+      body,
+      details,
+      payload: payload,
+    );
+
+    log('System notification shown: $title - $body (ID: $id)');
+    
+    // Bildirimi notifications listesine ekle (sistem bildirimleri için)
+    await _saveNotificationToHistory(title, body, payload);
+  }
+  
+  /// Kullanıcı ID'sine göre bildirim key'i oluştur
+  static String _getNotificationsKey(String? userId) {
+    if (userId == null) {
+      return LocalDbKeys.notifications; // Fallback (kullanıcı yoksa)
+    }
+    return "${LocalDbKeys.notifications}_$userId"; // Kullanıcı bazlı key
+  }
+
+  /// Bildirimi notifications listesine kaydet (kullanıcı bazlı)
+  static Future<void> _saveNotificationToHistory(
+    String title,
+    String body,
+    String? payload,
+  ) async {
+    try {
+      // Not: Bu static method olduğu için ref'e erişemiyoruz
+      // Bildirimler artık NotificationsViewController üzerinden eklenecek
+      // Bu method artık kullanılmıyor, sadece eski kod uyumluluğu için bırakıldı
+      final prefs = await SharedPreferences.getInstance();
+      String? userId = null; // Kullanıcı ID'si alınamıyor (static method)
+      final notificationsKey = _getNotificationsKey(userId);
+      final notificationsJson = prefs.getString(notificationsKey);
+      
+      List<NotificationModel> notifications = [];
+      if (notificationsJson != null && notificationsJson.isNotEmpty) {
+        final List<dynamic> decoded = json.decode(notificationsJson);
+        notifications = decoded
+            .map((item) => NotificationModel.fromMap(item as Map<String, dynamic>))
+            .toList();
+      }
+      
+      // Notification type'ı belirle
+      NotificationType type = NotificationType.system;
+      if (payload == 'welcome') {
+        type = NotificationType.welcome;
+      } else if (payload == 'trial_started') {
+        type = NotificationType.trialStarted;
+      } else if (payload == 'trial_ended') {
+        type = NotificationType.trialEnded;
+      }
+      
+      // Yeni bildirimi ekle
+      final notification = NotificationModel(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: title,
+        body: body,
+        createdAt: DateTime.now(),
+        type: type,
+        payload: payload,
+      );
+      
+      // Aynı ID'ye sahip bildirim varsa ekleme (duplicate kontrolü)
+      if (!notifications.any((n) => n.id == notification.id)) {
+        notifications.add(notification);
+        // Tarihe göre sırala (en yeni üstte)
+        notifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        
+        // Kaydet (kullanıcı bazlı key ile)
+        final updatedJson = json.encode(
+          notifications.map((n) => n.toMap()).toList(),
+        );
+        await prefs.setString(notificationsKey, updatedJson);
+        log('✅ Notification saved to history: $title');
+      } else {
+        log('ℹ️ Notification already exists in history: $title');
+      }
+    } catch (e) {
+      log('❌ Error saving notification to history: $e');
+    }
+  }
+
+  /// Schedule a system notification for a specific time
+  /// When the notification is shown, it will be automatically added to notifications history
+  static Future<void> scheduleSystemNotification({
+    required String title,
+    required String body,
+    required DateTime scheduledDate,
+    String? payload,
+    int? notificationId,
+  }) async {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      _systemChannelId,
+      _systemChannelName,
+      channelDescription: _systemChannelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      showWhen: true,
+      icon: '@mipmap/ic_launcher', // Uygulama ikonu
+    );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    final id = notificationId ?? scheduledDate.millisecondsSinceEpoch ~/ 1000;
+    
+    // Convert to timezone-aware datetime
+    final scheduledTime = tz.TZDateTime.from(scheduledDate, tz.local);
+    
+    await _notifications.zonedSchedule(
+      id,
+      title,
+      body,
+      scheduledTime,
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: payload,
+    );
+
+    log('System notification scheduled: $title - $body (ID: $id, Date: $scheduledDate)');
+    
+    // Trial bitiş bildirimi ise, şimdi notifications listesine ekle (zamanlanmış bildirimler için)
+    if (payload == 'trial_ended') {
+      await _saveScheduledNotificationToHistory(title, body, scheduledDate, payload);
+    }
+  }
+
+  /// Zamanlanmış bildirimi notifications listesine kaydet (kullanıcı bazlı)
+  /// Not: Bu metod artık kullanılmıyor, bildirimler NotificationsViewController üzerinden eklenecek
+  static Future<void> _saveScheduledNotificationToHistory(
+    String title,
+    String body,
+    DateTime scheduledDate,
+    String? payload,
+  ) async {
+    try {
+      // Kullanıcı ID'sini almak için SharedPreferences'tan token'ı kontrol edebiliriz
+      // Ama daha iyi bir çözüm: Bildirimleri NotificationsViewController üzerinden eklemek
+      // Bu metod artık kullanılmıyor, bildirimler NotificationsViewController üzerinden eklenecek
+      log('⚠️ _saveScheduledNotificationToHistory is deprecated, use NotificationsViewController instead');
+    } catch (e) {
+      log('❌ Error saving scheduled notification to history: $e');
+    }
   }
 
   /// Start periodic notifications (every 30 minutes when app is closed)

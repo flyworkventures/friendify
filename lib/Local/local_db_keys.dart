@@ -6,7 +6,10 @@ class LocalDbKeys {
   static String dailyMessageDate = "dailyMessageDate"; // son mesaj gönderilen tarih
   static String dailyPhotoCount = "dailyPhotoCount"; // günlük fotoğraf sayısı
   static String dailyPhotoDate = "dailyPhotoDate"; // son fotoğraf gönderilen tarih
+  static String dailyAudioCount = "dailyAudioCount"; // günlük sesli mesaj sayısı
+  static String dailyAudioDate = "dailyAudioDate"; // son sesli mesaj gönderilen tarih
   static String characterEditCount = "characterEditCount"; // toplam düzenlenen karakter sayısı
   static String guestDeviceId = "guestDeviceId"; // misafir kullanıcı için cihaz ID
+  static String notifications = "notifications"; // bildirimler listesi (JSON)
 
 }

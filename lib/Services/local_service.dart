@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/rendering.dart';
 import 'package:friendfy/Local/local_db_keys.dart';
 import 'package:random_string/random_string.dart';
@@ -116,6 +115,41 @@ class LocalService {
     final today = DateTime.now();
     final todayString = "${today.year}-${today.month}-${today.day}";
     await prefs.setString(LocalDbKeys.dailyPhotoDate, todayString);
+  }
+
+  /// Günlük sesli mesaj sayısını alır (bugünkü)
+  Future<int> getDailyAudioCount() async {
+    final today = DateTime.now();
+    final todayString = "${today.year}-${today.month}-${today.day}";
+    final lastDate = prefs.getString(LocalDbKeys.dailyAudioDate);
+    
+    // Bugün ilk sesli mesaj mı?
+    if (lastDate != todayString) {
+      // Farklı bir gün, sayacı sıfırla
+      await prefs.setInt(LocalDbKeys.dailyAudioCount, 0);
+      await prefs.setString(LocalDbKeys.dailyAudioDate, todayString);
+      return 0;
+    }
+    
+    return prefs.getInt(LocalDbKeys.dailyAudioCount) ?? 0;
+  }
+
+  /// Günlük sesli mesaj sayısını artırır
+  Future<void> incrementDailyAudioCount() async {
+    final count = await getDailyAudioCount();
+    await prefs.setInt(LocalDbKeys.dailyAudioCount, count + 1);
+    
+    final today = DateTime.now();
+    final todayString = "${today.year}-${today.month}-${today.day}";
+    await prefs.setString(LocalDbKeys.dailyAudioDate, todayString);
+  }
+
+  /// Günlük sesli mesaj sayısını sıfırlar
+  Future<void> resetDailyAudioCount() async {
+    await prefs.setInt(LocalDbKeys.dailyAudioCount, 0);
+    final today = DateTime.now();
+    final todayString = "${today.year}-${today.month}-${today.day}";
+    await prefs.setString(LocalDbKeys.dailyAudioDate, todayString);
   }
 
   /// Toplam düzenlenen karakter sayısını alır

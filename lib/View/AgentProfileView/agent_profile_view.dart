@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chips_choice/chips_choice.dart';
@@ -6,11 +7,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/ViewControllers/agent_profile_view_controller.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Themes/colors.dart';
+import 'package:friendfy/Widgets/background.dart';
+import 'package:friendfy/Widgets/button.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/hero_icon_converter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -57,241 +61,365 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
                            agent.system == 0 && 
                            agent.creatorId == userId;
     
-    return Scaffold(
-      appBar: AppBar(
+    return BackgroundWidget(
+      child: Scaffold(
         backgroundColor: Colors.transparent,
-        automaticallyImplyLeading: false,
-        leading: IconButton(onPressed: ()=> navigatorKey.currentState?.pop(), icon: Icon(CupertinoIcons.back,color: Colors.white,)),
-
-      ),
-      extendBodyBehindAppBar: true,
-
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            padding: EdgeInsets.only(bottom: 75.h),
-            child: Column(
-             crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadiusGeometry.only(bottomLeft: Radius.circular(40.r),bottomRight: Radius.circular(40).r),
-                  child: CachedNetworkImage(
-                    width: MediaQuery.sizeOf(context).width,
-                    height: 336.h,
-                    fit: BoxFit.cover,
-                    imageUrl: agent!.photoURL,
-                    placeholder: (context, url) => Shimmer.fromColors(
-                      baseColor: Colors.grey[300]!,
-                      highlightColor: Colors.grey[100]!,
-                      child: Container(
-                        width: MediaQuery.sizeOf(context).width,
-                        height: 336.h,
-                        color: Colors.white,
-                      ),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      width: MediaQuery.sizeOf(context).width,
-                      height: 336.h,
-                      color: Colors.grey[300],
-                      child: Icon(Icons.person, size: 80),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 40.h,),
-               Padding(
-                 padding: const EdgeInsets.symmetric(horizontal: 15),
-                 child: Column(
-                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                     Row(
-                       children: [
-                         Text(agent.name,style: GoogleFonts.quicksand(fontWeight: FontWeight.w700,fontSize: 24.sp),),
-                         SizedBox(width: 10.w,),
-                         Row(
-                          children: icons,
-                         )
-                       ],
-                     ),
-                     SizedBox(height: 10.h,),
-                      Text(Translate.translate("personal_traits", context),style: GoogleFonts.quicksand(fontWeight: FontWeight.w700,fontSize: 14.sp),),
-                      Text(agent.character,style: GoogleFonts.quicksand(fontWeight: FontWeight.w400,fontSize: 15.sp),),
-           SizedBox(height: 20.h,),
-                      Text(Translate.translate("interests", context),style: GoogleFonts.quicksand(fontWeight: FontWeight.w700,fontSize: 14.sp),),
-                      SizedBox(
-                        width: MediaQuery.sizeOf(context).width,
-           
-                        child: ChipsChoice.single(
-             
-                 
-                          
-                          choiceItems: (List.from(jsonDecode(agent.interests))).map((a)=> C2Choice(label: a,value: a)).toList(),
-                            placeholderStyle: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.bold),
-                            choiceStyle: C2ChipStyle(
-                              margin: EdgeInsets.zero,
-                              foregroundStyle:  GoogleFonts.quicksand(color: Colors.black),
-                              backgroundColor: Colors.grey,
-                              backgroundOpacity: 0.1,
-                              
-                              borderRadius: BorderRadius.circular(30),
-                              avatarBackgroundColor: Colors.red
-                              
-                            ),
-                         
-                            direction: Axis.horizontal,
-                            wrapped: true,
-                            
-                              value: agent.interests,
-                             onChanged: (value) {
-                               
-                             },
-                        
-                            ),
-                      ),
-
-
-
-
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15).copyWith(top:40.r),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                GestureDetector(
-                  onTap: (){
-                    navigatorKey.currentState?.pushNamed("/editAgentView");
-                  },
-                  child: Container(
-                    width: MediaQuery.sizeOf(context).width,
-                    height: 50.h,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15), 
-                      borderRadius: BorderRadius.circular(50.r),
-                      border: Border.all(color: MyColors.purple, width: 2)
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        HeroIcon(HeroIcons.pencilSquare,color: MyColors.purple,style: HeroIconStyle.solid,),
-                        SizedBox(width: 10.w,),
-                        Text(Translate.translate("edit", context),style: GoogleFonts.quicksand(color:  MyColors.purple,fontWeight: FontWeight.w700,fontSize: 16.sp),)
-                      ],
-                    ),
-                  ),
-                ),
-                SizedBox(height: 10.h,),
-                GestureDetector(
-                  onTap: (){
-                    ref.read(AllControllers.agentsProfileViewController.notifier).startChat(agent);
-                  },
-                  child: Container(
-                    width: MediaQuery.sizeOf(context).width,
-                    height: 50.h,
-                    decoration: BoxDecoration(
-                      color: MyColors.purple, borderRadius: BorderRadius.circular(50.r)
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        HeroIcon(HeroIcons.sparkles,color: Colors.white,style: HeroIconStyle.solid,),
-                        SizedBox(width: 10.w,),
-                        Text(Translate.translate("chat_with", context).replaceAll("%%name%%", agent.name),style: GoogleFonts.quicksand(color:  Colors.white,fontWeight: FontWeight.w700,fontSize: 16.sp),)
-                      ],
-                    ),
-                  ),
-                ),
-                // Silme butonu - sadece kendi karakteri için
-                if (isOwnAgent) ...[
-                  SizedBox(height: 10.h,),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          centerTitle: true,
+          title: Text("Character Profile",style: GoogleFonts.quicksand(color: Colors.white,fontSize: 20.sp,fontWeight: FontWeight.bold),),
+          leading: IconButton(onPressed: ()=> navigatorKey.currentState?.pop(), icon: Icon(CupertinoIcons.back,color: Colors.white,)),
+      
+        ),
+       
+      
+        body: Padding(
+          padding: const EdgeInsets.all(20).copyWith(top: 0),
+          child: Column(
+            children: [
+              Column(
+               crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   GestureDetector(
-                    onTap: () async {
-                      // Silme onayı
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: Text(Translate.translate(TranslateKeys.delete, context)),
-                          content: Text('Are you sure you want to delete this character?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: Text(Translate.translate(TranslateKeys.cancel, context)),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(true),
-                              child: Text(
-                                Translate.translate(TranslateKeys.delete, context),
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                      
-                      if (confirmed == true) {
-                        await ref.read(AllControllers.agentsProfileViewController.notifier).deleteAgent();
-                      }
+                    onTap: () {
+                  //    _showFullScreenImage(context, agent.photoURL);
                     },
                     child: Container(
-                      width: MediaQuery.sizeOf(context).width,
-                      height: 50.h,
+                      height: 610.h,
                       decoration: BoxDecoration(
-                        color: Colors.red, 
-                        borderRadius: BorderRadius.circular(50.r)
+                         borderRadius: BorderRadiusGeometry.circular(16),
+                      ),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadiusGeometry.circular(16),
+                            child: CachedNetworkImage(
+                              width: MediaQuery.sizeOf(context).width,
+                              height: double.infinity,
+                              fit: BoxFit.cover,
+                              imageUrl: agent!.photoURL,
+                              placeholder: (context, url) => Shimmer.fromColors(
+                                baseColor: Colors.grey[300]!,
+                                highlightColor: Colors.grey[100]!,
+                                child: Container(
+                                  width: MediaQuery.sizeOf(context).width,
+                                  height: 336.h,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Container(
+                                width: MediaQuery.sizeOf(context).width,
+                                height: 336.h,
+                                color: Colors.grey[300],
+                                child: Icon(Icons.person, size: 80),
+                              ),
+                            ),
+                          ),
+                          
+        
+                          Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 20).r,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16).r,
+                                child: BackdropFilter(
+                                filter: ImageFilter.blur(sigmaX: 10,sigmaY: 5.5),
+                                child: Container(
+                                  width: double.infinity,
+                                  height: 179.h,
+                                  padding: EdgeInsets.symmetric(horizontal: 10,vertical: 5).copyWith(right: 0),
+                                  decoration: BoxDecoration(
+                                    
+                                    borderRadius: BorderRadius.circular(16).r,
+                                    color: Colors.black.withValues(alpha: 0.6)
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      SizedBox(
+                                        height: 21.h,
+                                        child: ListView(
+                                          scrollDirection: Axis.horizontal,
+                                          children: (List.from(jsonDecode(agent.interests))).map((a)=> interestWidget(a)).toList(),
+                                        ),
+                                      ),
+                                      SizedBox(height: 10,),
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                        
+                                        children: [
+                                        Text(agent.name,style: GoogleFonts.quicksand(fontWeight: FontWeight.bold,fontSize: 20.sp,color: Colors.white),),
+                                    SizedBox(width: 10.w,),
+                                     onlineWidget()
+                                      ],),
+                                      SizedBox(height: 5.h,),
+                                      Text(agent.character,style: GoogleFonts.quicksand(fontWeight: FontWeight.w400,fontSize: 14.sp,color: Colors.white),overflow: TextOverflow.ellipsis,maxLines: 3,),
+                                      SizedBox(height: 10.h,),
+                                                   GestureDetector(
+                    onTap: (){
+                      navigatorKey.currentState?.pushNamed("/editAgentView");
+                    },
+                    child: Container(
+                      margin: EdgeInsets.only(right: 20),
+                      width: MediaQuery.sizeOf(context).width,
+                      height: 36.h,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.4), 
+                        borderRadius: BorderRadius.circular(50.r),
+                 
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          HeroIcon(HeroIcons.trash,color: Colors.white,style: HeroIconStyle.solid,),
+                         SvgPicture.asset("assets/icons/edit.svg"),
                           SizedBox(width: 10.w,),
-                          Text(
-                            Translate.translate(TranslateKeys.delete, context),
-                            style: GoogleFonts.quicksand(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 16.sp
+                          Text(Translate.translate("edit", context),style: GoogleFonts.quicksand(color:  Colors.white,fontWeight: FontWeight.w700,fontSize: 12.sp),)
+                        ],
+                      ),
+                    ),
+                  ),
+        
+                                    ],
+                                  ),
+                                ),
+                                )
+                              ),
                             ),
                           )
                         ],
                       ),
                     ),
                   ),
-                ]
-              ],
-            ),
-          ),
+                  SizedBox(height: 20.h,),
 
 
-                  ],
+Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  children: [
+callButton(),
+SizedBox(width: 10.w,),
+Expanded(
+  child: MyGradientButton(
+    radius: BorderRadius.circular(50).r,
+    size: Size(200.w, 48.h),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        SvgPicture.asset("assets/icons/vieo_call.svg"),
+        SizedBox(width: 10.w,),
+        Text("Video Call",style: GoogleFonts.quicksand(color: Colors.white,fontSize: 20.sp,fontWeight: FontWeight.bold),)
+      ],
+    ),
+    
+  ),
+),
+SizedBox(width: 10.w,),
+messageButton()
+  ],
+),
+
+                 Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 15).copyWith(top:40.r),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            
+                        
+                       
+                        
+                          
+                            // Silme butonu - sadece kendi karakteri için
+                            if (isOwnAgent) ...[
+                                   SizedBox(height: 10.h,),
+                                   GestureDetector(
+                                     onTap: () async {
+                                       // Silme onayı
+                                       final confirmed = await showDialog<bool>(
+                 context: context,
+                 builder: (context) => AlertDialog(
+                   title: Text(Translate.translate(TranslateKeys.delete, context)),
+                   content: Text('Are you sure you want to delete this character?'),
+                   actions: [
+                     TextButton(
+                       onPressed: () => Navigator.of(context).pop(false),
+                       child: Text(Translate.translate(TranslateKeys.cancel, context)),
+                     ),
+                     TextButton(
+                       onPressed: () => Navigator.of(context).pop(true),
+                       child: Text(
+                         Translate.translate(TranslateKeys.delete, context),
+                         style: TextStyle(color: Colors.red),
+                       ),
+                     ),
+                   ],
                  ),
-               )
-              ],
+                                       );
+                                       
+                                       if (confirmed == true) {
+                 await ref.read(AllControllers.agentsProfileViewController.notifier).deleteAgent();
+                                       }
+                                     },
+                                     child: Container(
+                                       width: MediaQuery.sizeOf(context).width,
+                                       height: 50.h,
+                                       decoration: BoxDecoration(
+                 color: Colors.red, 
+                 borderRadius: BorderRadius.circular(50.r)
+                                       ),
+                                       child: Row(
+                 mainAxisAlignment: MainAxisAlignment.center,
+                 children: [
+                   HeroIcon(HeroIcons.trash,color: Colors.white,style: HeroIconStyle.solid,),
+                   SizedBox(width: 10.w,),
+                   Text(
+                     Translate.translate(TranslateKeys.delete, context),
+                     style: GoogleFonts.quicksand(
+                       color: Colors.white,
+                       fontWeight: FontWeight.w700,
+                       fontSize: 16.sp
+                     ),
+                   )
+                 ],
+                                       ),
+                                     ),
+                                   ),
+                            ]
+                          ],
+                        ),
+                 )
+                ],
+              ),
+          
+          
+          
+          
+               if(ref.watch(AllControllers.agentsProfileViewController).loadingScreen == true)...[
+                Container(
+                  width: MediaQuery.sizeOf(context).width,
+                  height: MediaQuery.sizeOf(context).height,
+                  color: Colors.black.withValues(alpha: 0.2),
+                  child: Center(
+                    child: Container(
+                      width: 60.w,
+                      height: 60.h,
+                      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7),borderRadius: BorderRadius.circular(10.r)),
+                      child: Center(
+                        child: SizedBox(width: 32.w,height: 32.h,child: CircularProgressIndicator.adaptive(backgroundColor: Colors.white,)),
+                      ),
+                    ),
+                  ),
+                )
+               ]
+          
+          
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+
+Widget callButton(){
+  return Container(
+    width:48.w ,
+    height: 48.h,
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+      color: Colors.black.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(30),
+      
+    ),
+    child: Center(
+      child: SvgPicture.asset("assets/icons/call.svg"),
+    ),
+  );
+}
+
+Widget messageButton(){
+  return Container(
+    width:48.w ,
+    height: 48.h,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(30),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+      color: Colors.black.withValues(alpha: 0.2)
+      
+    ),
+    child: Center(
+      child: SvgPicture.asset("assets/icons/messages-2.svg"),
+    ),
+  );
+}
+
+
+
+
+
+
+  Widget onlineWidget(){
+    return Row(
+      children: [
+        Container(width: 4.w,height: 4.h,decoration: BoxDecoration(color: Color(0xff34C759),borderRadius: BorderRadius.circular(20).r),),
+       SizedBox(width: 3.w,),
+        Text("Online",style: GoogleFonts.quicksand(color: Colors.white,fontSize: 12.sp,fontWeight: FontWeight.w600),)
+      ],
+    );
+  }
+
+  void _showFullScreenImage(BuildContext context, String imageUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            leading: IconButton(
+              icon: Icon(CupertinoIcons.back, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
             ),
           ),
-
-
-
-
-           if(ref.watch(AllControllers.agentsProfileViewController).loadingScreen == true)...[
-            Container(
-              width: MediaQuery.sizeOf(context).width,
-              height: MediaQuery.sizeOf(context).height,
-              color: Colors.black.withValues(alpha: 0.2),
-              child: Center(
-                child: Container(
-                  width: 60.w,
-                  height: 60.h,
-                  decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7),borderRadius: BorderRadius.circular(10.r)),
-                  child: Center(
-                    child: SizedBox(width: 32.w,height: 32.h,child: CircularProgressIndicator.adaptive(backgroundColor: Colors.white,)),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.contain,
+                placeholder: (context, url) => Center(
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                  ),
+                ),
+                errorWidget: (context, url, error) => Center(
+                  child: Icon(
+                    Icons.person,
+                    size: 100,
+                    color: Colors.white,
                   ),
                 ),
               ),
-            )
-           ]
-
-
-        ],
+            ),
+          ),
+        ),
+        fullscreenDialog: true,
       ),
     );
+  }
+
+  Widget interestWidget( String interest){
+    return Container(
+      height: 21.h,
+      margin: EdgeInsets.only(right: 5).r,
+      padding: EdgeInsets.symmetric(vertical: 5,horizontal: 10).r,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha:0.3),
+        borderRadius: BorderRadius.circular(30).r
+      ),
+      child: Text(interest,style: GoogleFonts.quicksand(color: Colors.white,fontSize: 10.sp,fontWeight: FontWeight.bold),),
+    );
+
   }
 }

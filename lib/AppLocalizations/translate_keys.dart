@@ -175,13 +175,36 @@ class TranslateKeys{
   static String birthdayNote = "birthday_note";
   static String shareInterests = "share_interests";
   static String shareExcitement = "share_excitement";
+  static String registerAiExpectationTitle = "register_ai_expectation_title";
+  static String registerAiTimingTitle = "register_ai_timing_title";
+  static String registerExpectFun = "register_expect_fun";
+  static String registerExpectConnection = "register_expect_connection";
+  static String registerExpectFlirting = "register_expect_flirting";
+  static String registerExpectComfort = "register_expect_comfort";
+  static String registerExpectMotivation = "register_expect_motivation";
+  static String registerTimeMorning = "register_time_morning";
+  static String registerTimeAfterWork = "register_time_after_work";
+  static String registerTimeLateNight = "register_time_late_night";
+  static String registerTimeRandomly = "register_time_randomly";
+  static String registerTimeFeelingDown = "register_time_feeling_down";
+  static String registerPleaseSelectOption = "register_please_select_option";
   static String next = "next";
   static String male = "male";
   static String female = "female";
+  /// Kısa cinsiyet segmenti (ör. kayıt ekranı)
+  static String genderPrivate = "gender_private";
   
   // Account Created View Keys
   static String accountHasBeenCreated = "account_has_been_created";
   static String accountCreatedSubtext = "account_created_subtext";
+  static String accountCreationProgressTitle = "account_creation_progress_title";
+  static String accountCreationProgressSubtitle = "account_creation_progress_subtitle";
+  static String accountSetupStepInterests = "account_setup_step_interests";
+  static String accountSetupStepHabits = "account_setup_step_habits";
+  static String accountSetupStepPlan = "account_setup_step_plan";
+  static String accountSetupStepContent = "account_setup_step_content";
+  static String accountGetStarted = "account_get_started";
+  static String accountCreationSignupFailed = "account_creation_signup_failed";
   
   // Home View Keys
   static String chatWithName = "chat_with_name";
@@ -210,6 +233,7 @@ class TranslateKeys{
   static String notificationsSubtext = "notificationsSubtext";
   
   static String goodMorning = "good_morning";
+  static String goodAfternoon = "good_afternoon";
   static String goodEvening = "good_evening";
   
   // Chat View Keys
@@ -256,5 +280,38 @@ class TranslateKeys{
   static String notificationPermissionMessage = "notification_permission_message";
   static String notNow = "not_now";
   static String enableNotifications = "enable_notifications";
+  
+  // Gallery Keys
+  static String gallery = "gallery";
+  static String selectFromGallery = "select_from_gallery";
+  static String addPhoto = "add_photo";
+  
+  // Camera Keys
+  static String retake = "retake";
+  static String usePhoto = "use_photo";
+  
+  // Chat Input Keys
+  static String enterMessage = "enter_message";
+  
+  // Profile Keys
+  static String birthdate = "birthdate";
+  static String genderPreference = "gender_preference";
+  static String loginMethod = "login_method";
+  static String emailLogin = "email_login";
+  static String googleLogin = "google_login";
+  static String appleLogin = "apple_login";
+  static String facebookLogin = "facebook_login";
+
+  /// Onboard carousel (dedicated copy per screen)
+  static String onboardTitle1 = "onboard_title_1";
+  static String onboardSubtitle1 = "onboard_subtitle_1";
+  static String onboardTitle2 = "onboard_title_2";
+  static String onboardSubtitle2 = "onboard_subtitle_2";
+  static String onboardTitle3 = "onboard_title_3";
+  static String onboardSubtitle3 = "onboard_subtitle_3";
+  static String onboardCta = "onboard_cta";
+
+  static String interestsLoadFailed = "interests_load_failed";
+  static String retry = "retry";
 
 }

@@ -13,11 +13,10 @@ import 'package:friendfy/Models/chat_model.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:friendfy/Services/premium_service.dart';
-import 'package:friendfy/Services/local_service.dart';
 import 'package:http/http.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:friendfy/AppLocalizations/translate.dart';
 
 class AgentProfileViewController extends StateNotifier<AgentProfileViewModel>{
   Ref? ref;
@@ -139,47 +138,35 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel>{
         log("💎 [PREMIUM CHECK] Premium aktif mi: $isPremium");
         
         if (!isPremium) {
-          final canUseTrial = PremiumService.canUseFreeTrial(user);
-          log("🎁 [PREMIUM CHECK] Bedava premium kullanılabilir mi: $canUseTrial");
+          // Free trial kullanıcıları da karakter düzenleyemez (paywall tetiklenmeli)
+          final canEdit = PremiumService.canEditCharacter(user, 0);
           
-          if (!canUseTrial) {
-            final prefs = await SharedPreferences.getInstance();
-            final localService = LocalService(prefs: prefs);
-            final currentEditCount = await localService.getCharacterEditCount();
-            final limit = PremiumService.getCharacterEditLimit(user);
+          if (!canEdit) {
+            log("❌ [PREMIUM CHECK] Karakter düzenleme/oluşturma için Premium gerekli");
             
-            log("👤 [PREMIUM CHECK] Mevcut düzenlenen karakter sayısı: $currentEditCount");
-            log("👤 [PREMIUM CHECK] Karakter düzenleme limiti: $limit");
+            state = state.copyWith(loadingScreen: false);
             
-            final canEdit = PremiumService.canEditCharacter(user, currentEditCount);
-            
-            if (!canEdit) {
-              log("❌ [PREMIUM CHECK] Karakter düzenleme limiti aşıldı! ($currentEditCount >= $limit)");
-              
-              state = state.copyWith(loadingScreen: false);
-              
-              // Limit aşıldı, premium ekranına yönlendir
-              try {
-                log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
-                await RevenueCatUI.presentPaywall();
-                log("✅ [PREMIUM CHECK] Premium ekranı açıldı");
-              } catch (e) {
-                log("⚠️ [PREMIUM CHECK] Premium ekranı açılamadı: $e");
-              }
-              
-              // Show error message
-              if (navigatorKey.currentContext != null) {
-                ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
-                  SnackBar(
-                    content: Text('You have reached the character edit limit. Upgrade to Premium for unlimited edits.'),
-                    backgroundColor: Colors.red,
-                    duration: Duration(seconds: 3),
-                  ),
-                );
-              }
-              
-              return;
+            // Premium ekranına yönlendir
+            try {
+              log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
+              await RevenueCatUI.presentPaywall();
+              log("✅ [PREMIUM CHECK] Premium ekranı açıldı");
+            } catch (e) {
+              log("⚠️ [PREMIUM CHECK] Premium ekranı açılamadı: $e");
             }
+            
+            // Show error message
+            if (navigatorKey.currentContext != null) {
+              ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
+                SnackBar(
+                  content: Text(Translate.translate('character_edit_requires_premium', navigatorKey.currentContext!)),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+            
+            return;
           }
         }
         
@@ -191,14 +178,8 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel>{
         if (response.statusCode == 200) {
           log("✅ [AGENT EDIT] Agent created successfully");
           
-          // Premium değilse karakter düzenleme sayacını artır (sadece yeni oluştururken)
-          if (!isPremium && !PremiumService.canUseFreeTrial(user)) {
-            final prefs = await SharedPreferences.getInstance();
-            final localService = LocalService(prefs: prefs);
-            await localService.incrementCharacterEditCount();
-            final newCount = await localService.getCharacterEditCount();
-            log("📊 [PREMIUM CHECK] Karakter düzenleme sayacı artırıldı: $newCount");
-          }
+          // Premium kullanıcılar için sayacı artırmaya gerek yok (sınırsız)
+          // Free trial ve normal kullanıcılar zaten paywall ile engellendi
         } else {
           log("❌ [AGENT EDIT] Failed to create custom agent: ${response.body}");
         }

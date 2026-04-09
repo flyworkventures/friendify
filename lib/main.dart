@@ -95,7 +95,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     final appPrv = ref.watch(appProvider);
     
     return ScreenUtilInit(
-      designSize: Size(393, 852),
+      designSize: Size(430, 852),
       child: MaterialApp(
         supportedLocales: AppConstants.supportedLocales,
             localizationsDelegates: AppConstants.localizationsDelegates,

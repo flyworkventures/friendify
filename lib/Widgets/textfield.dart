@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 class MyTextField extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final int? maxLength;
   final int? maxLines;
   final InputBorder? border;
@@ -35,6 +36,7 @@ class MyTextField extends StatelessWidget {
   const MyTextField({
     super.key,
     required this.controller,
+    this.focusNode,
     this.maxLength,
     this.maxLines = 1,
     this.border,
@@ -74,7 +76,7 @@ class MyTextField extends StatelessWidget {
       width: width,
       height: height ,
       child: TextFormField(
-     
+        focusNode: focusNode,
         controller: controller,
         maxLength: maxLength,
         maxLines: maxLines,

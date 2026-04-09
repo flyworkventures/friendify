@@ -98,7 +98,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel>{
           debugPrint("✅ [Google Auth] Recent agents fetched");
           
           debugPrint("✨ [Google Auth] All data fetched, navigating to home");
-          await navigatorKey.currentState?.pushNamed('/bottomNavbar');
+          await navigatorKey.currentState?.pushNamedAndRemoveUntil('/bottomNavbar', (route) => false);
         }
       } else {
         debugPrint("⚠️ [Google Auth] Google Sign-In account is null");
@@ -170,7 +170,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel>{
           await ref.read(AllControllers.agentsViewController.notifier).getRecentAgents();
           
           debugPrint("✨ All data fetched, navigating to home");
-          await navigatorKey.currentState?.pushNamed('/bottomNavbar');
+          await navigatorKey.currentState?.pushNamedAndRemoveUntil('/bottomNavbar', (route) => false);
         }
       } else {
         debugPrint("⚠️ Facebook login cancelled or failed");
@@ -256,7 +256,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel>{
           await ref.read(AllControllers.agentsViewController.notifier).getRecentAgents();
           
           debugPrint("✨ All data fetched, navigating to home");
-          await navigatorKey.currentState?.pushNamed('/bottomNavbar');
+          await navigatorKey.currentState?.pushNamedAndRemoveUntil('/bottomNavbar', (route) => false);
         }
       } else {
         debugPrint("⚠️ Apple login cancelled or failed");
@@ -304,7 +304,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel>{
         await ref.read(AllControllers.agentsViewController.notifier).getRecentAgents();
         
         debugPrint("✨ All data fetched, navigating to home");
-        await navigatorKey.currentState?.pushNamed('/bottomNavbar');
+        await navigatorKey.currentState?.pushNamedAndRemoveUntil('/bottomNavbar', (route) => false);
       } else {
         debugPrint("❌ Guest login failed: ${response.statusCode}");
         var errorJson = jsonDecode(response.body);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -6,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:http/http.dart' as http;
-import 'package:friendfy/Models/user_model.dart';
 
 class HttpService {
 	final String baseUrl;
@@ -23,12 +23,36 @@ class HttpService {
 
 
  Future<http.Response> post({required String path,dynamic body,Map<String, String>? headers}) async{
-  log("sent body: $body, header: $header");
- http.Response response = await http.post(Uri.parse("$baseUrl$path"),body: body == null ? null : jsonEncode(body),headers: header);
- if (response.statusCode != 200) {
-   //log("POST: Response ${response.body}");
- }
- return response;
+  try {
+    log("sent body: $body, header: $header");
+    http.Response response = await http.post(
+      Uri.parse("$baseUrl$path"),
+      body: body == null ? null : jsonEncode(body),
+      headers: headers ?? header,
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        throw TimeoutException('Request timeout', const Duration(seconds: 30));
+      },
+    );
+    
+    if (response.statusCode != 200) {
+      //log("POST: Response ${response.body}");
+    }
+    return response;
+  } on SocketException catch (e) {
+    log("❌ Network error: $e");
+    rethrow;
+  } on HttpException catch (e) {
+    log("❌ HTTP error: $e");
+    rethrow;
+  } on FormatException catch (e) {
+    log("❌ Format error: $e");
+    rethrow;
+  } catch (e) {
+    log("❌ Unexpected error in POST request: $e");
+    rethrow;
+  }
  }
 
 

@@ -57,6 +57,10 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Friendfy needs camera access to take photos and send them in chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Friendfy needs photo library access to select and send photos in chat.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Friendfy requests microphone permission to record your voice.</string>
 	<key>NSUserNotificationsUsageDescription</key>

@@ -85,20 +85,20 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
     List<AgentModel> userAgents = applyFilters(allUserAgents);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
         
-        title: Text(Translate.translate("select_character", context),style: GoogleFonts.quicksand(color: Colors.black,fontWeight: FontWeight.w700,fontSize: 17.sp),),
-        actions: [
+        title: Text(Translate.translate("select_character", context),style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w700,fontSize: 17.sp),),
+   /*     actions: [
           IconButton(
             onPressed: () => _showFilterBottomSheet(context), 
             icon: HeroIcon(HeroIcons.adjustmentsHorizontal)
           )
-        ],
+        ],  */
       ),
     
       body: loading 
@@ -119,7 +119,7 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                     child: Text(
                       Translate.translate("your_personal_friends", context),
                       style: GoogleFonts.quicksand(
-                        color: Colors.black,
+                        color: Colors.white,
                         fontWeight: FontWeight.w700,
                         fontSize: 18.sp
                       ),
@@ -146,22 +146,12 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
 
                 // Others (System Agents) Section
                 if(agents.isNotEmpty)...[
-                  Padding(
-                    padding: EdgeInsets.only(left: 20.w, right: 20.w, top: 10.h, bottom: 10.h),
-                    child: Text(
-                      Translate.translate("others", context),
-                      style: GoogleFonts.quicksand(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18.sp
-                      ),
-                    ),
-                  ),
+ 
                   GridView.builder(
                     physics: NeverScrollableScrollPhysics(),
                     padding: EdgeInsets.only(left: 20.w, right: 20.w, bottom: 20.h),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      mainAxisExtent: 297.h,
+                      mainAxisExtent: 262.h,
                       mainAxisSpacing: 10.w,
                       crossAxisSpacing: 5.h,
                       crossAxisCount: 2
@@ -234,63 +224,77 @@ Widget agentWidget(AgentModel agent){
       }
     },
     
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(20.r),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withValues(alpha: 0.4),
-              offset: Offset(0, 0),
-              blurRadius: 10
-            )
-          ]
-        ),
-        child: Stack(
-          children: [
-            CachedNetworkImage(
-              imageUrl: agent.photoURL,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-              placeholder: (context, url) => Shimmer.fromColors(
-                baseColor: Colors.grey[300]!,
-                highlightColor: Colors.grey[100]!,
-                child: Container(
-                  color: Colors.white,
+    child: Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16.r),
+        color: Colors.black.withValues(alpha: 0.2),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.3)
+        )
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ClipRRect(
+              borderRadius: BorderRadiusGeometry.circular(16),
+              child: CachedNetworkImage(
+                imageUrl: agent.photoURL,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: 186.h,
+                
+                placeholder: (context, url) => Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!,
+                  highlightColor: Colors.grey[100]!,
+                  child: Container(
+                    color: Colors.white,
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: Colors.grey[300],
+                  child: Icon(Icons.person, size: 50),
                 ),
               ),
-              errorWidget: (context, url, error) => Container(
-                color: Colors.grey[300],
-                child: Icon(Icons.person, size: 50),
+            ),
+          ),
+          Align(
+      alignment: Alignment.bottomLeft,
+      child: Container(
+             padding: EdgeInsets.only(right: 10.w,left: 10.w,bottom: 10.h),
+         decoration: BoxDecoration(
+      
+        ),
+             
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // İsim
+            Text(
+              agent.name,
+              style: GoogleFonts.quicksand(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14.sp,
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    offset: Offset(0, 1),
+                    blurRadius: 3,
+                  )
+                ]
               ),
             ),
-            Align(
-        alignment: Alignment.bottomLeft,
-        child: Container(
-       padding: EdgeInsets.only(right: 10.w,left: 10.w,bottom: 10.h),
-           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              
-              colors: agent.gender == "Kadın" 
-                        ? [Color(0xffAB10E2),Color(0xff3330FE).withValues(alpha: 0.0)]
-                        : [Color(0xff2D30FF),Color(0xff3330FE).withValues(alpha: 0.0)],
-              end: Alignment.topCenter,begin: Alignment.bottomCenter),
-            borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20.r),bottomRight: Radius.circular(20.r))
-          ),
-       
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // İsim
+
+            // Karakter (speakingStyle)
+            if (agent.speakingStyle != null && agent.speakingStyle!.isNotEmpty)
               Text(
-                agent.name,
+                agent.speakingStyle ?? "",
                 style: GoogleFonts.quicksand(
                   color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w400,
+                  fontSize: 10.sp,
                   shadows: [
                     Shadow(
                       color: Colors.black.withValues(alpha: 0.5),
@@ -299,44 +303,19 @@ Widget agentWidget(AgentModel agent){
                     )
                   ]
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              SizedBox(height: 5.h),
-              // Karakter (speakingStyle)
-              if (agent.speakingStyle != null && agent.speakingStyle!.isNotEmpty)
-                Text(
-                  agent.speakingStyle ?? "",
-                  style: GoogleFonts.quicksand(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 12.sp,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        offset: Offset(0, 1),
-                        blurRadius: 3,
-                      )
-                    ]
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              SizedBox(height: 8.h),
-              // İkonlar
-              if (icons.isNotEmpty)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: icons,
-                ),
-            ],
-          ),
-        
-          ),
+       
+   
+          ],
         ),
       
-          ]  
-  )
-  )));
+        ),
+      ),
+            
+        ]  
+        )));
   
 }
 

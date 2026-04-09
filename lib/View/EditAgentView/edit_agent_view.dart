@@ -14,7 +14,6 @@ import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/Widgets/textfield.dart';
 import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:heroicons/heroicons.dart';
 import 'package:shimmer/shimmer.dart';
 
 class EditAgentView extends ConsumerStatefulWidget {
@@ -28,7 +27,9 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
   late TextEditingController nameController;
   late TextEditingController characterController;
   late TextEditingController ageController;
+  late TextEditingController newInterestController;
   late List<String> selectedInterests;
+  late List<String> availableInterests; // Dinamik liste
   late String selectedGender;
 
   @override
@@ -39,7 +40,26 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
     nameController = TextEditingController(text: agent?.name ?? '');
     characterController = TextEditingController(text: agent?.character ?? '');
     ageController = TextEditingController(text: agent?.age.toString() ?? '');
-    selectedInterests = agent != null ? List<String>.from(jsonDecode(agent.interests)) : [];
+    newInterestController = TextEditingController();
+    
+    // Başlangıç ilgi alanları listesi (localization key'leri)
+    final defaultInterests = [
+      'music', 'sports', 'movies', 'books', 'travel', 
+      'gaming', 'cooking', 'art', 'technology', 'fitness'
+    ];
+    
+    // Agent'tan gelen ilgi alanları
+    final agentInterests = agent != null ? List<String>.from(jsonDecode(agent.interests)) : [];
+    selectedInterests = List.from(agentInterests);
+    
+    // Mevcut ilgi alanları listesini oluştur: default + agent'tan gelen özel ilgi alanları
+    availableInterests = List.from(defaultInterests);
+    for (var interest in agentInterests) {
+      if (!availableInterests.contains(interest)) {
+        availableInterests.add(interest); // Özel ilgi alanlarını ekle
+      }
+    }
+    
     selectedGender = agent?.gender ?? 'male';
   }
 
@@ -48,13 +68,50 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
     nameController.dispose();
     characterController.dispose();
     ageController.dispose();
+    newInterestController.dispose();
     super.dispose();
   }
 
-  final List<String> availableInterests = [
-    'Music', 'Sports', 'Movies', 'Books', 'Travel', 
-    'Gaming', 'Cooking', 'Art', 'Technology', 'Fitness'
-  ];
+  void _addCustomInterest() {
+    final newInterest = newInterestController.text.trim();
+    if (newInterest.isNotEmpty && !availableInterests.contains(newInterest)) {
+      setState(() {
+        availableInterests.add(newInterest);
+        selectedInterests.add(newInterest);
+        newInterestController.clear();
+      });
+    }
+  }
+
+  void _removeInterest(String interest) {
+    setState(() {
+      selectedInterests.remove(interest);
+      // Eğer özel bir ilgi alanıysa (default listede yoksa), listeden de kaldır
+      final defaultInterests = [
+        'music', 'sports', 'movies', 'books', 'travel', 
+        'gaming', 'cooking', 'art', 'technology', 'fitness'
+      ];
+      if (!defaultInterests.contains(interest)) {
+        availableInterests.remove(interest);
+      }
+    });
+  }
+
+  /// İlgi alanını localize eder (default listede varsa translate eder, yoksa olduğu gibi döner)
+  String _getLocalizedInterest(String interest) {
+    final defaultInterests = [
+      'music', 'sports', 'movies', 'books', 'travel', 
+      'gaming', 'cooking', 'art', 'technology', 'fitness'
+    ];
+    
+    // Eğer default listede varsa, localization key olarak kullan
+    if (defaultInterests.contains(interest.toLowerCase())) {
+      return Translate.translate(interest.toLowerCase(), context);
+    }
+    
+    // Özel ilgi alanı ise olduğu gibi döndür
+    return interest;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +181,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
 
                 // Name Field
                 Text(
-                  'Name',
+                  Translate.translate("name", context),
                   style: GoogleFonts.quicksand(
                     color: Colors.black,
                     fontWeight: FontWeight.w600,
@@ -134,14 +191,14 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                 SizedBox(height: 8.h),
                 MyTextField(
                   controller: nameController,
-                  hintText: 'Enter name',
+                  hintText: Translate.translate("enter_name", context),
                   obscure: false,
                 ),
                 SizedBox(height: 20.h),
 
                 // Character/Personality Field
                 Text(
-                  'Personal Traits',
+                  Translate.translate("personal_traits", context),
                   style: GoogleFonts.quicksand(
                     color: Colors.black,
                     fontWeight: FontWeight.w600,
@@ -151,7 +208,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                 SizedBox(height: 8.h),
                 MyTextField(
                   controller: characterController,
-                  hintText: 'Describe personality traits',
+                  hintText: Translate.translate("describe_personality_traits", context),
                   obscure: false,
                   maxLines: 4,
                 ),
@@ -159,7 +216,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
 
                 // Age Field
                 Text(
-                  'Age',
+                  Translate.translate("age", context),
                   style: GoogleFonts.quicksand(
                     color: Colors.black,
                     fontWeight: FontWeight.w600,
@@ -169,7 +226,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                 SizedBox(height: 8.h),
                 MyTextField(
                   controller: ageController,
-                  hintText: 'Enter age',
+                  hintText: Translate.translate("enter_age", context),
                   obscure: false,
                   keyboardType: TextInputType.number,
                 ),
@@ -177,7 +234,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
 
                 // Gender Selection
                 Text(
-                  'Gender',
+                  Translate.translate("gender", context),
                   style: GoogleFonts.quicksand(
                     color: Colors.black,
                     fontWeight: FontWeight.w600,
@@ -204,7 +261,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                           ),
                           child: Center(
                             child: Text(
-                              'Male',
+                              Translate.translate("male", context),
                               style: GoogleFonts.quicksand(
                                 color: Colors.black,
                                 fontWeight: FontWeight.w600,
@@ -232,7 +289,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                           ),
                           child: Center(
                             child: Text(
-                              'Female',
+                              Translate.translate("female", context),
                               style: GoogleFonts.quicksand(
                                 color: Colors.black,
                                 fontWeight: FontWeight.w600,
@@ -248,7 +305,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
 
                 // Interests Selection
                 Text(
-                  'Interests',
+                  Translate.translate("interests", context),
                   style: GoogleFonts.quicksand(
                     color: Colors.black,
                     fontWeight: FontWeight.w600,
@@ -256,6 +313,58 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                   ),
                 ),
                 SizedBox(height: 8.h),
+                
+                // Seçili ilgi alanları (silinebilir chip'ler - hafif silik, sadece seçili olanlar)
+                Wrap(
+                  spacing: 8.w,
+                  runSpacing: 8.h,
+                  children: selectedInterests.map((interest) {
+                    return Container(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width - 60.w, // Ekran genişliğinden padding çıkar
+                      ),
+                      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(20.r),
+                        border: Border.all(
+                          color: Colors.grey.shade300,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              // İlgi alanını localize et (eğer default listede varsa)
+                              _getLocalizedInterest(interest),
+                              style: GoogleFonts.quicksand(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13.sp,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                          SizedBox(width: 6.w),
+                          GestureDetector(
+                            onTap: () => _removeInterest(interest),
+                            child: Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(height: 16.h),
+                
+                // Mevcut ilgi alanlarından seçim (sadece seçili olmayanlar gösterilecek)
                 ChipsChoice.multiple(
                   value: selectedInterests,
                   onChanged: (val) {
@@ -264,7 +373,11 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                     });
                   },
                   choiceItems: availableInterests
-                      .map((interest) => C2Choice(value: interest, label: interest))
+                      .where((interest) => !selectedInterests.contains(interest)) // Sadece seçili olmayanları göster
+                      .map((interest) => C2Choice(
+                        value: interest, 
+                        label: _getLocalizedInterest(interest)
+                      ))
                       .toList(),
                   choiceStyle: C2ChipStyle.filled(
                     foregroundStyle: GoogleFonts.quicksand(color: Colors.black),
@@ -284,6 +397,56 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                     borderRadius: BorderRadius.circular(30),
                   ),
                   wrapped: true,
+                ),
+                SizedBox(height: 16.h),
+                
+                // Yeni ilgi alanı ekleme
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: newInterestController,
+                        decoration: InputDecoration(
+                          hintText: Translate.translate("add_custom_interest", context),
+                          hintStyle: GoogleFonts.quicksand(
+                            color: Colors.grey.shade400,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10.r),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10.r),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10.r),
+                            borderSide: BorderSide(color: MyColors.purple, width: 2),
+                          ),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 15.w, vertical: 12.h),
+                        ),
+                        style: GoogleFonts.quicksand(),
+                        onSubmitted: (_) => _addCustomInterest(),
+                      ),
+                    ),
+                    SizedBox(width: 10.w),
+                    GestureDetector(
+                      onTap: _addCustomInterest,
+                      child: Container(
+                        width: 50.w,
+                        height: 50.h,
+                        decoration: BoxDecoration(
+                          color: MyColors.purple,
+                          borderRadius: BorderRadius.circular(10.r),
+                        ),
+                        child: Icon(
+                          Icons.add,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 SizedBox(height: 30.h),
 

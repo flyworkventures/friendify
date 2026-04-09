@@ -7,15 +7,11 @@ class BackgroundWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return          Container(
-          width: MediaQuery.sizeOf(context).width,
-          height: MediaQuery.sizeOf(context).height,
-          decoration: BoxDecoration(
-          
-            gradient: LinearGradient(colors: [MyColors.purple,MyColors.purpleAccent,MyColors.pinkAccent,MyColors.pink],begin: Alignment.topLeft,end: Alignment.bottomRight)
-          ),
-          child: child,
-      
-        );
+    return  Stack(
+      children: [
+        Image.asset("assets/images/bckg.png",width: MediaQuery.sizeOf(context).width,height: MediaQuery.sizeOf(context).height,fit: BoxFit.cover,),
+        child
+      ],
+    );
   }
 }
