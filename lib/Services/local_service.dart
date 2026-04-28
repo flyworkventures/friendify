@@ -8,33 +8,53 @@ class LocalService {
 
   LocalService({required this.prefs});
 
-  Future<bool?> getFirstOpen()async{
+  Future<bool?> getFirstOpen() async {
     final isFirstOpen = prefs.getBool(LocalDbKeys.firstLogin);
     return isFirstOpen;
   }
 
-    Future<void> changeFirstOpen(bool value)async{
-    await prefs.setBool(LocalDbKeys.firstLogin,value);
+  Future<void> changeFirstOpen(bool value) async {
+    await prefs.setBool(LocalDbKeys.firstLogin, value);
   }
 
-
-
-
-  Future<String?> getToken()async{
+  Future<String?> getToken() async {
     final token = prefs.getString(LocalDbKeys.authToken);
     return token;
   }
 
+  Future<String?> getRefreshToken() async {
+    final token = prefs.getString(LocalDbKeys.refreshToken);
+    return token;
+  }
 
-    Future<bool?> setToken(String newToken)async{
+  Future<bool?> setToken(String newToken) async {
     try {
-      bool updated = await prefs.setString(LocalDbKeys.authToken,newToken);
+      bool updated = await prefs.setString(LocalDbKeys.authToken, newToken);
       return updated;
     } catch (e) {
       debugPrint("Token güncellenirken bir sorun oluştu. $e");
       return false;
     }
+  }
 
+  Future<bool?> setRefreshToken(String newToken) async {
+    try {
+      bool updated = await prefs.setString(LocalDbKeys.refreshToken, newToken);
+      return updated;
+    } catch (e) {
+      debugPrint("Refresh token güncellenirken bir sorun oluştu. $e");
+      return false;
+    }
+  }
+
+  Future<void> setAuthTokens({
+    required String accessToken,
+    String? refreshToken,
+  }) async {
+    await setToken(accessToken);
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      await setRefreshToken(refreshToken);
+    }
   }
 
   static Future<bool> deleteData(String key) async {
@@ -52,7 +72,7 @@ class LocalService {
     final today = DateTime.now();
     final todayString = "${today.year}-${today.month}-${today.day}";
     final lastDate = prefs.getString(LocalDbKeys.dailyMessageDate);
-    
+
     // Bugün ilk mesaj mı?
     if (lastDate != todayString) {
       // Farklı bir gün, sayacı sıfırla
@@ -60,7 +80,7 @@ class LocalService {
       await prefs.setString(LocalDbKeys.dailyMessageDate, todayString);
       return 0;
     }
-    
+
     return prefs.getInt(LocalDbKeys.dailyMessageCount) ?? 0;
   }
 
@@ -68,7 +88,7 @@ class LocalService {
   Future<void> incrementDailyMessageCount() async {
     final count = await getDailyMessageCount();
     await prefs.setInt(LocalDbKeys.dailyMessageCount, count + 1);
-    
+
     final today = DateTime.now();
     final todayString = "${today.year}-${today.month}-${today.day}";
     await prefs.setString(LocalDbKeys.dailyMessageDate, todayString);
@@ -87,7 +107,7 @@ class LocalService {
     final today = DateTime.now();
     final todayString = "${today.year}-${today.month}-${today.day}";
     final lastDate = prefs.getString(LocalDbKeys.dailyPhotoDate);
-    
+
     // Bugün ilk fotoğraf mı?
     if (lastDate != todayString) {
       // Farklı bir gün, sayacı sıfırla
@@ -95,7 +115,7 @@ class LocalService {
       await prefs.setString(LocalDbKeys.dailyPhotoDate, todayString);
       return 0;
     }
-    
+
     return prefs.getInt(LocalDbKeys.dailyPhotoCount) ?? 0;
   }
 
@@ -103,7 +123,7 @@ class LocalService {
   Future<void> incrementDailyPhotoCount() async {
     final count = await getDailyPhotoCount();
     await prefs.setInt(LocalDbKeys.dailyPhotoCount, count + 1);
-    
+
     final today = DateTime.now();
     final todayString = "${today.year}-${today.month}-${today.day}";
     await prefs.setString(LocalDbKeys.dailyPhotoDate, todayString);
@@ -122,7 +142,7 @@ class LocalService {
     final today = DateTime.now();
     final todayString = "${today.year}-${today.month}-${today.day}";
     final lastDate = prefs.getString(LocalDbKeys.dailyAudioDate);
-    
+
     // Bugün ilk sesli mesaj mı?
     if (lastDate != todayString) {
       // Farklı bir gün, sayacı sıfırla
@@ -130,7 +150,7 @@ class LocalService {
       await prefs.setString(LocalDbKeys.dailyAudioDate, todayString);
       return 0;
     }
-    
+
     return prefs.getInt(LocalDbKeys.dailyAudioCount) ?? 0;
   }
 
@@ -138,7 +158,7 @@ class LocalService {
   Future<void> incrementDailyAudioCount() async {
     final count = await getDailyAudioCount();
     await prefs.setInt(LocalDbKeys.dailyAudioCount, count + 1);
-    
+
     final today = DateTime.now();
     final todayString = "${today.year}-${today.month}-${today.day}";
     await prefs.setString(LocalDbKeys.dailyAudioDate, todayString);
@@ -171,7 +191,7 @@ class LocalService {
   /// UUID oluşturucu fonksiyon
   String _generateUUID() {
     var randomString = randomNumeric(15);
-   
+
     return randomString;
   }
 
@@ -190,12 +210,4 @@ class LocalService {
   Future<String?> getGuestDeviceId() async {
     return prefs.getString(LocalDbKeys.guestDeviceId);
   }
-
-
-
-
-
-
-  
- 
 }

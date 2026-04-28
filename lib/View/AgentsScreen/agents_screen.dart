@@ -27,22 +27,36 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
   // Filter state
   String? selectedGender; // null = Tümü, "Kadın", "Erkek"
   Set<String> selectedInterests = {};
+  bool _isEditFlow = false;
 
   @override
   void initState() {
-    // Edit mode'u false yap (normal kullanım için)
-    ref.read(AllControllers.agentsViewController.notifier).setEditMode(false);
     getAgents();
     super.initState();
   }
 
-  Future<void> getAgents() async{
-    List<AgentModel> agents = ref.read(AllControllers.agentsViewController).agents ?? [];
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final editFlowArg = args['editFlow'];
+      _isEditFlow = editFlowArg == true;
+    } else {
+      _isEditFlow = false;
+    }
+  }
+
+  Future<void> getAgents() async {
+    List<AgentModel> agents =
+        ref.read(AllControllers.agentsViewController).agents ?? [];
     if (agents.isEmpty) {
       await ref.read(AllControllers.agentsViewController.notifier).getAgents();
     }
     // Get user's custom agents
-    await ref.read(AllControllers.agentsViewController.notifier).getUserAgents();
+    await ref
+        .read(AllControllers.agentsViewController.notifier)
+        .getUserAgents();
   }
 
   List<AgentModel> applyFilters(List<AgentModel> agents) {
@@ -59,8 +73,12 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
       // Interests filter
       if (selectedInterests.isNotEmpty) {
         try {
-          List<String> agentInterests = List.from(jsonDecode(agent.interestsType));
-          bool hasMatchingInterest = agentInterests.any((interest) => selectedInterests.contains(interest));
+          List<String> agentInterests = List.from(
+            jsonDecode(agent.interestsType),
+          );
+          bool hasMatchingInterest = agentInterests.any(
+            (interest) => selectedInterests.contains(interest),
+          );
           if (!hasMatchingInterest) {
             return false;
           }
@@ -73,12 +91,15 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
     }).toList();
   }
 
-
   @override
   Widget build(BuildContext context) {
-    List<AgentModel> allAgents = ref.watch(AllControllers.agentsViewController).agents ?? [];
-    List<AgentModel> allUserAgents = ref.watch(AllControllers.agentsViewController).userAgents ?? [];
-    bool loading = ref.watch(AllControllers.agentsViewController.notifier).loading;
+    List<AgentModel> allAgents =
+        ref.watch(AllControllers.agentsViewController).agents ?? [];
+    List<AgentModel> allUserAgents =
+        ref.watch(AllControllers.agentsViewController).userAgents ?? [];
+    bool loading = ref
+        .watch(AllControllers.agentsViewController.notifier)
+        .loading;
 
     // Apply filters
     List<AgentModel> agents = applyFilters(allAgents);
@@ -91,233 +112,253 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
-        
-        title: Text(Translate.translate("select_character", context),style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w700,fontSize: 17.sp),),
-   /*     actions: [
+
+        title: Text(
+          Translate.translate("select_character", context),
+          style: GoogleFonts.quicksand(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 17.sp,
+          ),
+        ),
+        /*     actions: [
           IconButton(
             onPressed: () => _showFilterBottomSheet(context), 
             icon: HeroIcon(HeroIcons.adjustmentsHorizontal)
           )
         ],  */
       ),
-    
-      body: loading 
-      ? Center(
-        child:  SizedBox(width: 35,height: 35,child: CircularProgressIndicator(color: Colors.black,),),
-      )
-      : SingleChildScrollView(
-        padding: EdgeInsets.only(bottom: 90.h),
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-       
-                // User's Personal Friends Section
-                if(userAgents.isNotEmpty)...[
-                  Padding(
-                    padding: EdgeInsets.only(left: 20.w, right: 20.w, top: 15.h, bottom: 10.h),
-                    child: Text(
-                      Translate.translate("your_personal_friends", context),
-                      style: GoogleFonts.quicksand(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18.sp
-                      ),
-                    ),
-                  ),
-                  GridView.builder(
-                    physics: NeverScrollableScrollPhysics(),
-                    padding: EdgeInsets.only(left: 20.w, right: 20.w),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      mainAxisExtent: 297.h,
-                      mainAxisSpacing: 10.w,
-                      crossAxisSpacing: 5.h,
-                      crossAxisCount: 2
-                    ),
-                    itemCount: userAgents.length,
-                    shrinkWrap: true,
-                    itemBuilder: (context, index) {
-                      AgentModel item = userAgents[index];
-                      return agentWidget(item);
-                    }
-                  ),
-                  SizedBox(height: 20.h),
-                ],
 
-                // Others (System Agents) Section
-                if(agents.isNotEmpty)...[
- 
-                  GridView.builder(
-                    physics: NeverScrollableScrollPhysics(),
-                    padding: EdgeInsets.only(left: 20.w, right: 20.w, bottom: 20.h),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      mainAxisExtent: 262.h,
-                      mainAxisSpacing: 10.w,
-                      crossAxisSpacing: 5.h,
-                      crossAxisCount: 2
-                    ),
-                    itemCount: agents.length,
-                    shrinkWrap: true,
-                    itemBuilder: (context, index) {
-                      AgentModel item = agents[index];
-                      return agentWidget(item);
-                    }
-                  )
-                ]
-            ],
-          ),
+      body: loading
+          ? Center(
+              child: SizedBox(
+                width: 35,
+                height: 35,
+                child: CircularProgressIndicator(color: Colors.black),
+              ),
+            )
+          : SingleChildScrollView(
+              padding: EdgeInsets.only(bottom: 90.h),
+              child: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // User's Personal Friends Section
+                    if (userAgents.isNotEmpty) ...[
+                      Padding(
+                        padding: EdgeInsets.only(
+                          left: 20.w,
+                          right: 20.w,
+                          top: 15.h,
+                          bottom: 10.h,
+                        ),
+                        child: Text(
+                          Translate.translate("your_personal_friends", context),
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 18.sp,
+                          ),
+                        ),
+                      ),
+                      GridView.builder(
+                        physics: NeverScrollableScrollPhysics(),
+                             
+                        padding: EdgeInsets.only(
+                          left: 10.w,
+                          right: 10.w,
+                          bottom: 20.h,
+                        ),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          mainAxisExtent: 360.h,
+                          mainAxisSpacing: 10.w,
+                          crossAxisSpacing: 5.h,
+                          crossAxisCount: 2,
+                        ),
+                        itemCount: userAgents.length,
+                        shrinkWrap: true,
+                        itemBuilder: (context, index) {
+                          AgentModel item = userAgents[index];
+                          return agentWidget(item);
+                        },
+                      ),
+                      SizedBox(height: 20.h),
+                    ],
+
+                    // Others (System Agents) Section
+                    if (agents.isNotEmpty) ...[
+                      GridView.builder(
+                        physics: NeverScrollableScrollPhysics(),
+                        padding: EdgeInsets.only(
+                          left: 10.w,
+                          right: 10.w,
+                          bottom: 20.h,
+                        ),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          mainAxisExtent: 360.h,
+                          mainAxisSpacing: 10.w,
+                          crossAxisSpacing: 5.h,
+                          crossAxisCount: 2,
+                        ),
+                        itemCount: agents.length,
+                        shrinkWrap: true,
+                        itemBuilder: (context, index) {
+                          AgentModel item = agents[index];
+                          return agentWidget(item);
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Future createChat(AgentModel agent) async {
+    String? token = ref.read(AllControllers.userController)?.token;
+    String? refreshToken = ref
+        .read(AllControllers.userController)
+        ?.refreshToken;
+
+    var res = await http.post(
+      Uri.parse("${AppConstants.baseURL}${AppConstants.createChat}"),
+
+      headers: {
+        "x-auth-token": token!,
+        "x-refresh-token": refreshToken ?? "",
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({"userId": 1, "botId": 1}),
+    );
+    debugPrint(res.body);
+    if (res.statusCode == 200) {
+      var json = jsonDecode(res.body);
+      if (json["msg"] == "Created") {
+        debugPrint(json["conversationId"]);
+      }
+    }
+  }
+
+  Widget agentWidget(AgentModel agent) {
+    List<Widget> icons = [];
+    List<String> interest = List.from(jsonDecode(agent.interestsType));
+    for (var element in interest) {
+      icons.add(
+        HeroIcon(
+          interestToIcon[element]!,
+          color: Colors.white,
+          size: 18,
+          style: HeroIconStyle.solid,
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () {
+        ref
+            .read(AllControllers.agentsProfileViewController.notifier)
+            .changeAgentModel(agent);
+
+        if (_isEditFlow) {
+          navigatorKey.currentState?.pushNamed('/editAgentView');
+        } else {
+          navigatorKey.currentState?.pushNamed('/agentDetails');
+        }
+      },
+
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16.r),
+          color: Colors.black.withValues(alpha: 0.2),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: ClipRRect(
+                borderRadius: BorderRadiusGeometry.circular(16),
+                child: CachedNetworkImage(
+                  imageUrl: agent.photoURL,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: 276.h,
+
+                  placeholder: (context, url) => Shimmer.fromColors(
+                    baseColor: Colors.grey[300]!,
+                    highlightColor: Colors.grey[100]!,
+                    child: Container(color: Colors.white),
+                  ),
+                  errorWidget: (context, url, error) => Container(
+                    color: Colors.grey[300],
+                    child: Icon(Icons.person, size: 50),
+                  ),
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomLeft,
+              child: Expanded(
+                child: Container(
+                  padding: EdgeInsets.only(
+                    right: 10.w,
+                    left: 10.w,
+                    bottom: 5.h,
+                  ),
+                  decoration: BoxDecoration(),
+
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // İsim
+                      Text(
+                        agent.name,
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14.sp,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              offset: Offset(0, 1),
+                              blurRadius: 3,
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Karakter (speakingStyle)
+                      if (agent.speakingStyle != null &&
+                          agent.speakingStyle!.isNotEmpty)
+                        Text(
+                          agent.speakingStyle ?? "",
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w400,
+                            fontSize: 10.sp,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                offset: Offset(0, 1),
+                                blurRadius: 3,
+                              ),
+                            ],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
-
-Future createChat(AgentModel agent) async{
-
-
-   String? token = ref.read(AllControllers.userController)?.token;
-
- var res = await http.post(Uri.parse("${AppConstants.baseURL}${AppConstants.createChat}",),
-
-  headers: {"x-auth-token": token!,'Content-Type': 'application/json'},
-  body: jsonEncode(
-    {
-   "userId": 1 ,
-   "botId": 1
-}
-  )
-  );
-debugPrint(res.body);
-  if (res.statusCode == 200) {
-    var json = jsonDecode(res.body);
-    if (json["msg"] == "Created") {
-      debugPrint(json["conversationId"]);
-    
-      
-    }
-  }
-
-}
-
-
-
-Widget agentWidget(AgentModel agent){
-  List<Widget> icons = [];
-  List<String> interest = List.from(jsonDecode(agent.interestsType));
-  for (var element in interest) {
-    icons.add(HeroIcon(interestToIcon[element]!,color: Colors.white,size: 18,style: HeroIconStyle.solid,));
-  }
-  
-  return GestureDetector(
-    onTap: (){
-      // Edit mode kontrolü: Eğer anasayfadaki "Karakter Düzenle" butonundan gelindiyse direkt edit, değilse profil ekranı
-      final controller = ref.read(AllControllers.agentsViewController.notifier);
-      final editMode = controller.getEditMode();
-      
-      ref.read(AllControllers.agentsProfileViewController.notifier).changeAgentModel(agent);
-      
-      if (editMode) {
-        // Anasayfadaki "Karakter Düzenle" butonundan gelindi - direkt edit ekranına git
-        navigatorKey.currentState?.pushNamed('/editAgentView');
-      } else {
-        // Normal kullanım - karakter profil ekranına git
-        navigatorKey.currentState?.pushNamed('/agentDetails');
-      }
-    },
-    
-    child: Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16.r),
-        color: Colors.black.withValues(alpha: 0.2),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.3)
-        )
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: ClipRRect(
-              borderRadius: BorderRadiusGeometry.circular(16),
-              child: CachedNetworkImage(
-                imageUrl: agent.photoURL,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: 186.h,
-                
-                placeholder: (context, url) => Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!,
-                  highlightColor: Colors.grey[100]!,
-                  child: Container(
-                    color: Colors.white,
-                  ),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  color: Colors.grey[300],
-                  child: Icon(Icons.person, size: 50),
-                ),
-              ),
-            ),
-          ),
-          Align(
-      alignment: Alignment.bottomLeft,
-      child: Container(
-             padding: EdgeInsets.only(right: 10.w,left: 10.w,bottom: 10.h),
-         decoration: BoxDecoration(
-      
-        ),
-             
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // İsim
-            Text(
-              agent.name,
-              style: GoogleFonts.quicksand(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 14.sp,
-                shadows: [
-                  Shadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    offset: Offset(0, 1),
-                    blurRadius: 3,
-                  )
-                ]
-              ),
-            ),
-
-            // Karakter (speakingStyle)
-            if (agent.speakingStyle != null && agent.speakingStyle!.isNotEmpty)
-              Text(
-                agent.speakingStyle ?? "",
-                style: GoogleFonts.quicksand(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w400,
-                  fontSize: 10.sp,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      offset: Offset(0, 1),
-                      blurRadius: 3,
-                    )
-                  ]
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-       
-   
-          ],
-        ),
-      
-        ),
-      ),
-            
-        ]  
-        )));
-  
-}
 
   void _showFilterBottomSheet(BuildContext context) {
     // Temporary state for bottom sheet
@@ -528,10 +569,7 @@ Widget agentWidget(AgentModel agent){
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[
-              icon,
-              SizedBox(width: 5.w),
-            ],
+            if (icon != null) ...[icon, SizedBox(width: 5.w)],
             Text(
               label,
               style: GoogleFonts.quicksand(
@@ -545,5 +583,4 @@ Widget agentWidget(AgentModel agent){
       ),
     );
   }
-
 }

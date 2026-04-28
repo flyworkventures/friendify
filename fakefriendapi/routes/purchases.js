@@ -176,6 +176,105 @@ router.post('/verify-receipt', middleware, async (req, res) => {
     }
 });
 
+/**
+ * RevenueCat memberships sync endpoint
+ * POST /purchases/sync-memberships
+ *
+ * Beklenen body:
+ * {
+ *   "userId": 123,
+ *   "source": "revenuecat_client",
+ *   "memberships": [
+ *     {
+ *       "startDate": "2025-12-16T14:08:42.000Z",
+ *       "endDate": "2026-12-16T14:08:42.000Z",
+ *       "productId": "friendify_pro",
+ *       "type": "paid",
+ *       "isActive": true,
+ *       "purchasedAt": "2025-12-16T14:08:42.000Z"
+ *     }
+ *   ],
+ *   "revenuecat": { ...opsiyonel metadata... }
+ * }
+ */
+router.post('/sync-memberships', middleware, async (req, res) => {
+    try {
+        const { userId, source, memberships, revenuecat } = req.body || {};
+
+        if (!userId) {
+            return res.status(400).json({
+                msg: 'userId is required',
+                success: false
+            });
+        }
+
+        if (!Array.isArray(memberships)) {
+            return res.status(400).json({
+                msg: 'memberships must be an array',
+                success: false
+            });
+        }
+
+        const userCheck = await getQuery("SELECT * FROM `users` WHERE id = ?", [userId]);
+        if (userCheck.length === 0) {
+            return res.status(404).json({
+                msg: 'User not found',
+                success: false
+            });
+        }
+
+        const normalizeDate = (value) => {
+            if (!value) return null;
+            const parsed = new Date(value);
+            if (Number.isNaN(parsed.getTime())) return null;
+            return parsed.toISOString();
+        };
+
+        const normalizedMemberships = memberships
+            .map((item) => ({
+                startDate: normalizeDate(item.startDate) || new Date().toISOString(),
+                endDate: normalizeDate(item.endDate),
+                productId: String(item.productId || ''),
+                type: String(item.type || 'paid'),
+                isActive: Boolean(item.isActive),
+                purchasedAt: normalizeDate(item.purchasedAt),
+            }))
+            .filter((item) => item.productId.length > 0);
+
+        await query(
+            "UPDATE `users` SET `memberships` = ? WHERE id = ?",
+            [JSON.stringify(normalizedMemberships), userId]
+        );
+
+        const updatedUserResult = await getQuery("SELECT * FROM `users` WHERE id = ?", [userId]);
+        const updatedUser = updatedUserResult[0];
+
+        console.log("✅ Memberships synced", {
+            userId,
+            source: source || 'unknown',
+            membershipsCount: normalizedMemberships.length,
+            hasRevenueCatMeta: !!revenuecat
+        });
+
+        return res.status(200).json({
+            msg: 'Memberships synced successfully',
+            success: true,
+            format: {
+                source: source || 'unknown',
+                membershipsCount: normalizedMemberships.length
+            },
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error('❌ sync-memberships error:', error);
+        return res.status(500).json({
+            msg: 'Server error',
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;
 
 

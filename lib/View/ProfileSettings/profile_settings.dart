@@ -29,20 +29,26 @@ class ProfileSettings extends ConsumerStatefulWidget {
 }
 
 class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
-
   @override
   void initState() {
-    Future.microtask(()=> ref.read(AllControllers.profileSettingsViewController.notifier).init());
+    Future.microtask(
+      () => ref
+          .read(AllControllers.profileSettingsViewController.notifier)
+          .init(),
+    );
     super.initState();
   }
+
   @override
   void didChangeDependencies() {
-
     super.didChangeDependencies();
   }
+
   @override
   Widget build(BuildContext context) {
-    final profileState = ref.watch(AllControllers.profileSettingsViewController);
+    final profileState = ref.watch(
+      AllControllers.profileSettingsViewController,
+    );
     final user = ref.watch(AllControllers.userController);
     final selectedBirthdate = profileState.birthdate ?? user?.birthdate;
 
@@ -51,9 +57,19 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
-          leading: IconButton(onPressed: ()=> navigatorKey.currentState?.pop(), icon: Icon(CupertinoIcons.back,color: Colors.white,)),
+          leading: IconButton(
+            onPressed: () => navigatorKey.currentState?.pop(),
+            icon: Icon(CupertinoIcons.back, color: Colors.white),
+          ),
           centerTitle: true,
-          title: Text(Translate.translate("profile_settings", context),style: GoogleFonts.quicksand(color: Colors.white,fontSize: 17.sp,fontWeight: FontWeight.w800),),
+          title: Text(
+            Translate.translate("profile_settings", context),
+            style: GoogleFonts.quicksand(
+              color: Colors.white,
+              fontSize: 17.sp,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
         extendBodyBehindAppBar: true,
         body: Stack(
@@ -62,37 +78,69 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 top(),
-                SizedBox(height: 20.h,),
-            Padding(
-              padding:  EdgeInsets.symmetric(horizontal: 20.r),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                     
-                      SizedBox(height: 10.h,),
-                      textField(controller: ref.read(AllControllers.profileSettingsViewController.notifier).nameController, hintText: Translate.translate("full_name", context), title: Translate.translate("full_name", context),enabled: true,onChanged: (val) => ref.read(AllControllers.profileSettingsViewController.notifier).nameChanged(val),),
-                      SizedBox(height: 10.h,),
-                   //   if(ref.watch(AllControllers.userController)?.email.contains('@privaterelay.appleid.com') == false)...[
-                   Text("Gender",style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w600,fontSize: 13.sp),),
-       SizedBox(height: 10.h,),
+                SizedBox(height: 20.h),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20.r),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(height: 10.h),
+                      textField(
+                        controller: ref
+                            .read(
+                              AllControllers
+                                  .profileSettingsViewController
+                                  .notifier,
+                            )
+                            .nameController,
+                        hintText: Translate.translate("full_name", context),
+                        title: Translate.translate("full_name", context),
+                        enabled: true,
+                        onChanged: (val) => ref
+                            .read(
+                              AllControllers
+                                  .profileSettingsViewController
+                                  .notifier,
+                            )
+                            .nameChanged(val),
+                      ),
+                      SizedBox(height: 10.h),
+                      //   if(ref.watch(AllControllers.userController)?.email.contains('@privaterelay.appleid.com') == false)...[
+                      Text(
+                        Translate.translate("gender", context),
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.sp,
+                        ),
+                      ),
+                      SizedBox(height: 10.h),
                       _buildGenderSegmentedControl(context),
                       SizedBox(height: 14.h),
                       _ProfileBirthdateSection(
-                        title: Translate.translate(TranslateKeys.birthdate, context),
+                        title: Translate.translate(
+                          TranslateKeys.birthdate,
+                          context,
+                        ),
                         existingBirthdate: selectedBirthdate,
                         onDateChanged: (d) {
-                          ref.read(AllControllers.profileSettingsViewController.notifier).birthdateChanged(d);
+                          ref
+                              .read(
+                                AllControllers
+                                    .profileSettingsViewController
+                                    .notifier,
+                              )
+                              .birthdateChanged(d);
                         },
                       ),
+
                       //],
-      
-                   
-                ],
-              ),
-            )
+                    ],
+                  ),
+                ),
               ],
             ),
-      
+
             SafeArea(
               child: Align(
                 alignment: Alignment.bottomCenter,
@@ -101,8 +149,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-              
-      /*
+                      /*
                       SizedBox(height: 10.h,),
                       
                       MyButton(
@@ -122,50 +169,87 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                         ),
                       ),
       */
-                      SizedBox(height: 10.h,),
+                      SizedBox(height: 10.h),
                       MyButton(
-                        onTap: () => _showDeleteAccountDialog(context),
+                        onTap: () => _showDeleteAccountBottomSheet(context),
                         radius: BorderRadius.circular(50.r),
                         margin: EdgeInsets.symmetric(horizontal: 10.r),
                         size: Size(MediaQuery.sizeOf(context).width, 50.h),
                         backgroundColor: Colors.transparent,
                         child: Center(
-                          child: Padding(padding: EdgeInsets.only(left: 17.r), child: Row(
-                           mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Container(
-                                width: 30.w,
-                                height: 30.h,
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.3),
-                                  borderRadius: BorderRadius.circular(10).r
+                          child: Padding(
+                            padding: EdgeInsets.only(left: 17.r),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 30.w,
+                                  height: 30.h,
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.3),
+                                    borderRadius: BorderRadius.circular(10).r,
+                                  ),
+                                  child: HeroIcon(
+                                    HeroIcons.trash,
+                                    color: Colors.red,
+                                    style: HeroIconStyle.solid,
+                                    size: 20,
+                                  ),
                                 ),
-                                child: HeroIcon(HeroIcons.trash,color: Colors.red,style: HeroIconStyle.solid,size: 20,),
-                              ),
-                              SizedBox(width: 10.w,),
-                              Text(Translate.translate("delete_account", context),style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w600,fontSize: 14.sp),)
-                            ],
+                                SizedBox(width: 10.w),
+                                Text(
+                                  Translate.translate(
+                                    "delete_account",
+                                    context,
+                                  ),
+                                  style: GoogleFonts.quicksand(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14.sp,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      )),
-      
-                       SizedBox(height: 10.h,),
+                      ),
 
-                               MyGradientButton(
+                      SizedBox(height: 10.h),
+
+                      MyGradientButton(
                         onTap: () {
-                          if (ref.read(AllControllers.profileSettingsViewController).nameChanged == true) {
-                            ref.read(AllControllers.profileSettingsViewController.notifier).updateProfile();
+                          if (ref
+                                  .read(
+                                    AllControllers
+                                        .profileSettingsViewController,
+                                  )
+                                  .nameChanged ==
+                              true) {
+                            ref
+                                .read(
+                                  AllControllers
+                                      .profileSettingsViewController
+                                      .notifier,
+                                )
+                                .updateProfile();
                           }
                         },
-                         margin: EdgeInsets.symmetric(horizontal: 10.r),
+                        margin: EdgeInsets.symmetric(horizontal: 10.r),
                         radius: BorderRadius.circular(50.r),
                         size: Size(MediaQuery.sizeOf(context).width, 50.h),
-                      //  backgroundColor: MyColors.purple.withValues(alpha: ref.watch(AllControllers.profileSettingsViewController).nameChanged == true ? 1 : 0.4),
-                        child: ref.watch(AllControllers.profileSettingsViewController).isLoading == true
+                        //  backgroundColor: MyColors.purple.withValues(alpha: ref.watch(AllControllers.profileSettingsViewController).nameChanged == true ? 1 : 0.4),
+                        child:
+                            ref
+                                    .watch(
+                                      AllControllers
+                                          .profileSettingsViewController,
+                                    )
+                                    .isLoading ==
+                                true
                             ? Center(
-                              child: SizedBox(
+                                child: SizedBox(
                                   width: 20.w,
                                   height: 20.h,
                                   child: CircularProgressIndicator(
@@ -173,67 +257,97 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                                     strokeWidth: 2,
                                   ),
                                 ),
-                            )
+                              )
                             : Center(
                                 child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceAround,
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     SizedBox(
-                    
                                       height: 20.h,
-                                      child: HeroIcon(HeroIcons.bookmark,color: Colors.white,size: 20,),
+                                      child: HeroIcon(
+                                        HeroIcons.bookmark,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
                                     ),
-                                    SizedBox(width: 10.w,),
-                                    Text(Translate.translate("save", context),style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w600,fontSize: 14.sp),)
+                                    SizedBox(width: 10.w),
+                                    Text(
+                                      Translate.translate("save", context),
+                                      style: GoogleFonts.quicksand(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14.sp,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
-                              
                       ),
-
-
-      
                     ],
                   ),
                 ),
               ),
-            )
+            ),
           ],
         ),
       ),
     );
   }
 
-
-textField({required TextEditingController controller,required String hintText,required String title,required bool enabled,required Function(String) onChanged}){
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-       Text(title,style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w600,fontSize: 13.sp),),
-       SizedBox(height: 10.h,),
-       MyTextField(
-        contentPadding: EdgeInsets.only(left: 15,right: 15,),
-        controller: controller,
-        height: 40.h,
-        border: OutlineInputBorder(borderSide: BorderSide.none,borderRadius: BorderRadius.circular(10).r),
-        hintText: hintText,
-        hintStyle: GoogleFonts.quicksand(color: Colors.white),
-        textStyle: GoogleFonts.quicksand(color: Colors.white,fontSize: 14.sp),
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.2),
-        onChanged: (val)=> onChanged(val),
-        enabled: enabled,)
-    ],
-  );
-}
+  textField({
+    required TextEditingController controller,
+    required String hintText,
+    required String title,
+    required bool enabled,
+    required Function(String) onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: GoogleFonts.quicksand(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 13.sp,
+          ),
+        ),
+        SizedBox(height: 10.h),
+        MyTextField(
+          contentPadding: EdgeInsets.only(left: 15, right: 15),
+          controller: controller,
+          height: 40.h,
+          border: OutlineInputBorder(
+            borderSide: BorderSide.none,
+            borderRadius: BorderRadius.circular(10).r,
+          ),
+          hintText: hintText,
+          hintStyle: GoogleFonts.quicksand(color: Colors.white),
+          textStyle: GoogleFonts.quicksand(
+            color: Colors.white,
+            fontSize: 14.sp,
+          ),
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.2),
+          onChanged: (val) => onChanged(val),
+          enabled: enabled,
+        ),
+      ],
+    );
+  }
 
   Widget _buildGenderSegmentedControl(BuildContext context) {
     const unselectedTint = Color(0xFFB8B8C0);
     final userGender = ref.watch(AllControllers.userController)?.gender;
-    final profileState = ref.watch(AllControllers.profileSettingsViewController);
-    final selectedGender = profileState.genderChanged == true ? profileState.gender : userGender;
+    final profileState = ref.watch(
+      AllControllers.profileSettingsViewController,
+    );
+    final selectedGender = profileState.genderChanged == true
+        ? profileState.gender
+        : userGender;
 
     Widget segment({
       required String label,
@@ -246,7 +360,9 @@ textField({required TextEditingController controller,required String hintText,re
           color: Colors.transparent,
           child: InkWell(
             onTap: () {
-              ref.read(AllControllers.profileSettingsViewController.notifier).genderChanged(value);
+              ref
+                  .read(AllControllers.profileSettingsViewController.notifier)
+                  .genderChanged(value);
             },
             borderRadius: BorderRadius.circular(12.r),
             splashColor: Colors.white.withValues(alpha: 0.08),
@@ -270,7 +386,9 @@ textField({required TextEditingController controller,required String hintText,re
                       style: GoogleFonts.quicksand(
                         color: selected ? Colors.white : unselectedTint,
                         fontSize: 13.sp,
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
                       maxLines: 1,
@@ -338,87 +456,97 @@ textField({required TextEditingController controller,required String hintText,re
     );
   }
 
+  Widget top() {
+    final selectedImagePath = ref
+        .watch(AllControllers.profileSettingsViewController)
+        .selectedImagePath;
+    final photoURL = ref
+        .watch(AllControllers.profileSettingsViewController)
+        .photoURL;
 
-
-  Widget top(){
-    final selectedImagePath = ref.watch(AllControllers.profileSettingsViewController).selectedImagePath;
-    final photoURL = ref.watch(AllControllers.profileSettingsViewController).photoURL;
-    
     return Stack(
-     children: [
-       Container(
-         height: 230.h,
-         width: MediaQuery.sizeOf(context).width,
-        child: Stack(
-         children: [
-           Align(
-             alignment: Alignment.bottomCenter,
-             child: Column(
-               mainAxisAlignment: MainAxisAlignment.end,
-               children: [
-                 Stack(
-                   children: [
-                     ClipOval(
-                       child: Container(
-                         width: 100.w,
-                         height: 100.h,
-                         child: selectedImagePath != null
-                             ? Image.file(
-                                 File(selectedImagePath),
-                                 fit: BoxFit.cover,
-                               )
-                             : CachedNetworkImage(
-                                 imageUrl: photoURL ?? "https://fakefriend.b-cdn.net/profile.png",
-                                 fit: BoxFit.cover,
-                                 placeholder: (context, url) => Shimmer.fromColors(
-                                   baseColor: Colors.grey[300]!,
-                                   highlightColor: Colors.grey[100]!,
-                                   child: Container(
-                                     color: Colors.white,
-                                   ),
-                                 ),
-                                 errorWidget: (context, url, error) => Container(
-                                   color: Colors.grey[300],
-                                   child: Icon(Icons.person, size: 60),
-                                 ),
-                               ),
-                       ),
-                     ),
-                     Positioned(
-                       bottom: 0,
-                       right: 0,
-                       child: GestureDetector(
-                         onTap: () {
-                           ref.read(AllControllers.profileSettingsViewController.notifier).pickImage();
-                         },
-                         child: Container(
-                           width: 40.w,
-                           height: 40.h,
-                           decoration: BoxDecoration(
-                             color: MyColors.purple,
-                             shape: BoxShape.circle,
-                             border: Border.all(color: Colors.white, width: 3),
-                           ),
-                           child: Icon(
-                             Icons.camera_alt,
-                             color: Colors.white,
-                             size: 20.sp,
-                           ),
-                         ),
-                       ),
-                     ),
-                   ],
-                 ),
-               
-           
-               ],
-             ),
-             )
-         ],
+      children: [
+        Container(
+          height: 230.h,
+          width: MediaQuery.sizeOf(context).width,
+          child: Stack(
+            children: [
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Stack(
+                      children: [
+                        ClipOval(
+                          child: Container(
+                            width: 100.w,
+                            height: 100.h,
+                            child: selectedImagePath != null
+                                ? Image.file(
+                                    File(selectedImagePath),
+                                    fit: BoxFit.cover,
+                                  )
+                                : CachedNetworkImage(
+                                    imageUrl:
+                                        photoURL ??
+                                        "https://fakefriend.b-cdn.net/profile.png",
+                                    fit: BoxFit.cover,
+                                    placeholder: (context, url) =>
+                                        Shimmer.fromColors(
+                                          baseColor: Colors.grey[300]!,
+                                          highlightColor: Colors.grey[100]!,
+                                          child: Container(color: Colors.white),
+                                        ),
+                                    errorWidget: (context, url, error) =>
+                                        Container(
+                                          color: Colors.grey[300],
+                                          child: Icon(Icons.person, size: 60),
+                                        ),
+                                  ),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: GestureDetector(
+                            onTap: () {
+                              ref
+                                  .read(
+                                    AllControllers
+                                        .profileSettingsViewController
+                                        .notifier,
+                                  )
+                                  .pickImage();
+                            },
+                            child: Container(
+                              width: 40.w,
+                              height: 40.h,
+                              decoration: BoxDecoration(
+                                color: MyColors.purple,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 3,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.camera_alt,
+                                color: Colors.white,
+                                size: 20.sp,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-       ),
-       
-     ],
+      ],
     );
   }
 
@@ -440,9 +568,7 @@ textField({required TextEditingController controller,required String hintText,re
           ),
           content: Text(
             Translate.translate("logout_dialog_content", context),
-            style: GoogleFonts.quicksand(
-              fontSize: 14.sp,
-            ),
+            style: GoogleFonts.quicksand(fontSize: 14.sp),
           ),
           actions: [
             TextButton(
@@ -458,10 +584,11 @@ textField({required TextEditingController controller,required String hintText,re
               ),
             ),
             TextButton(
-              
               onPressed: () {
                 Navigator.of(dialogContext).pop();
-                ref.read(AllControllers.profileSettingsViewController.notifier).logout();
+                ref
+                    .read(AllControllers.profileSettingsViewController.notifier)
+                    .logout();
               },
               child: Text(
                 Translate.translate("sign_out", context),
@@ -501,7 +628,7 @@ textField({required TextEditingController controller,required String hintText,re
           title: Translate.translate(TranslateKeys.birthdate, context),
           value: _formatBirthdate(user.birthdate),
         ),
-        
+
         // Cinsiyet Tercihi
         if (user.gender != null) ...[
           SizedBox(height: 10.h),
@@ -515,7 +642,11 @@ textField({required TextEditingController controller,required String hintText,re
   }
 
   /// Bilgi alanı widget'ı (mevcut textField tasarımına uygun)
-  Widget _buildInfoField({required String title, String? value, Widget? valueWidget}) {
+  Widget _buildInfoField({
+    required String title,
+    String? value,
+    Widget? valueWidget,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -534,14 +665,16 @@ textField({required TextEditingController controller,required String hintText,re
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(12.r),
           ),
-          child: valueWidget ?? Text(
-            value ?? '',
-            style: GoogleFonts.quicksand(
-              color: Colors.black,
-              fontSize: 14.sp,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          child:
+              valueWidget ??
+              Text(
+                value ?? '',
+                style: GoogleFonts.quicksand(
+                  color: Colors.black,
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
         ),
       ],
     );
@@ -551,7 +684,7 @@ textField({required TextEditingController controller,required String hintText,re
   Widget _buildLoginMethod(String credential) {
     String methodText;
     Widget icon;
-    
+
     switch (credential.toLowerCase()) {
       case 'google':
         methodText = Translate.translate(TranslateKeys.googleLogin, context);
@@ -576,7 +709,11 @@ textField({required TextEditingController controller,required String hintText,re
         break;
       case 'apple':
         methodText = Translate.translate(TranslateKeys.appleLogin, context);
-        icon = HeroIcon(HeroIcons.devicePhoneMobile, size: 24, color: Colors.black);
+        icon = HeroIcon(
+          HeroIcons.devicePhoneMobile,
+          size: 24,
+          color: Colors.black,
+        );
         break;
       case 'facebook':
         methodText = Translate.translate(TranslateKeys.facebookLogin, context);
@@ -627,8 +764,9 @@ textField({required TextEditingController controller,required String hintText,re
 
   /// Cinsiyet tercihini formatla
   String _formatGender(String? gender) {
-    if (gender == null) return Translate.translate(TranslateKeys.preferNotToSay, context);
-    
+    if (gender == null)
+      return Translate.translate(TranslateKeys.preferNotToSay, context);
+
     switch (gender.toLowerCase()) {
       case 'male':
         return Translate.translate("male", context);
@@ -641,8 +779,10 @@ textField({required TextEditingController controller,required String hintText,re
 
   /// Doğum tarihi textfield'ı
   Widget _buildBirthdateTextField() {
-    final controller = ref.read(AllControllers.profileSettingsViewController.notifier).birthdateController;
-    
+    final controller = ref
+        .read(AllControllers.profileSettingsViewController.notifier)
+        .birthdateController;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -663,7 +803,11 @@ textField({required TextEditingController controller,required String hintText,re
             margin: EdgeInsets.zero,
             contentPadding: EdgeInsets.symmetric(horizontal: 15),
             controller: controller,
-            textStyle: GoogleFonts.quicksand(color: Colors.black,fontWeight: FontWeight.w600,fontSize: 13.sp),
+            textStyle: GoogleFonts.quicksand(
+              color: Colors.black,
+              fontWeight: FontWeight.w600,
+              fontSize: 13.sp,
+            ),
             hintText: Translate.translate(TranslateKeys.birthdate, context),
             enabled: false,
             onChanged: (val) {},
@@ -676,7 +820,7 @@ textField({required TextEditingController controller,required String hintText,re
   void _showBirthdatePicker(BuildContext context) {
     final user = ref.read(AllControllers.userController);
     final currentBirthdate = user?.birthdate ?? DateTime(2001, 1, 1);
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -726,7 +870,11 @@ textField({required TextEditingController controller,required String hintText,re
                   firstDate: DateTime(1950),
                   initialDate: currentBirthdate,
                   onChange: (dateTime, selectedIndex) {
-                    ref.read(AllControllers.profileSettingsViewController.notifier).birthdateChanged(dateTime);
+                    ref
+                        .read(
+                          AllControllers.profileSettingsViewController.notifier,
+                        )
+                        .birthdateChanged(dateTime);
                   },
                   pickerTheme: DateTimePickerTheme(
                     backgroundColor: Colors.transparent,
@@ -745,16 +893,21 @@ textField({required TextEditingController controller,required String hintText,re
   /// Cinsiyet dropdown'ı
   Widget _buildGenderTextField() {
     final user = ref.watch(AllControllers.userController);
-    final profileState = ref.watch(AllControllers.profileSettingsViewController);
-    
+    final profileState = ref.watch(
+      AllControllers.profileSettingsViewController,
+    );
+
     // Dropdown için seçenekler - null yerine "prefer_not_to_say" kullanıyoruz
     const String preferNotToSayValue = "prefer_not_to_say";
     final genderOptions = [
       {"value": "male", "label": Translate.translate("male", context)},
       {"value": "female", "label": Translate.translate("female", context)},
-      {"value": preferNotToSayValue, "label": Translate.translate(TranslateKeys.preferNotToSay, context)},
+      {
+        "value": preferNotToSayValue,
+        "label": Translate.translate(TranslateKeys.preferNotToSay, context),
+      },
     ];
-    
+
     // State'teki gender değişikliğini öncelikli olarak kullan (henüz kaydedilmemiş değişiklikler için)
     // genderChanged true ise state'teki gender'ı kullan (null dahil), değilse user'dan al
     // ÖNEMLİ: profileState.gender null olabilir (belirtmeyi tercih etmiyorum seçildiğinde)
@@ -767,11 +920,11 @@ textField({required TextEditingController controller,required String hintText,re
       // State'te değişiklik yoksa user'dan al
       currentGender = user?.gender;
     }
-    
+
     // Mevcut seçili değeri bul - null ise "prefer_not_to_say" olarak göster
     // Bu, dropdown'ın gösterdiği değer
     String selectedValue = currentGender ?? preferNotToSayValue;
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -803,7 +956,6 @@ textField({required TextEditingController controller,required String hintText,re
               padding: EdgeInsets.symmetric(horizontal: 15.w, vertical: 0.h),
               items: genderOptions.map((option) {
                 return DropdownMenuItem<String>(
-                
                   value: option["value"] as String,
                   child: Text(
                     option["label"]!,
@@ -817,8 +969,12 @@ textField({required TextEditingController controller,required String hintText,re
               }).toList(),
               onChanged: (String? newValue) {
                 // "prefer_not_to_say" değerini null'a çevir
-                String? genderToSave = newValue == preferNotToSayValue ? null : newValue;
-                ref.read(AllControllers.profileSettingsViewController.notifier).genderChanged(genderToSave);
+                String? genderToSave = newValue == preferNotToSayValue
+                    ? null
+                    : newValue;
+                ref
+                    .read(AllControllers.profileSettingsViewController.notifier)
+                    .genderChanged(genderToSave);
               },
             ),
           ),
@@ -827,64 +983,189 @@ textField({required TextEditingController controller,required String hintText,re
     );
   }
 
-  void _showDeleteAccountDialog(BuildContext context) {
-    showDialog(
+  void _showDeleteAccountBottomSheet(BuildContext context) {
+    showModalBottomSheet(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20.r),
-          ),
-          title: Text(
-            Translate.translate("delete_account_dialog_title", context),
-            style: GoogleFonts.quicksand(
-              fontWeight: FontWeight.w700,
-              fontSize: 18.sp,
-              color: Colors.red,
-            ),
-          ),
-          content: Text(
-            Translate.translate("delete_account_dialog_content", context),
-            style: GoogleFonts.quicksand(
-              fontSize: 14.sp,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-              },
-              child: Text(
-                Translate.translate("cancel", context),
-                style: GoogleFonts.quicksand(
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w600,
-                ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: Container(
+            margin: EdgeInsets.symmetric(horizontal: 10.w),
+            padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 20.h),
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(22.r),
+                topRight: Radius.circular(22.r),
               ),
             ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                ref.read(AllControllers.profileSettingsViewController.notifier).deleteAccount();
-              },
-              child: Text(
-                Translate.translate("delete_account", context),
-                style: GoogleFonts.quicksand(
-                  color: Colors.red,
-                  fontWeight: FontWeight.w700,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 48.w,
+                    height: 5.h,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.30),
+                      borderRadius: BorderRadius.circular(100.r),
+                    ),
+                  ),
                 ),
-              ),
+                SizedBox(height: 18.h),
+                Text(
+                  "We’re sad to see you go",
+                  style: GoogleFonts.quicksand(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 31.sp,
+                  ),
+                ),
+                SizedBox(height: 10.h),
+                Text(
+                  "Your membership has been cancelled. You can still reactivate before your billing period ends.",
+                  style: GoogleFonts.quicksand(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16.sp,
+                    height: 1.4,
+                  ),
+                ),
+                SizedBox(height: 18.h),
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.all(16.w),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(18.r),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.06),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                          SizedBox(width: 8.w),
+                          Text(
+                            "Change your mind?",
+                            style: GoogleFonts.quicksand(
+                              color: Colors.white,
+                              fontSize: 20.sp,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 12.h),
+                      Text(
+                        "You can reactivate your membership now to keep your benefits.",
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white.withValues(alpha: 0.70),
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
+                        ),
+                      ),
+                      SizedBox(height: 14.h),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(18.r),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 14.w,
+                              vertical: 12.h,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(18.r),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.45),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.link,
+                                  color: MyColors.purple,
+                                  size: 20.sp,
+                                ),
+                                SizedBox(width: 10.w),
+                                Expanded(
+                                  child: Text(
+                                    "Wait, I want to reactivate",
+                                    style: GoogleFonts.quicksand(
+                                      color: Colors.white,
+                                      fontSize: 16.sp,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.arrow_forward,
+                                  color: Colors.white,
+                                  size: 20.sp,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 16.h),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(30.r),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      ref
+                          .read(
+                            AllControllers.profileSettingsViewController.notifier,
+                          )
+                          .deleteAccount();
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(vertical: 14.h),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.20),
+                        borderRadius: BorderRadius.circular(30.r),
+                        border: Border.all(
+                          color: Colors.red.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          "Delete my account",
+                          style: GoogleFonts.quicksand(
+                            color: Colors.red.shade200,
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
   }
-
-
-
-
 }
 
 class _ProfileBirthdateSection extends StatefulWidget {
@@ -899,7 +1180,8 @@ class _ProfileBirthdateSection extends StatefulWidget {
   final ValueChanged<DateTime> onDateChanged;
 
   @override
-  State<_ProfileBirthdateSection> createState() => _ProfileBirthdateSectionState();
+  State<_ProfileBirthdateSection> createState() =>
+      _ProfileBirthdateSectionState();
 }
 
 class _ProfileBirthdateSectionState extends State<_ProfileBirthdateSection> {

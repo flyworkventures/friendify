@@ -7,6 +7,8 @@ list(APPEND FLUTTER_PLUGIN_LIST
   devicelocale
   file_selector_linux
   flutter_localization
+  record_linux
+  rive_native
   url_launcher_linux
 )
 

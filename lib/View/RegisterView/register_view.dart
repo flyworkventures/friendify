@@ -18,7 +18,11 @@ import 'package:intl/intl.dart';
 
 /// Kayıt 4–5. adım tek seçim seçenekleri (slug backend’e gider).
 class _RegChoiceOption {
-  const _RegChoiceOption({required this.slug, required this.emoji, required this.labelKey});
+  const _RegChoiceOption({
+    required this.slug,
+    required this.emoji,
+    required this.labelKey,
+  });
   final String slug;
   final String emoji;
   final String labelKey;
@@ -26,18 +30,54 @@ class _RegChoiceOption {
 
 const List<_RegChoiceOption> _kAiExpectationOptions = [
   _RegChoiceOption(slug: 'fun', emoji: '🥳', labelKey: 'register_expect_fun'),
-  _RegChoiceOption(slug: 'connection', emoji: '💬', labelKey: 'register_expect_connection'),
-  _RegChoiceOption(slug: 'flirting', emoji: '🔥', labelKey: 'register_expect_flirting'),
-  _RegChoiceOption(slug: 'comfort', emoji: '☁️', labelKey: 'register_expect_comfort'),
-  _RegChoiceOption(slug: 'motivation', emoji: '🚀', labelKey: 'register_expect_motivation'),
+  _RegChoiceOption(
+    slug: 'connection',
+    emoji: '💬',
+    labelKey: 'register_expect_connection',
+  ),
+  _RegChoiceOption(
+    slug: 'flirting',
+    emoji: '🔥',
+    labelKey: 'register_expect_flirting',
+  ),
+  _RegChoiceOption(
+    slug: 'comfort',
+    emoji: '☁️',
+    labelKey: 'register_expect_comfort',
+  ),
+  _RegChoiceOption(
+    slug: 'motivation',
+    emoji: '🚀',
+    labelKey: 'register_expect_motivation',
+  ),
 ];
 
 const List<_RegChoiceOption> _kAiTimingOptions = [
-  _RegChoiceOption(slug: 'morning', emoji: '☀️', labelKey: 'register_time_morning'),
-  _RegChoiceOption(slug: 'after_work', emoji: '🌇', labelKey: 'register_time_after_work'),
-  _RegChoiceOption(slug: 'late_night', emoji: '🌙', labelKey: 'register_time_late_night'),
-  _RegChoiceOption(slug: 'randomly', emoji: '🎲', labelKey: 'register_time_randomly'),
-  _RegChoiceOption(slug: 'feeling_down', emoji: '❤️', labelKey: 'register_time_feeling_down'),
+  _RegChoiceOption(
+    slug: 'morning',
+    emoji: '☀️',
+    labelKey: 'register_time_morning',
+  ),
+  _RegChoiceOption(
+    slug: 'after_work',
+    emoji: '🌇',
+    labelKey: 'register_time_after_work',
+  ),
+  _RegChoiceOption(
+    slug: 'late_night',
+    emoji: '🌙',
+    labelKey: 'register_time_late_night',
+  ),
+  _RegChoiceOption(
+    slug: 'randomly',
+    emoji: '🎲',
+    labelKey: 'register_time_randomly',
+  ),
+  _RegChoiceOption(
+    slug: 'feeling_down',
+    emoji: '❤️',
+    labelKey: 'register_time_feeling_down',
+  ),
 ];
 
 class RegisterView extends ConsumerStatefulWidget {
@@ -67,7 +107,19 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
 
   /// `interest.md` — desteklenen dil kodlarına göre `lang` gönderilir.
   String _interestApiLang(Locale locale) {
-    const supported = {'tr', 'en', 'de', 'fr', 'pt', 'it', 'zh', 'ja', 'ru', 'hi', 'ko'};
+    const supported = {
+      'tr',
+      'en',
+      'de',
+      'fr',
+      'pt',
+      'it',
+      'zh',
+      'ja',
+      'ru',
+      'hi',
+      'ko',
+    };
     final code = locale.languageCode.toLowerCase();
     return supported.contains(code) ? code : 'en';
   }
@@ -103,9 +155,12 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
     final stepIndex = reg.currentIndex;
     const totalSteps = 5;
 
-    final nextBlocked = (stepIndex == 3 &&
-            (reg.aiPartnerExpectation == null || reg.aiPartnerExpectation!.isEmpty)) ||
-        (stepIndex == 4 && (reg.aiPreferredTime == null || reg.aiPreferredTime!.isEmpty));
+    final nextBlocked =
+        (stepIndex == 3 &&
+            (reg.aiPartnerExpectation == null ||
+                reg.aiPartnerExpectation!.isEmpty)) ||
+        (stepIndex == 4 &&
+            (reg.aiPreferredTime == null || reg.aiPreferredTime!.isEmpty));
 
     return Scaffold(
       body: BackgroundWidget(
@@ -114,7 +169,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10).copyWith(top: 20).r,
+                padding: EdgeInsets.symmetric(
+                  horizontal: 10,
+                ).copyWith(top: 20).r,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -122,7 +179,13 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                       children: [
                         GestureDetector(
                           onTap: () {
-                            ref.read(AllControllers.registerViewController.notifier).previousPage();
+                            ref
+                                .read(
+                                  AllControllers
+                                      .registerViewController
+                                      .notifier,
+                                )
+                                .previousPage();
                           },
                           child: Icon(
                             CupertinoIcons.chevron_left_circle_fill,
@@ -132,7 +195,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                         ),
                         SizedBox(width: 10.w),
                         Text(
-                          "Back",
+                          Translate.translate(TranslateKeys.back, context),
                           style: GoogleFonts.quicksand(
                             color: Colors.white,
                             fontSize: 14.sp,
@@ -156,7 +219,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
               SizedBox(height: 20.h),
               Expanded(child: bottom()),
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10).copyWith(bottom: 10).r,
+                padding: EdgeInsets.symmetric(
+                  horizontal: 10,
+                ).copyWith(bottom: 10).r,
                 child: Opacity(
                   opacity: nextBlocked ? 0.45 : 1,
                   child: AbsorbPointer(
@@ -164,29 +229,49 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                     child: MyGradientButton(
                       onTap: () async {
                         FocusScope.of(context).unfocus();
-                        final notifier = ref.read(AllControllers.registerViewController.notifier);
-                        final currentIndex = ref.read(AllControllers.registerViewController).currentIndex;
-                        final r = ref.read(AllControllers.registerViewController);
+                        final notifier = ref.read(
+                          AllControllers.registerViewController.notifier,
+                        );
+                        final currentIndex = ref
+                            .read(AllControllers.registerViewController)
+                            .currentIndex;
+                        final r = ref.read(
+                          AllControllers.registerViewController,
+                        );
 
                         if (currentIndex == 4) {
-                          if (r.aiPreferredTime == null || r.aiPreferredTime!.isEmpty) {
+                          if (r.aiPreferredTime == null ||
+                              r.aiPreferredTime!.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(Translate.translate(TranslateKeys.registerPleaseSelectOption, context)),
+                                content: Text(
+                                  Translate.translate(
+                                    TranslateKeys.registerPleaseSelectOption,
+                                    context,
+                                  ),
+                                ),
                               ),
                             );
                             return;
                           }
                           if (!context.mounted) return;
-                          Navigator.of(context).pushReplacementNamed('/accountCreatedView');
+                          Navigator.of(
+                            context,
+                          ).pushReplacementNamed('/accountCreatedView');
                           return;
                         }
 
                         if (currentIndex == 3) {
-                          if (r.aiPartnerExpectation == null || r.aiPartnerExpectation!.isEmpty) {
+                          if (r.aiPartnerExpectation == null ||
+                              r.aiPartnerExpectation!.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(Translate.translate(TranslateKeys.registerPleaseSelectOption, context)),
+                                content: Text(
+                                  Translate.translate(
+                                    TranslateKeys.registerPleaseSelectOption,
+                                    context,
+                                  ),
+                                ),
                               ),
                             );
                             return;
@@ -222,7 +307,6 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
     );
   }
 
-
   Widget bottom() {
     return Container(
       padding: EdgeInsets.only(top: 30, bottom: 15),
@@ -239,92 +323,199 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 13),
                   child: PageView(
-                    controller: ref.read(AllControllers.registerViewController.notifier).pageController,
+                    controller: ref
+                        .read(AllControllers.registerViewController.notifier)
+                        .pageController,
                     physics: NeverScrollableScrollPhysics(),
                     children: [
-                   
-                   
-                      SingleChildScrollView(
-                   
-                        child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                                SmoothSlide(
-                      child: Text(Translate.translate(TranslateKeys.tellAboutYourself, context),style: GoogleFonts.quicksand(color: Colors.white,fontSize: 24.sp,fontWeight: FontWeight.bold,),textAlign: TextAlign.center,)
-                      ),
-                           SmoothSlide(
-                      child: Text(Translate.translate(TranslateKeys.bioHelps, context),style: GoogleFonts.quicksand(color: Colors.white,fontSize: 14.sp,fontWeight: FontWeight.w400,),textAlign: TextAlign.center,)
-                      ),
-                      SizedBox(height: 20.h,),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 10),
-                        child: Text(Translate.translate(TranslateKeys.fullName, context),style: GoogleFonts.quicksand(color: Colors.white,fontSize: 16.sp,fontWeight: FontWeight.w600,)),
-                      ),
-                       SizedBox(height: 10.h,),
-             
-                      MyTextField(
-                        filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.2),
-                        textStyle: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.bold),
-                        hintText: Translate.translate(TranslateKeys.enterYourFullname, context),
-                        hintStyle: GoogleFonts.quicksand(color: Colors.white,fontSize: 14.sp),
-                        height: 40.h,
-                        contentPadding: EdgeInsets.only(top: 5.h,left: 5.w),
-                        border: OutlineInputBorder(borderSide: BorderSide.none,borderRadius: BorderRadius.circular(8).r),
-                        focusedBorder: OutlineInputBorder(borderSide: BorderSide.none,borderRadius: BorderRadius.circular(8).r),
-                        controller: ref.read(AllControllers.registerViewController.notifier).usernameController),
-            
-                      SizedBox(height: 15.h,),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 10),
-                        child: Text(
-                          Translate.translate(TranslateKeys.gender, context),
-                          style: GoogleFonts.quicksand(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      SizedBox(height: 10.h,),
-                      _buildGenderSegmentedControl(context),
-                      SizedBox(height: 20.h,),
-                        ],
-                        ),
-                      ),
-                   
-                   
                       SingleChildScrollView(
                         child: Column(
-
                           crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                                SmoothSlide(
-                      child: Text(Translate.translate(TranslateKeys.whatsYourBirthdate, context),style: GoogleFonts.quicksand(color: Colors.white,fontSize: 26.sp,fontWeight: FontWeight.bold,),textAlign: TextAlign.center,)
-                      ),
-                           SmoothSlide(
-                      child: Text(Translate.translate(TranslateKeys.birthdayNote, context),style: GoogleFonts.quicksand(color: Colors.white,fontSize: 14.sp,fontWeight: FontWeight.w400,),textAlign: TextAlign.center,)
-                      ),
-                      SizedBox(height: 24.h,),
-                      _RegisterBirthdateSection(
-                        title: Translate.translate(TranslateKeys.birthdate, context),
-                        existingBirthdate: ref.read(AllControllers.registerViewController.notifier).birthdate,
-                        onDateChanged: (d) {
-                          ref.read(AllControllers.registerViewController.notifier).updateBirthdate(d);
-                        },
-                      ),
-                        ],
+                          children: [
+                            SmoothSlide(
+                              child: Text(
+                                Translate.translate(
+                                  TranslateKeys.tellAboutYourself,
+                                  context,
+                                ),
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontSize: 24.sp,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            SmoothSlide(
+                              child: Text(
+                                Translate.translate(
+                                  TranslateKeys.bioHelps,
+                                  context,
+                                ),
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontSize: 14.sp,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            SizedBox(height: 20.h),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 10),
+                              child: Text(
+                                Translate.translate(
+                                  TranslateKeys.fullName,
+                                  context,
+                                ),
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 10.h),
+
+                            MyTextField(
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.2),
+                              textStyle: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              hintText: Translate.translate(
+                                TranslateKeys.enterYourFullname,
+                                context,
+                              ),
+                              hintStyle: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontSize: 14.sp,
+                              ),
+                              height: 40.h,
+                              contentPadding: EdgeInsets.only(
+                                top: 5.h,
+                                left: 5.w,
+                              ),
+                              border: OutlineInputBorder(
+                                borderSide: BorderSide.none,
+                                borderRadius: BorderRadius.circular(8).r,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide.none,
+                                borderRadius: BorderRadius.circular(8).r,
+                              ),
+                              controller: ref
+                                  .read(
+                                    AllControllers
+                                        .registerViewController
+                                        .notifier,
+                                  )
+                                  .usernameController,
+                            ),
+
+                            SizedBox(height: 15.h),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 10),
+                              child: Text(
+                                Translate.translate(
+                                  TranslateKeys.gender,
+                                  context,
+                                ),
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 10.h),
+                            _buildGenderSegmentedControl(context),
+                            SizedBox(height: 20.h),
+                          ],
                         ),
                       ),
-                   
-                   
+
                       SingleChildScrollView(
                         child: Column(
-                        children: [
-                                SmoothSlide(
-                      child: Text(Translate.translate(TranslateKeys.shareInterests, context),style: GoogleFonts.quicksand(color: Colors.white,fontSize: 26.sp,fontWeight: FontWeight.bold,),textAlign: TextAlign.center,)
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SmoothSlide(
+                              child: Text(
+                                Translate.translate(
+                                  TranslateKeys.whatsYourBirthdate,
+                                  context,
+                                ),
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontSize: 26.sp,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            SmoothSlide(
+                              child: Text(
+                                Translate.translate(
+                                  TranslateKeys.birthdayNote,
+                                  context,
+                                ),
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontSize: 14.sp,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            SizedBox(height: 24.h),
+                            _RegisterBirthdateSection(
+                              title: Translate.translate(
+                                TranslateKeys.birthdate,
+                                context,
+                              ),
+                              existingBirthdate: ref
+                                  .read(
+                                    AllControllers
+                                        .registerViewController
+                                        .notifier,
+                                  )
+                                  .birthdate,
+                              onDateChanged: (d) {
+                                ref
+                                    .read(
+                                      AllControllers
+                                          .registerViewController
+                                          .notifier,
+                                    )
+                                    .updateBirthdate(d);
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                  
-                      SizedBox(height: 20.h,),
-                      _buildInterestsChips(context),
-                         
-                        ],
+
+                      SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            SmoothSlide(
+                              child: Text(
+                                Translate.translate(
+                                  TranslateKeys.shareInterests,
+                                  context,
+                                ),
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontSize: 26.sp,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+
+                            SizedBox(height: 20.h),
+                            _buildInterestsChips(context),
+                          ],
                         ),
                       ),
                       _buildAiExpectationStep(context),
@@ -340,7 +531,6 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
       ),
     );
   }
-
 
   Widget _buildInterestsChips(BuildContext context) {
     if (_interestsLoading) {
@@ -367,7 +557,10 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
             Text(
               Translate.translate(TranslateKeys.interestsLoadFailed, context),
               textAlign: TextAlign.center,
-              style: GoogleFonts.quicksand(color: Colors.white70, fontSize: 14.sp),
+              style: GoogleFonts.quicksand(
+                color: Colors.white70,
+                fontSize: 14.sp,
+              ),
             ),
             SizedBox(height: 12.h),
             TextButton(
@@ -418,7 +611,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
               child: Container(
                 padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 9.h),
                 decoration: BoxDecoration(
-                  color:!isSelected  ? Colors.white.withValues(alpha:  0.15) : Color(0xffDC7AFF).withValues(alpha: 0.25),
+                  color: !isSelected
+                      ? Colors.white.withValues(alpha: 0.15)
+                      : Color(0xffDC7AFF).withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(8).r,
                   border: Border.all(
                     color: isSelected ? Color(0xffD55EFF) : Colors.transparent,
@@ -428,26 +623,25 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-              
                     ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.62),
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.sizeOf(context).width * 0.62,
+                      ),
                       child: Text(
                         interest.label,
                         style: GoogleFonts.quicksand(
                           color: Colors.white,
                           fontSize: 15.sp,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.w500,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                          if (interest.emoji.isNotEmpty) ...[
-                      Text(
-                        interest.emoji,
-                        style: TextStyle(fontSize: 16.sp),
-                      ),
-                  
+                    if (interest.emoji.isNotEmpty) ...[
+                      Text(interest.emoji, style: TextStyle(fontSize: 16.sp)),
                     ],
                   ],
                 ),
@@ -471,7 +665,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
         width: double.infinity,
         padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
         decoration: BoxDecoration(
-          color: selected ? Color(0xffDC7AFF).withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.15),
+          color: selected
+              ? Color(0xffDC7AFF).withValues(alpha: 0.25)
+              : Colors.white.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(12.r),
           border: Border.all(
             color: selected ? const Color(0xffD55EFF) : Colors.transparent,
@@ -491,7 +687,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
   }
 
   Widget _buildAiExpectationStep(BuildContext context) {
-    final selected = ref.watch(AllControllers.registerViewController).aiPartnerExpectation;
+    final selected = ref
+        .watch(AllControllers.registerViewController)
+        .aiPartnerExpectation;
     final notifier = ref.read(AllControllers.registerViewController.notifier);
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(horizontal: 12.w),
@@ -500,7 +698,10 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
         children: [
           SmoothSlide(
             child: Text(
-              Translate.translate(TranslateKeys.registerAiExpectationTitle, context),
+              Translate.translate(
+                TranslateKeys.registerAiExpectationTitle,
+                context,
+              ),
               style: GoogleFonts.quicksand(
                 color: Colors.white,
                 fontSize: 26.sp,
@@ -527,7 +728,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
   }
 
   Widget _buildAiTimingStep(BuildContext context) {
-    final selected = ref.watch(AllControllers.registerViewController).aiPreferredTime;
+    final selected = ref
+        .watch(AllControllers.registerViewController)
+        .aiPreferredTime;
     final notifier = ref.read(AllControllers.registerViewController.notifier);
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(horizontal: 12.w),
@@ -590,7 +793,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
 
     return Consumer(
       builder: (context, ref, _) {
-        final selectedGender = ref.watch(AllControllers.registerViewController).gender;
+        final selectedGender = ref
+            .watch(AllControllers.registerViewController)
+            .gender;
 
         Widget segment({
           required String label,
@@ -603,7 +808,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
               color: Colors.transparent,
               child: InkWell(
                 onTap: () {
-                  ref.read(AllControllers.registerViewController.notifier).updateGender(value);
+                  ref
+                      .read(AllControllers.registerViewController.notifier)
+                      .updateGender(value);
                 },
                 borderRadius: BorderRadius.circular(12.r),
                 splashColor: Colors.white.withValues(alpha: 0.08),
@@ -611,7 +818,10 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOutCubic,
-                  padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 4.w),
+                  padding: EdgeInsets.symmetric(
+                    vertical: 12.h,
+                    horizontal: 4.w,
+                  ),
                   decoration: BoxDecoration(
                     color: selected ? MyColors.purple : Colors.transparent,
                     borderRadius: BorderRadius.circular(12.r),
@@ -627,7 +837,9 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                           style: GoogleFonts.quicksand(
                             color: selected ? Colors.white : unselectedTint,
                             fontSize: 13.sp,
-                            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.w500,
                           ),
                           textAlign: TextAlign.center,
                           maxLines: 1,
@@ -681,7 +893,10 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
               ),
               SizedBox(width: 4.w),
               segment(
-                label: Translate.translate(TranslateKeys.genderPrivate, context),
+                label: Translate.translate(
+                  TranslateKeys.genderPrivate,
+                  context,
+                ),
                 value: null,
                 selected: selectedGender == null,
                 leading: Icon(
@@ -696,7 +911,6 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
       },
     );
   }
-
 }
 
 /// iOS tarzı tekerlek + üstte seçili tarih kutusu (tekerlek her kaydırmada yeniden oluşmasın diye ValueNotifier).
@@ -712,7 +926,8 @@ class _RegisterBirthdateSection extends StatefulWidget {
   final ValueChanged<DateTime> onDateChanged;
 
   @override
-  State<_RegisterBirthdateSection> createState() => _RegisterBirthdateSectionState();
+  State<_RegisterBirthdateSection> createState() =>
+      _RegisterBirthdateSectionState();
 }
 
 class _RegisterBirthdateSectionState extends State<_RegisterBirthdateSection> {
@@ -796,7 +1011,10 @@ class _RegisterBirthdateSectionState extends State<_RegisterBirthdateSection> {
             data: CupertinoThemeData(
               brightness: Brightness.dark,
               textTheme: CupertinoTextThemeData(
-                textStyle: GoogleFonts.quicksand(color: Colors.white, fontSize: 20.sp),
+                textStyle: GoogleFonts.quicksand(
+                  color: Colors.white,
+                  fontSize: 20.sp,
+                ),
                 dateTimePickerTextStyle: GoogleFonts.quicksand(
                   color: Colors.white,
                   fontSize: 22.sp,

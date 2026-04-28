@@ -27,16 +27,23 @@ class SplashViewState extends ConsumerState<SplashView> {
 
       body: Stack(
         children: [
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+           Image.asset("assets/onboarding.png",fit: BoxFit.cover,width: double.infinity,height: double.infinity,),
+           Align(
+            alignment: Alignment.bottomCenter,
+            child: Image.asset("assets/sarikadin.png",fit: BoxFit.cover,width: double.infinity,),
+           ),
+
+              Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(child: 
+            Column(
               children: [
-                Image.asset("assets/logo.png",fit: BoxFit.cover,width: 100.w,),
-                SizedBox(height: 10.h,),
-                Text("Friendify",style: GoogleFonts.quicksand(color: Colors.black,fontWeight: FontWeight.w600,fontSize: 36.sp),)
+                Text("Friendify",style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w600,fontSize: 40.sp),),
+                 Text("Always by your side.",style: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w400,fontSize: 20.sp),),
               ],
             ),
-          ),
+            ),
+           ),
         ],
       ),
     );

@@ -1,7 +1,7 @@
 name: friendfy
 description: "Friendify"
 
-version: 1.1.10+16
+version: 1.2.0+1
 
 environment:
   sdk: ^3.9.2
@@ -55,6 +55,11 @@ dependencies:
   wave_player: ^0.0.4
   smooth_page_indicator: ^2.0.1
   gradient_borders: ^1.0.2
+  rive: ^0.14.0
+  speech_to_text: ^7.3.0
+  record: ^6.2.0
+  ficonsax: ^0.0.3
+  camera: ^0.11.2
 
 dev_dependencies:
   flutter_test:
@@ -75,6 +80,15 @@ flutter:
     - assets/langs/tr.json
     - assets/langs/en.json
     - assets/langs/de.json
+    - assets/langs/it.json
+    - assets/langs/fr.json
+    - assets/langs/ja.json
+    - assets/langs/ru.json
+    - assets/langs/es.json
+    - assets/langs/ko.json
+    - assets/langs/hi.json
+    - assets/langs/pt.json
+    - assets/langs/zh.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

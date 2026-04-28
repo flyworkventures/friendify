@@ -21,6 +21,7 @@ import 'package:gradient_borders/gradient_borders.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:friendfy/Services/revenuecat_service.dart';
+import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/View/PremiumScreen/premium_screen.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
@@ -40,10 +41,14 @@ class _HomeViewState extends ConsumerState<HomeView> {
   @override
   void initState() {
     super.initState();
-    timer = Timer.periodic(Duration(seconds: 4), (a) {
-      ref
-          .read(AllControllers.bottomNavbarController.notifier)
-          .nextPage(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      timer = Timer.periodic(Duration(seconds: 4), (a) {
+        if (!mounted) return;
+        ref
+            .read(AllControllers.bottomNavbarController.notifier)
+            .nextPage(context);
+      });
     });
     // Widget tree build edildikten sonra premium kontrolü yap
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -51,6 +56,12 @@ class _HomeViewState extends ConsumerState<HomeView> {
         initPremium();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
   }
 
   pushPremium() async {
@@ -101,6 +112,14 @@ class _HomeViewState extends ConsumerState<HomeView> {
         return;
       }
 
+      // Abonelik aktifse paywall acma.
+      final hasActiveRevenueCatPremium =
+          await RevenueCatService.hasActiveEntitlement();
+      if (hasActiveRevenueCatPremium || PremiumService.isPremiumActive(user)) {
+        debugPrint("✅ Kullanici zaten abone, paywall acilmadi");
+        return;
+      }
+
       debugPrint("💰 Premium paywall açılıyor...");
       // Android'de close butonu gözükmediği için PremiumScreen kullanıyoruz
       if (Platform.isAndroid) {
@@ -118,11 +137,11 @@ class _HomeViewState extends ConsumerState<HomeView> {
       await Future.delayed(Duration(seconds: 2));
 
       // Paywall kapandıktan sonra customerInfo'yu manuel kontrol et
-      await RevenueCatService.syncCustomerInfo(ref);
+      await RevenueCatService.syncCustomerInfo(ref.container);
 
       // Tekrar kontrol et (bazen gecikme olabilir)
       await Future.delayed(Duration(seconds: 1));
-      await RevenueCatService.syncCustomerInfo(ref);
+      await RevenueCatService.syncCustomerInfo(ref.container);
 
       debugPrint("✅ Premium kontrolü tamamlandı");
       /*  Navigator.of(context).push(
@@ -171,8 +190,18 @@ class _HomeViewState extends ConsumerState<HomeView> {
         return;
       }
 
+      final hasActiveRevenueCatPremium =
+          await RevenueCatService.hasActiveEntitlement();
+      if (hasActiveRevenueCatPremium) {
+        debugPrint("✅ Active RevenueCat entitlement bulundu, paywall atlandi");
+        _isInitializingPremium = false;
+        return;
+      }
+
+      final isPremiumUser = PremiumService.isPremiumActive(user);
+
       // Premium üyeliği olmayan kullanıcılar için premium ekranı göster
-      if (user?.memberships == null || user!.memberships!.isEmpty) {
+      if (!isPremiumUser) {
         debugPrint(
           "💎 No premium membership found, will show paywall in 2 seconds",
         );
@@ -207,12 +236,14 @@ class _HomeViewState extends ConsumerState<HomeView> {
 
   @override
   Widget build(BuildContext context) {
+    final user = ref.watch(AllControllers.userController);
+    final isPremiumUser = PremiumService.isPremiumActive(user);
     List<ConversationModel> conversations =
         ref.watch(AllControllers.chatViewController).conversations ?? [];
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SingleChildScrollView(
-        padding:  EdgeInsets.only(bottom: 90.h).r,
+        padding: EdgeInsets.only(bottom: 90.h).r,
         child: Column(
           children: [
             SafeArea(
@@ -229,7 +260,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                     FeelWidget(),
                     SizedBox(height: 15.h),
                     Text(
-                      "Your matches",
+                      Translate.translate("home_your_matches_title", context),
                       style: GoogleFonts.quicksand(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -239,7 +270,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                     SizedBox(height: 10.h),
                     YourMatches(),
                     SizedBox(height: 20.h),
-      
+
                     Padding(
                       padding: const EdgeInsets.only(right: 20),
                       child: Row(
@@ -254,81 +285,20 @@ class _HomeViewState extends ConsumerState<HomeView> {
                     chatWithCyra(conversations),
                     SizedBox(height: 10.h),
 
-                    if (ref.watch(AllControllers.userController)?.memberships ==
-                        null) ...[
+                    if (!isPremiumUser) ...[
                       premiumCard(),
                     ],
 
                     SizedBox(height: 20.h),
 
                     recentagent(),
-               
                   ],
                 ),
               ),
             ),
             if (Platform.isAndroid) ...[SizedBox(height: 20.h)],
 
-            /*
-            GestureDetector(
-              onTap: () {
-                //   navigatorKey.currentState?.pushNamed('/agentsView');
-                ref
-                    .read(AllControllers.bottomNavbarController.notifier)
-                    .updateIndex(1);
-              },
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                margin: const EdgeInsets.symmetric(horizontal: 25),
-                width: MediaQuery.sizeOf(context).width,
-                height: 155.h,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(35).r,
-                  gradient: LinearGradient(
-                    colors: [MyColors.purple, Color(0xff322EFD)],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            Translate.translate("character_selection", context),
-                            style: GoogleFonts.quicksand(
-                              fontSize: 24.sp,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        //
-                        Image.asset("assets/ch.png"),
-                      ],
-                    ),
-                    Text(
-                      Translate.translate(
-                        "character_selection_subtext",
-                        context,
-                      ),
-                      style: GoogleFonts.quicksand(
-                        fontSize: 14.sp,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            */
-
             SizedBox(height: 20.h),
-
           ],
         ),
       ),
@@ -375,9 +345,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-
-                                                                
-
 
                           Text(
                             Translate.translate("premium_box_subtext", context),
@@ -452,15 +419,16 @@ class _HomeViewState extends ConsumerState<HomeView> {
 
   Widget editCharacterWidget() {
     return GestureDetector(
-          onTap: () {
-      // Agents ekranına git ve edit mode'u aktif et
-      ref.read(AllControllers.agentsViewController.notifier).setEditMode(true);
-      navigatorKey.currentState?.pushNamed('/agentsView');
-    },
+      onTap: () {
+        navigatorKey.currentState?.pushNamed(
+          '/agentsView',
+          arguments: {'editFlow': true},
+        );
+      },
       child: Container(
         height: 99.h,
         padding: EdgeInsets.all(15).r,
-      
+
         decoration: BoxDecoration(
           border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
           borderRadius: BorderRadius.circular(16).r,
@@ -471,9 +439,9 @@ class _HomeViewState extends ConsumerState<HomeView> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             SvgPicture.asset("assets/icons/edit.svg"),
-      
+
             Text(
-              "Edit a Character",
+              Translate.translate("home_edit_character_title", context),
               style: GoogleFonts.quicksand(
                 color: Colors.white,
                 fontSize: 16.sp,
@@ -481,7 +449,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
               ),
             ),
             Text(
-              "Edit as you want",
+              Translate.translate("home_edit_character_subtitle", context),
               style: GoogleFonts.quicksand(
                 color: Colors.white,
                 fontSize: 12.sp,
@@ -510,7 +478,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
           SvgPicture.asset("assets/icons/create-user.svg"),
 
           Text(
-            "Create a Character",
+            Translate.translate("home_create_character_title", context),
             style: GoogleFonts.quicksand(
               color: Colors.white,
               fontSize: 16.sp,
@@ -518,7 +486,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
             ),
           ),
           Text(
-            "Make it yours",
+            Translate.translate("home_create_character_subtitle", context),
             style: GoogleFonts.quicksand(
               color: Colors.white,
               fontSize: 12.sp,
@@ -726,7 +694,11 @@ class _HomeViewState extends ConsumerState<HomeView> {
                                 ),
                                 SizedBox(width: 10.w),
                                 Text(
-                                  conversationModel.agentModel?.name ?? "Agent",
+                                  conversationModel.agentModel?.name ??
+                                      Translate.translate(
+                                        "home_agent_fallback_name",
+                                        context,
+                                      ),
                                   style: GoogleFonts.quicksand(
                                     color: Colors.black,
                                     fontSize: 14.sp,
@@ -774,10 +746,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
   }
 
   Widget chatWithCyra(List<ConversationModel> conversations) {
-    final Shader linearGradient = LinearGradient(
-      colors: <Color>[Color(0xffDA44bb), Color(0xff8921aa)],
-    ).createShader(Rect.fromLTWH(0.0, 0.0, 200.0, 70.0));
-
     return GestureDetector(
       onTap: () {
         final conversations = ref
@@ -844,7 +812,10 @@ class _HomeViewState extends ConsumerState<HomeView> {
                             ? conversationsList.first.agentModel!.name
                             : (agents != null && agents.isNotEmpty)
                             ? agents.last.name
-                            : "Agent";
+                            : Translate.translate(
+                                "home_agent_fallback_name",
+                                context,
+                              );
 
                         // Doğru key seçimi
                         final translationKey = hasConversations
@@ -883,7 +854,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                           width: 16.w,
                         ),
                         Text(
-                          "Start a Chat",
+                          Translate.translate("home_start_chat_cta", context),
                           style: GoogleFonts.quicksand(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -1096,11 +1067,10 @@ class _HomeViewState extends ConsumerState<HomeView> {
 
     return GestureDetector(
       onTap: () {
-        // Agents ekranına git ve edit mode'u aktif et
-        ref
-            .read(AllControllers.agentsViewController.notifier)
-            .setEditMode(true);
-        navigatorKey.currentState?.pushNamed('/agentsView');
+        navigatorKey.currentState?.pushNamed(
+          '/agentsView',
+          arguments: {'editFlow': true},
+        );
       },
       child: Container(
         width: MediaQuery.sizeOf(context).width,
@@ -1199,10 +1169,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
   }
 
   Widget recentagent() {
-    final Shader linearGradient = LinearGradient(
-      colors: <Color>[Color(0xffDA44bb), Color(0xff8921aa)],
-    ).createShader(Rect.fromLTWH(0.0, 0.0, 200.0, 70.0));
-
     final recentAgents = ref
         .watch(AllControllers.agentsViewController)
         .recentAgents;
@@ -1228,36 +1194,24 @@ class _HomeViewState extends ConsumerState<HomeView> {
         width: MediaQuery.sizeOf(context).width,
 
         height: 150.h,
-        padding: EdgeInsets.only(top: 10, bottom: 10, right: 20),
+        padding: EdgeInsets.only(top: 10, bottom: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(35).r,
-          boxShadow: [
-            BoxShadow(
-              blurRadius: 10,
-              color: Colors.grey.withValues(alpha: 0.4),
-            ),
-          ],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               Translate.translate("recently_added_characters", context),
               style: GoogleFonts.quicksand(
-                foreground: Paint()..shader = linearGradient,
-                fontSize: 14.sp,
+                color: Colors.white,
+                fontSize: 16.sp,
                 fontWeight: FontWeight.bold,
                 height: 0,
               ),
             ),
-            Text(
-              Translate.translate("recently_added_characters_sub", context),
-              style: GoogleFonts.quicksand(
-                fontSize: 12.sp,
-                fontWeight: FontWeight.w500,
-                color: Color(0xffA1A1A1),
-              ),
-            ),
+
             SizedBox(height: 10.h),
 
             SizedBox(
@@ -1267,7 +1221,9 @@ class _HomeViewState extends ConsumerState<HomeView> {
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   shrinkWrap: true,
-                  padding: EdgeInsets.symmetric(horizontal: 30),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 30,
+                  ).copyWith(left: 0),
                   itemCount: recentAgents.length,
                   itemBuilder: (context, index) {
                     if (index >= recentAgents.length) {
@@ -1375,7 +1331,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                               Text(
                                 agent.name,
                                 style: GoogleFonts.quicksand(
-                                  foreground: Paint()..shader = linearGradient,
+                                  color: Colors.white,
                                   fontSize: 14.sp,
                                   fontWeight: FontWeight.bold,
                                   height: 0,
@@ -1398,9 +1354,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
   }
 
   Widget appBar() {
-    bool isPremium =
-        ref.watch(AllControllers.userController)?.memberships != null;
-
     return Padding(
       padding: const EdgeInsets.only(right: 20).r,
       child: Row(
@@ -1411,7 +1364,14 @@ class _HomeViewState extends ConsumerState<HomeView> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                "Welcome, ${ref.watch(AllControllers.userController)?.username ?? "Richy"}",
+                Translate.translate("home_welcome_user", context).replaceAll(
+                  '%%name%%',
+                  ref.watch(AllControllers.userController)?.username ??
+                      Translate.translate(
+                        "home_welcome_fallback_name",
+                        context,
+                      ),
+                ),
                 style: GoogleFonts.quicksand(
                   color: Colors.white,
                   fontSize: 20.sp,
@@ -1419,7 +1379,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                 ),
               ),
               Text(
-                "How are you feeling today?",
+                Translate.translate("home_how_feeling_today", context),
                 style: GoogleFonts.quicksand(
                   color: Colors.white.withValues(alpha: 0.8),
                   fontSize: 14.sp,

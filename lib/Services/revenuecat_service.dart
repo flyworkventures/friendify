@@ -5,16 +5,29 @@ import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:friendfy/Models/user_model.dart';
 import 'package:friendfy/Models/premium_model.dart';
+import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/Services/premium_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// RevenueCat satın alma listener ve premium tanımlama servisi
 class RevenueCatService {
   static bool _listenerAdded = false;
 
+  /// RevenueCat tarafinda aktif entitlement var mi kontrol eder.
+  static Future<bool> hasActiveEntitlement() async {
+    try {
+      final customerInfo = await Purchases.getCustomerInfo();
+      return customerInfo.entitlements.all.values.any((e) => e.isActive);
+    } catch (e) {
+      debugPrint("⚠️ Active entitlement kontrolu basarisiz: $e");
+      return false;
+    }
+  }
+
   /// RevenueCat purchase listener ekler (satın alma sonrası premium tanımlama için)
-  static void addPurchaseListener(WidgetRef? ref) {
+  static void addPurchaseListener(ProviderContainer container) {
     if (_listenerAdded) {
       debugPrint("⚠️ RevenueCat listener zaten eklenmiş");
       return;
@@ -24,7 +37,7 @@ class RevenueCatService {
       // CustomerInfo güncellemelerini dinle
       Purchases.addCustomerInfoUpdateListener((customerInfo) async {
         debugPrint("📦 RevenueCat customerInfo updated");
-        await handlePurchaseUpdate(customerInfo, ref);
+        await handlePurchaseUpdate(customerInfo, container);
       });
 
       _listenerAdded = true;
@@ -37,35 +50,41 @@ class RevenueCatService {
   /// Satın alma sonrası customerInfo güncellemesini handle eder
   static Future<void> handlePurchaseUpdate(
     CustomerInfo customerInfo,
-    WidgetRef? ref,
+    ProviderContainer container,
   ) async {
     try {
       debugPrint("💰 Purchase update işleniyor...");
       debugPrint("💰 CustomerInfo: ${customerInfo.toString()}");
-      
+
       // Aktif entitelments (premium üyelikler)
       final entitlements = customerInfo.entitlements.all;
       debugPrint("📦 Entitlements count: ${entitlements.length}");
-      
+
       if (entitlements.isEmpty) {
         debugPrint("⚠️ Hiç entitlement bulunamadı!");
         return;
       }
-      
+
       for (final entitlement in entitlements.entries) {
-        debugPrint("📦 Entitlement: ${entitlement.key}, Active: ${entitlement.value.isActive}");
-        debugPrint("📦 Entitlement Product ID: ${entitlement.value.productIdentifier}");
+        debugPrint(
+          "📦 Entitlement: ${entitlement.key}, Active: ${entitlement.value.isActive}",
+        );
+        debugPrint(
+          "📦 Entitlement Product ID: ${entitlement.value.productIdentifier}",
+        );
         debugPrint("📦 Entitlement Will Renew: ${entitlement.value.willRenew}");
-        debugPrint("📦 Entitlement Period Type: ${entitlement.value.periodType}");
+        debugPrint(
+          "📦 Entitlement Period Type: ${entitlement.value.periodType}",
+        );
       }
 
       // Kullanıcıyı al
-      final user = ref?.read(AllControllers.userController);
+      final user = container.read(AllControllers.userController);
       if (user == null) {
         debugPrint("⚠️ User null, premium tanımlama yapılamıyor");
         return;
       }
-      
+
       debugPrint("👤 User ID: ${user.id}, Email: ${user.email}");
 
       // Aktif premium var mı kontrol et
@@ -73,12 +92,14 @@ class RevenueCatService {
       PremiumModel? newPremium;
 
       for (final entitlement in entitlements.values) {
-        debugPrint("🔍 Kontrol ediliyor: ${entitlement.identifier}, Active: ${entitlement.isActive}");
-        
+        debugPrint(
+          "🔍 Kontrol ediliyor: ${entitlement.identifier}, Active: ${entitlement.isActive}",
+        );
+
         if (entitlement.isActive) {
           hasActivePremium = true;
           debugPrint("✅ Aktif entitlement bulundu: ${entitlement.identifier}");
-          
+
           // Product ID ve tarihleri al
           final productId = entitlement.productIdentifier;
           // RevenueCat tarihleri String? olarak döner, parse etmemiz gerekiyor
@@ -97,23 +118,25 @@ class RevenueCatService {
 
           // Tarihleri String'den DateTime'a çevir (RevenueCat String? döndürüyor)
           DateTime purchaseDateTime = DateTime.now();
-          if (purchaseDateString != null) {
-            try {
-              purchaseDateTime = DateTime.parse(purchaseDateString);
-              debugPrint("✅ Purchase date parsed: $purchaseDateTime");
-            } catch (e) {
-              debugPrint("⚠️ Purchase date parse hatası: $e, şu anki zaman kullanılıyor");
-              purchaseDateTime = DateTime.now();
-            }
+          try {
+            purchaseDateTime = DateTime.parse(purchaseDateString);
+            debugPrint("✅ Purchase date parsed: $purchaseDateTime");
+          } catch (e) {
+            debugPrint(
+              "⚠️ Purchase date parse hatası: $e, şu anki zaman kullanılıyor",
+            );
+            purchaseDateTime = DateTime.now();
           }
-          
+
           DateTime? expirationDateTime;
           if (expirationDateString != null) {
             try {
               expirationDateTime = DateTime.parse(expirationDateString);
               debugPrint("✅ Expiration date parsed: $expirationDateTime");
             } catch (e) {
-              debugPrint("⚠️ Expiration date parse hatası: $e, null olarak ayarlanıyor");
+              debugPrint(
+                "⚠️ Expiration date parse hatası: $e, null olarak ayarlanıyor",
+              );
               expirationDateTime = null;
             }
           }
@@ -125,8 +148,10 @@ class RevenueCatService {
             productId: productId,
             purchasedAt: purchaseDateTime,
           );
-          
-          debugPrint("✅ Premium model oluşturuldu: ${newPremium.productId}, Type: ${newPremium.type}, Active: ${newPremium.isActive}");
+
+          debugPrint(
+            "✅ Premium model oluşturuldu: ${newPremium.productId}, Type: ${newPremium.type}, Active: ${newPremium.isActive}",
+          );
 
           break; // İlk aktif premium'u al
         }
@@ -134,18 +159,26 @@ class RevenueCatService {
 
       if (hasActivePremium && newPremium != null) {
         debugPrint("✅ Premium tanımlanıyor...");
-        
+
         // Premium'u backend'e gönder
-        await updatePremiumOnBackend(user, newPremium, ref);
-        
+        await updatePremiumOnBackend(user, newPremium, container, customerInfo);
+
         // Local state'i güncelle
-        await refreshUserFromBackend(ref);
-                 await ref?.read(AllControllers.chatViewController.notifier).getConversations();
-         await ref?.read(AllControllers.agentsViewController.notifier).getAgents();
-         await ref?.read(AllControllers.agentsViewController.notifier).getRecentAgents();
+        await refreshUserFromBackend(container);
+        await container
+            .read(AllControllers.chatViewController.notifier)
+            .getConversations();
+        await container
+            .read(AllControllers.agentsViewController.notifier)
+            .getAgents();
+        await container
+            .read(AllControllers.agentsViewController.notifier)
+            .getRecentAgents();
       } else {
         debugPrint("ℹ️ Aktif premium bulunamadı");
-        debugPrint("ℹ️ hasActivePremium: $hasActivePremium, newPremium: ${newPremium != null}");
+        debugPrint(
+          "ℹ️ hasActivePremium: $hasActivePremium, newPremium: ${newPremium != null}",
+        );
         if (!hasActivePremium) {
           debugPrint("⚠️ Hiç aktif entitlement bulunamadı!");
         }
@@ -163,23 +196,31 @@ class RevenueCatService {
   static Future<void> updatePremiumOnBackend(
     UserModel user,
     PremiumModel newPremium,
-    WidgetRef? ref,
+    ProviderContainer container,
+    CustomerInfo customerInfo,
   ) async {
     try {
       debugPrint("🌐 Backend'e premium bilgisi gönderiliyor...");
-      debugPrint("📦 Yeni premium: ${newPremium.productId}, Start: ${newPremium.startDate}, End: ${newPremium.endDate}");
-      
+      debugPrint(
+        "📦 Yeni premium: ${newPremium.productId}, Start: ${newPremium.startDate}, End: ${newPremium.endDate}",
+      );
+
       // Yeni premium'u ekle
       final updatedMemberships = PremiumService.addPremiumToMemberships(
         user,
         newPremium,
       );
-      
+      // Backend basarisiz olsa bile uygulama tarafinda premium durumu kaybolmasin.
+      final optimisticUser = user.copyWith(memberships: updatedMemberships);
+      container
+          .read(AllControllers.userController.notifier)
+          .updateUserModel(optimisticUser);
+
       debugPrint("📦 Updated memberships count: ${updatedMemberships.length}");
 
-      // JSON'a çevir
-      final membershipsJson = PremiumService.membershipsToJson(updatedMemberships);
-      debugPrint("📦 Memberships JSON: $membershipsJson");
+      // RevenueCat kaynak gercek olarak kabul edilir, yine de memberships gecmisi backend'e yazilir.
+      final membershipsPayload = updatedMemberships.map((m) => m.toMap()).toList();
+      debugPrint("📦 Memberships payload: ${jsonEncode(membershipsPayload)}");
 
       // User ID kontrolü
       if (user.id == null) {
@@ -189,40 +230,68 @@ class RevenueCatService {
 
       // Backend'e gönder - direkt http.post kullan (WidgetRef sorunu için)
       final userToken = user.token ?? "";
+      final userRefreshToken = user.refreshToken ?? "";
       final headers = {
         'x-auth-token': userToken,
-        'Content-Type': 'application/json'
+        'x-refresh-token': userRefreshToken,
+        'Content-Type': 'application/json',
       };
-      
+
       final response = await http.post(
-        Uri.parse("${AppConstants.baseURL}${AppConstants.updatePremiumURL}"),
+        Uri.parse("${AppConstants.baseURL}${AppConstants.syncMembershipsURL}"),
         headers: headers,
         body: jsonEncode({
           "userId": user.id!,
-          "memberships": membershipsJson,
+          "source": "revenuecat_client",
+          "memberships": membershipsPayload,
+          "revenuecat": {
+            "originalAppUserId": customerInfo.originalAppUserId,
+            "originalPurchaseDate": customerInfo.originalPurchaseDate,
+            "activeSubscriptions": customerInfo.activeSubscriptions,
+            "allPurchasedProductIdentifiers":
+                customerInfo.allPurchasedProductIdentifiers,
+            "latestExpirationDate": customerInfo.latestExpirationDate,
+            "firstSeen": customerInfo.firstSeen,
+            "requestDate": customerInfo.requestDate,
+            "entitlements": customerInfo.entitlements.all.map(
+              (key, value) => MapEntry(key, {
+                "identifier": value.identifier,
+                "isActive": value.isActive,
+                "productIdentifier": value.productIdentifier,
+                "latestPurchaseDate": value.latestPurchaseDate,
+                "expirationDate": value.expirationDate,
+                "willRenew": value.willRenew,
+                "periodType": value.periodType.name,
+              }),
+            ),
+          },
         }),
       );
 
       debugPrint("📡 Backend response status: ${response.statusCode}");
       debugPrint("📡 Backend response body: ${response.body}");
-      
+
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         debugPrint("✅ Premium backend'de güncellendi: ${json['msg']}");
         debugPrint("✅ Success: ${json['success']}");
-        
+
         // Backend'den güncellenmiş user bilgisini al ve güncelle
         if (json['user'] != null) {
           try {
             final updatedUser = UserModel.fromMap(json['user']);
-            ref?.read(AllControllers.userController.notifier).updateUserModel(updatedUser);
+            container
+                .read(AllControllers.userController.notifier)
+                .updateUserModel(updatedUser);
             debugPrint("✅ User model güncellendi (backend response'dan)");
           } catch (e) {
             debugPrint("⚠️ User model güncellenirken hata: $e");
           }
         }
       } else {
-        debugPrint("❌ Premium backend'de güncellenemedi: ${response.statusCode}");
+        debugPrint(
+          "❌ Premium backend'de güncellenemedi: ${response.statusCode}",
+        );
         debugPrint("Response: ${response.body}");
       }
     } catch (e) {
@@ -231,34 +300,56 @@ class RevenueCatService {
   }
 
   /// Backend'den güncel kullanıcı bilgisini çeker (premium bilgisi dahil)
-  static Future<void> refreshUserFromBackend(WidgetRef? ref) async {
+  static Future<void> refreshUserFromBackend(ProviderContainer container) async {
     try {
       debugPrint("🔄 Kullanıcı bilgisi backend'den çekiliyor...");
-      
-      final user = ref?.read(AllControllers.userController);
+
+      final user = container.read(AllControllers.userController);
       if (user?.token == null || user?.token?.isEmpty == true) {
         debugPrint("⚠️ Token yok, kullanıcı bilgisi çekilemiyor");
         return;
       }
 
       final userToken = user!.token!;
+      final userRefreshToken = user.refreshToken ?? "";
       // Direkt http.post kullan (WidgetRef sorunu için)
       final headers = {
         'x-auth-token': userToken,
-        'Content-Type': 'application/json'
+        'x-refresh-token': userRefreshToken,
+        'Content-Type': 'application/json',
       };
-      
+
       final response = await http.post(
         Uri.parse("${AppConstants.baseURL}${AppConstants.verifyTokenURL}"),
         headers: headers,
-        body: jsonEncode({"token": userToken}),
+        body: jsonEncode({
+          "token": userToken,
+          "refreshToken": userRefreshToken,
+        }),
       );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
-        if (json["msg"] == "Valid Token") {
-          final updatedUser = UserModel.fromMap(json["user"]);
-          ref?.read(AllControllers.userController.notifier).updateUserModel(updatedUser);
+        if (json["msg"] == "Valid Token" || json["code"] == "TOKEN_RENEWED") {
+          var updatedUser = UserModel.fromMap(json["user"]);
+          if (json["code"] == "TOKEN_RENEWED" && json["token"] != null) {
+            final renewedAccess = json["token"].toString();
+            final renewedRefresh = json["refreshToken"]?.toString();
+            final localService = LocalService(
+              prefs: await SharedPreferences.getInstance(),
+            );
+            await localService.setAuthTokens(
+              accessToken: renewedAccess,
+              refreshToken: renewedRefresh,
+            );
+            updatedUser = updatedUser.copyWith(
+              token: renewedAccess,
+              refreshToken: renewedRefresh ?? updatedUser.refreshToken,
+            );
+          }
+          container
+              .read(AllControllers.userController.notifier)
+              .updateUserModel(updatedUser);
           debugPrint("✅ Kullanıcı bilgisi güncellendi");
         }
       }
@@ -268,11 +359,11 @@ class RevenueCatService {
   }
 
   /// Manuel olarak customerInfo'yu kontrol eder ve premium tanımlar
-  static Future<void> syncCustomerInfo(WidgetRef? ref) async {
+  static Future<void> syncCustomerInfo(ProviderContainer container) async {
     try {
       debugPrint("🔄 CustomerInfo senkronize ediliyor...");
       final customerInfo = await Purchases.getCustomerInfo();
-      await handlePurchaseUpdate(customerInfo, ref);
+      await handlePurchaseUpdate(customerInfo, container);
     } catch (e) {
       debugPrint("❌ CustomerInfo senkronize edilirken hata: $e");
     }

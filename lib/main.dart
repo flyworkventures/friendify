@@ -16,6 +16,7 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  debugPrint("ELEVENLABS_API_KEY: ${AppConstants.baseURL}");
   
   // Initialize notification service
   await NotificationService.initialize();
@@ -61,7 +62,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     // RevenueCat purchase listener ekle (satın alma sonrası premium tanımlama için)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      RevenueCatService.addPurchaseListener(ref);
+      RevenueCatService.addPurchaseListener(ref.container);
     });
   }
 

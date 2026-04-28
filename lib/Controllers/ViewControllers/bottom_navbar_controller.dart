@@ -10,20 +10,18 @@ import 'package:friendfy/View/MessagesView/messages_view.dart';
 import 'package:friendfy/View/ProfileView/profile_view.dart';
 
 class BottomNavbarController extends StateNotifier<BottomNavbarModel> {
-  BottomNavbarController():super(BottomNavbarModel(currentIndex: 0));
+  BottomNavbarController() : super(BottomNavbarModel(currentIndex: 0));
 
   List<Widget> pages = [
     HomeView(),
     AgentsScreen(),
     MessagesView(),
-    ProfileView()
+    ProfileView(),
   ];
-  
 
-  updateIndex(int newIndex){
+  updateIndex(int newIndex) {
     state = state.copyWith(currentIndex: newIndex);
   }
-
 
   List<PremiumCardModel> titles(BuildContext context) => [
     PremiumCardModel(
@@ -42,29 +40,27 @@ class BottomNavbarController extends StateNotifier<BottomNavbarModel> {
   PageController pageController = PageController();
   int index = 0;
 
-  nextPage(BuildContext context)async{
-
-
-
-
-if (index != 2) {
-  index = index+1;
-   pageController.nextPage(duration: Duration(milliseconds: 500), curve: Curves.ease);
- }else{
-
-    index = 0;
-        pageController.jumpToPage(0);
-
- }
-debugPrint("Index: $index");
-  
+  nextPage(BuildContext context) async {
+    if (!pageController.hasClients) {
+      debugPrint("BottomNavbar pageController not attached yet");
+      return;
     }
 
-
+    if (index != 2) {
+      index = index + 1;
+      pageController.nextPage(
+        duration: Duration(milliseconds: 500),
+        curve: Curves.ease,
+      );
+    } else {
+      index = 0;
+      pageController.jumpToPage(0);
+    }
+    debugPrint("Index: $index");
+  }
 }
 
-
-class PremiumCardModel{
+class PremiumCardModel {
   final String title;
   final String subtitle;
 
@@ -73,34 +69,24 @@ class PremiumCardModel{
 
 class BottomNavbarModel {
   final int currentIndex;
-  BottomNavbarModel({
-    required this.currentIndex,
-  });
+  BottomNavbarModel({required this.currentIndex});
 
-
-  BottomNavbarModel copyWith({
-    int? currentIndex,
-  }) {
-    return BottomNavbarModel(
-      currentIndex: currentIndex ?? this.currentIndex,
-    );
+  BottomNavbarModel copyWith({int? currentIndex}) {
+    return BottomNavbarModel(currentIndex: currentIndex ?? this.currentIndex);
   }
 
   Map<String, dynamic> toMap() {
-    return <String, dynamic>{
-      'currentIndex': currentIndex,
-    };
+    return <String, dynamic>{'currentIndex': currentIndex};
   }
 
   factory BottomNavbarModel.fromMap(Map<String, dynamic> map) {
-    return BottomNavbarModel(
-      currentIndex: map['currentIndex'] as int,
-    );
+    return BottomNavbarModel(currentIndex: map['currentIndex'] as int);
   }
 
   String toJson() => json.encode(toMap());
 
-  factory BottomNavbarModel.fromJson(String source) => BottomNavbarModel.fromMap(json.decode(source) as Map<String, dynamic>);
+  factory BottomNavbarModel.fromJson(String source) =>
+      BottomNavbarModel.fromMap(json.decode(source) as Map<String, dynamic>);
 
   @override
   String toString() => 'BottomNavbarModel(currentIndex: $currentIndex)';
@@ -108,9 +94,8 @@ class BottomNavbarModel {
   @override
   bool operator ==(covariant BottomNavbarModel other) {
     if (identical(this, other)) return true;
-  
-    return 
-      other.currentIndex == currentIndex;
+
+    return other.currentIndex == currentIndex;
   }
 
   @override

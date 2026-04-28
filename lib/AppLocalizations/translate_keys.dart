@@ -1,4 +1,4 @@
-class TranslateKeys{
+class TranslateKeys {
   static String welcomeGetchaty = "welcomeGetchaty";
   static String startSubtext = "startSubtext";
   static String signIngoogle = "signIngoogle";
@@ -120,7 +120,8 @@ class TranslateKeys{
   static String shopSubtext = "shopSubtext";
   static String accessFeatures = "accessFeatures";
   static String chatWith = "chatWitha";
-  static String insufficientTokensOrMembership = "insufficientTokensOrMembership";
+  static String insufficientTokensOrMembership =
+      "insufficientTokensOrMembership";
   static String camera = "camera";
   static String faq1 = "faq1";
   static String faq1a = "faq1a";
@@ -191,29 +192,32 @@ class TranslateKeys{
   static String next = "next";
   static String male = "male";
   static String female = "female";
+
   /// Kısa cinsiyet segmenti (ör. kayıt ekranı)
   static String genderPrivate = "gender_private";
-  
+
   // Account Created View Keys
   static String accountHasBeenCreated = "account_has_been_created";
   static String accountCreatedSubtext = "account_created_subtext";
-  static String accountCreationProgressTitle = "account_creation_progress_title";
-  static String accountCreationProgressSubtitle = "account_creation_progress_subtitle";
+  static String accountCreationProgressTitle =
+      "account_creation_progress_title";
+  static String accountCreationProgressSubtitle =
+      "account_creation_progress_subtitle";
   static String accountSetupStepInterests = "account_setup_step_interests";
   static String accountSetupStepHabits = "account_setup_step_habits";
   static String accountSetupStepPlan = "account_setup_step_plan";
   static String accountSetupStepContent = "account_setup_step_content";
   static String accountGetStarted = "account_get_started";
   static String accountCreationSignupFailed = "account_creation_signup_failed";
-  
+
   // Home View Keys
   static String chatWithName = "chat_with_name";
-  
+
   // Account Deleted View Keys
   static String weMissYou = "we_miss_you";
   static String accountDeletedMessage = "account_deleted_message";
   static String backToWelcome = "back_to_welcome";
-  
+
   // Hobbies/Interests Keys
   static String travel = "travel";
   static String gaming = "gaming";
@@ -229,13 +233,12 @@ class TranslateKeys{
   static String fitness = "fitness";
   static String reading = "reading";
 
-
   static String notificationsSubtext = "notificationsSubtext";
-  
+
   static String goodMorning = "good_morning";
   static String goodAfternoon = "good_afternoon";
   static String goodEvening = "good_evening";
-  
+
   // Chat View Keys
   static String chat = "chat";
   static String deleteConversation = "delete_conversation";
@@ -254,7 +257,7 @@ class TranslateKeys{
   static String sendReport = "send_report";
   static String reportSentSuccess = "report_sent_success";
   static String reportSentError = "report_sent_error";
-  
+
   // Report Reasons
   static String inappropriateContent = "inappropriate_content";
   static String harassment = "harassment";
@@ -262,37 +265,38 @@ class TranslateKeys{
   static String violence = "violence";
   static String hateSpeech = "hate_speech";
   static String other = "other";
-  
+
   // Messages View Keys
   static String sayHi = "say_hi";
   static String voiceMessage = "voice_message";
   static String searchTextfieldHinttext = "search_textfield_hinttext";
   static String noResultsFound = "no_results_found";
   static String noConversationsFound = "no_conversations_found";
-  
+
   // Guest Message Limit Keys
   static String dailyMessageLimitTitle = "daily_message_limit_title";
   static String dailyMessageLimitMessage = "daily_message_limit_message";
   static String pleaseLoginToContinue = "please_login_to_continue";
-  
+
   // Notification Permission Keys
   static String notificationPermissionTitle = "notification_permission_title";
-  static String notificationPermissionMessage = "notification_permission_message";
+  static String notificationPermissionMessage =
+      "notification_permission_message";
   static String notNow = "not_now";
   static String enableNotifications = "enable_notifications";
-  
+
   // Gallery Keys
   static String gallery = "gallery";
   static String selectFromGallery = "select_from_gallery";
   static String addPhoto = "add_photo";
-  
+
   // Camera Keys
   static String retake = "retake";
   static String usePhoto = "use_photo";
-  
+
   // Chat Input Keys
   static String enterMessage = "enter_message";
-  
+
   // Profile Keys
   static String birthdate = "birthdate";
   static String genderPreference = "gender_preference";
@@ -313,5 +317,41 @@ class TranslateKeys{
 
   static String interestsLoadFailed = "interests_load_failed";
   static String retry = "retry";
-
+  static String back = "back";
+  static String notificationsListTitle = "notifications_list_title";
+  static String notificationsEmpty = "notifications_empty";
+  static String notificationsDaysAgo = "notifications_days_ago";
+  static String notificationsHoursAgo = "notifications_hours_ago";
+  static String notificationsMinutesAgo = "notifications_minutes_ago";
+  static String notificationsJustNow = "notifications_just_now";
+  static String cameraOpenError = "camera_open_error";
+  static String registerEmailAlreadyRegistered =
+      "register_email_already_registered";
+  static String registerGenericError = "register_generic_error";
+  static String agentUpdateFailed = "agent_update_failed";
+  static String agentCreateFailed = "agent_create_failed";
+  static String agentDeleteFailed = "agent_delete_failed";
+  static String forceUpdateTitle = "force_update_title";
+  static String forceUpdateMessage = "force_update_message";
+  static String forceUpdateHint = "force_update_hint";
+  static String forceUpdateAction = "force_update_action";
+  static String editCharacterTitle = "edit_character_title";
+  static String editCharacterNameLabel = "edit_character_name_label";
+  static String editCharacterNameHint = "edit_character_name_hint";
+  static String editCharacterInterestsTraitsTitle =
+      "edit_character_interests_traits_title";
+  static String editCharacterInterestsTraitsDesc =
+      "edit_character_interests_traits_desc";
+  static String editCharacterInterestsTraitsHint =
+      "edit_character_interests_traits_hint";
+  static String editCharacterSelectVoice = "edit_character_select_voice";
+  static String editCharacterSaveChanges = "edit_character_save_changes";
+  static String editCharacterVoiceFemale = "edit_character_voice_female";
+  static String editCharacterVoiceMale = "edit_character_voice_male";
+  static String editCharacterVoicesLoadFailed =
+      "edit_character_voices_load_failed";
+  static String editCharacterSelectGenderForVoices =
+      "edit_character_select_gender_for_voices";
+  static String editCharacterNoVoiceForGender =
+      "edit_character_no_voice_for_gender";
 }

@@ -5,80 +5,134 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
+import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HttpService {
-	final String baseUrl;
+  final String baseUrl;
   final Ref? ref;
 
-	HttpService({this.baseUrl = AppConstants.baseURL,this.ref});
-
+  HttpService({this.baseUrl = AppConstants.baseURL, this.ref});
 
   Map<String, String> get header => {
-"x-auth-token": ref?.watch(AllControllers.userController)?.token ?? "",
-'Content-Type': 'application/json'
+    "x-auth-token": ref?.watch(AllControllers.userController)?.token ?? "",
+    "x-refresh-token":
+        ref?.watch(AllControllers.userController)?.refreshToken ?? "",
+    'Content-Type': 'application/json',
   };
 
+  Future<http.Response> post({
+    required String path,
+    dynamic body,
+    Map<String, String>? headers,
+  }) async {
+    try {
+      final effectiveHeaders = headers ?? header;
+      log("sent body: $body, header: $effectiveHeaders");
+      http.Response response = await http
+          .post(
+            Uri.parse("$baseUrl$path"),
+            body: body == null ? null : jsonEncode(body),
+            headers: effectiveHeaders,
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException(
+                'Request timeout',
+                const Duration(seconds: 30),
+              );
+            },
+          );
 
-
- Future<http.Response> post({required String path,dynamic body,Map<String, String>? headers}) async{
-  try {
-    log("sent body: $body, header: $header");
-    http.Response response = await http.post(
-      Uri.parse("$baseUrl$path"),
-      body: body == null ? null : jsonEncode(body),
-      headers: headers ?? header,
-    ).timeout(
-      const Duration(seconds: 30),
-      onTimeout: () {
-        throw TimeoutException('Request timeout', const Duration(seconds: 30));
-      },
-    );
-    
-    if (response.statusCode != 200) {
-      //log("POST: Response ${response.body}");
+      if (response.statusCode != 200) {
+        //log("POST: Response ${response.body}");
+      }
+      await _handleTokenRenewal(response);
+      return response;
+    } on SocketException catch (e) {
+      log("❌ Network error: $e");
+      rethrow;
+    } on HttpException catch (e) {
+      log("❌ HTTP error: $e");
+      rethrow;
+    } on FormatException catch (e) {
+      log("❌ Format error: $e");
+      rethrow;
+    } catch (e) {
+      log("❌ Unexpected error in POST request: $e");
+      rethrow;
     }
-    return response;
-  } on SocketException catch (e) {
-    log("❌ Network error: $e");
-    rethrow;
-  } on HttpException catch (e) {
-    log("❌ HTTP error: $e");
-    rethrow;
-  } on FormatException catch (e) {
-    log("❌ Format error: $e");
-    rethrow;
-  } catch (e) {
-    log("❌ Unexpected error in POST request: $e");
-    rethrow;
   }
- }
 
+  Future<void> _handleTokenRenewal(http.Response response) async {
+    try {
+      final dynamic decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) return;
+      if (decoded["code"] != "TOKEN_RENEWED") return;
 
- Future<http.StreamedResponse?> postAudioFile({required String path,required File file,var conversation,Map<String, String>? headers}) async{
+      final String? renewedAccessToken =
+          (decoded["token"] ?? decoded["accessToken"] ?? decoded["newToken"])
+              ?.toString();
+      final String? renewedRefreshToken = decoded["refreshToken"]?.toString();
 
-try {
-    final url = Uri.parse("$baseUrl$path");
-    final request = http.MultipartRequest('POST', url);
-    request.files.add(await http.MultipartFile.fromPath('file', file.path));
-    request.fields["conversation"] = conversation;
-    request.fields["sender"] = "user";
-    http.StreamedResponse response = await request.send();
- if (response.statusCode != 200) {
-  var body = await response.stream.bytesToString();
-  var json = jsonDecode(body);
-   log("POST: Response ${json["error"]}");
- }
-  return response;
-} catch (e) {
-  log("Error on postAudio: $e");
-  return null;
-}
+      if (renewedAccessToken == null || renewedAccessToken.isEmpty) return;
 
- }
+      final prefs = await SharedPreferences.getInstance();
+      final localService = LocalService(prefs: prefs);
+      await localService.setAuthTokens(
+        accessToken: renewedAccessToken,
+        refreshToken: renewedRefreshToken,
+      );
 
- Future<http.Response> uploadToCDN({
+      final currentUser = ref?.read(AllControllers.userController);
+      if (currentUser != null) {
+        ref
+            ?.read(AllControllers.userController.notifier)
+            .updateUserModel(
+              currentUser.copyWith(
+                token: renewedAccessToken,
+                refreshToken: renewedRefreshToken ?? currentUser.refreshToken,
+              ),
+            );
+      }
+    } catch (_) {
+      // Non-JSON veya TOKEN_RENEWED olmayan response'ları yoksay.
+    }
+  }
+
+  Future<http.StreamedResponse?> postAudioFile({
+    required String path,
+    required File file,
+    var conversation,
+    Map<String, String>? headers,
+  }) async {
+    try {
+      final url = Uri.parse("$baseUrl$path");
+      final request = http.MultipartRequest('POST', url);
+      request.files.add(await http.MultipartFile.fromPath('file', file.path));
+      request.headers['x-auth-token'] =
+          ref?.watch(AllControllers.userController)?.token ?? "";
+      request.headers['x-refresh-token'] =
+          ref?.watch(AllControllers.userController)?.refreshToken ?? "";
+      request.fields["conversation"] = conversation;
+      request.fields["sender"] = "user";
+      http.StreamedResponse response = await request.send();
+      if (response.statusCode != 200) {
+        var body = await response.stream.bytesToString();
+        var json = jsonDecode(body);
+        log("POST: Response ${json["error"]}");
+      }
+      return response;
+    } catch (e) {
+      log("Error on postAudio: $e");
+      return null;
+    }
+  }
+
+  Future<http.Response> uploadToCDN({
     required String url,
     required List<int> fileBytes,
     required String contentType,
@@ -92,7 +146,7 @@ try {
           'Content-Type': contentType,
         },
       );
-      
+
       log("CDN Upload Response: ${response.statusCode}");
       return response;
     } catch (e) {
@@ -101,48 +155,62 @@ try {
     }
   }
 
- Future<http.StreamedResponse?> postImageFile({
+  Future<http.StreamedResponse?> postImageFile({
     required String path,
     required File file,
     required String conversation,
     String? message,
-    Map<String, String>? headers
+    Map<String, String>? headers,
   }) async {
     try {
       final url = Uri.parse("$baseUrl$path");
-      final request = http.MultipartRequest('POST', url);
-      
-      // x-auth-token header'ı ekle
-      request.headers['x-auth-token'] = ref?.watch(AllControllers.userController)?.token ?? "";
-      
-      // Resim dosyasını ekle
-      request.files.add(await http.MultipartFile.fromPath('image', file.path));
-      
-      // Form fields
-      request.fields["conversation"] = conversation;
-      request.fields["sender"] = "user";
-      if (message != null && message.isNotEmpty) {
-        request.fields["message"] = message;
+      Future<http.StreamedResponse> sendWith({
+        required String fileFieldName,
+      }) async {
+        final request = http.MultipartRequest('POST', url);
+        request.headers['x-auth-token'] =
+            ref?.watch(AllControllers.userController)?.token ?? "";
+        request.headers['x-refresh-token'] =
+            ref?.watch(AllControllers.userController)?.refreshToken ?? "";
+        request.files.add(
+          await http.MultipartFile.fromPath(fileFieldName, file.path),
+        );
+        // Farklı backend sürümleri için iki alan adı da gönderiliyor.
+        request.fields["conversation"] = conversation;
+        request.fields["conversationId"] = conversation;
+        request.fields["sender"] = "user";
+        if (message != null && message.isNotEmpty) {
+          request.fields["message"] = message;
+        }
+        return request.send();
       }
-      
+
       log("📤 Sending image: ${file.path}, conversation: $conversation");
-      
-      http.StreamedResponse response = await request.send();
-      
+
+      var response = await sendWith(fileFieldName: "image");
+      if (response.statusCode == 404 || response.statusCode == 405) {
+        log("⚠️ image field failed (${response.statusCode}), retrying with file");
+        response = await sendWith(fileFieldName: "file");
+      }
+
       if (response.statusCode != 200) {
-        var body = await response.stream.bytesToString();
-        var json = jsonDecode(body);
-        log("POST Image Error: ${json["error"]}");
+        final body = await response.stream.bytesToString();
+        try {
+          final json = jsonDecode(body);
+          log("POST Image Error: ${json["error"] ?? body}");
+        } catch (_) {
+          log(
+            "POST Image Error (non-json): status=${response.statusCode}, body=${body.length > 200 ? body.substring(0, 200) : body}",
+          );
+        }
       } else {
         log("✅ Image sent successfully");
       }
-      
+
       return response;
     } catch (e) {
       log("❌ Error on postImage: $e");
       return null;
     }
   }
-
-
 }

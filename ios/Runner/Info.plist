@@ -63,6 +63,8 @@
 	<string>Friendfy needs photo library access to select and send photos in chat.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Friendfy requests microphone permission to record your voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Friendfy uses speech recognition to convert your voice into text during calls.</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>Friendfy would like to send you notifications to remind you about your friends.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

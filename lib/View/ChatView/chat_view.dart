@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:io';
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
@@ -13,8 +16,10 @@ import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/ViewControllers/chat_screen_view_controller.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/main.dart';
+import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:heroicons/heroicons.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 
@@ -23,7 +28,6 @@ import 'package:friendfy/Models/message_model.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/Widgets/textfield.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
-import 'package:waved_audio_player/waved_audio_player.dart';
 import 'package:shimmer/shimmer.dart';
 
 class ChatView extends ConsumerStatefulWidget {
@@ -36,15 +40,17 @@ class ChatView extends ConsumerStatefulWidget {
 class _ChatViewState extends ConsumerState<ChatView> {
   final ScrollController _scrollController = ScrollController();
   Timer? timer;
-  // Her mesaj için ayrı text visibility state'i tutacak Map
-  final Map<int, bool> _messageTextVisibility = {};
   int? _previousMessageCount = 0; // Önceki mesaj sayısını takip et
   int? _currentlyPlayingMessageId; // Şu anda oynatılan mesajın ID'si
   // Global audio player - tüm sesli mesajlar için tek bir player kullan
   final ap.AudioPlayer _globalAudioPlayer = ap.AudioPlayer();
+  final ap.AudioPlayer _ttsPlayer = ap.AudioPlayer();
   // TextField'ın focus node'unu saklamak için
   final FocusNode _textFieldFocusNode = FocusNode();
-  
+  ChatState? _previousChatState;
+  Timer? _recordingUiTimer;
+  int _recordingUiSeconds = 0;
+
   @override
   void initState() {
     super.initState();
@@ -58,12 +64,16 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // Sayfadan çıkınca tüm oynatılan sesleri durdur
     _globalAudioPlayer.stop();
     _globalAudioPlayer.dispose();
+    _ttsPlayer.stop();
+    _ttsPlayer.dispose();
     _textFieldFocusNode.dispose();
     _currentlyPlayingMessageId = null;
+    _recordingUiTimer?.cancel();
     super.dispose();
   }
 
   void startStream() {
+    timer?.cancel();
     timer = Timer.periodic(const Duration(seconds: 1), (_) => listenMessages());
   }
 
@@ -73,23 +83,33 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // İlk yüklemede mesaj sayısını kaydet
     final messages = ref.read(AllControllers.chatViewController).messages;
     _previousMessageCount = messages?.length ?? 0;
+    _previousChatState = ref.read(AllControllers.chatViewController).chatState;
   }
 
   Future<void> listenMessages() async {
     final previousCount = _previousMessageCount ?? 0;
+    final previousChatState = _previousChatState ?? ChatState.normal;
     await ref.read(AllControllers.chatViewController.notifier).listenMessages();
-    
+
     // Mesaj sayısını kontrol et
     final messages = ref.read(AllControllers.chatViewController).messages;
     final currentCount = messages?.length ?? 0;
-    
+
     // Yeni mesaj geldi mi kontrol et
     if (currentCount > previousCount) {
       // Yeni mesaj geldiğinde her zaman scroll yap
       scrollToBottom();
     }
-    
+    final currentChatState = ref
+        .read(AllControllers.chatViewController)
+        .chatState;
+    if (currentChatState == ChatState.botWriting &&
+        previousChatState != ChatState.botWriting) {
+      scrollToBottom();
+    }
+
     _previousMessageCount = currentCount;
+    _previousChatState = currentChatState;
   }
 
   Future<void> sendMessage() async {
@@ -119,10 +139,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// Mesaj metnindeki linkleri tespit edip tıklanabilir ve bold yapar
   Widget _buildTextWithLinks(String text, Color defaultColor) {
     final List<TextSpan> spans = [];
-    final textStyle = GoogleFonts.poppins(
-      color: defaultColor,
-      fontSize: 14.sp,
-    );
+    final textStyle = GoogleFonts.poppins(color: defaultColor, fontSize: 14.sp);
     final linkStyle = GoogleFonts.poppins(
       color: defaultColor,
       fontSize: 14.sp,
@@ -134,177 +151,179 @@ class _ChatViewState extends ConsumerState<ChatView> {
     for (final match in _urlRegex.allMatches(text)) {
       // Match'ten önceki normal metin
       if (match.start > lastIndex) {
-        spans.add(TextSpan(
-          text: text.substring(lastIndex, match.start),
-          style: textStyle,
-        ));
+        spans.add(
+          TextSpan(
+            text: text.substring(lastIndex, match.start),
+            style: textStyle,
+          ),
+        );
       }
 
       // Link metni
       final url = match.group(0)!;
-      spans.add(TextSpan(
-        text: url,
-        style: linkStyle,
-        recognizer: TapGestureRecognizer()
-          ..onTap = () async {
-            String urlToLaunch = url;
-            // Eğer http/https yoksa ekle
-            if (!urlToLaunch.startsWith('http://') && !urlToLaunch.startsWith('https://')) {
-              urlToLaunch = 'https://$urlToLaunch';
-            }
-            
-            try {
-              final uri = Uri.parse(urlToLaunch);
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
+      spans.add(
+        TextSpan(
+          text: url,
+          style: linkStyle,
+          recognizer: TapGestureRecognizer()
+            ..onTap = () async {
+              String urlToLaunch = url;
+              // Eğer http/https yoksa ekle
+              if (!urlToLaunch.startsWith('http://') &&
+                  !urlToLaunch.startsWith('https://')) {
+                urlToLaunch = 'https://$urlToLaunch';
               }
-            } catch (e) {
-              print('Error launching URL: $e');
-            }
-          },
-      ));
+
+              try {
+                final uri = Uri.parse(urlToLaunch);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              } catch (e) {
+                print('Error launching URL: $e');
+              }
+            },
+        ),
+      );
 
       lastIndex = match.end;
     }
 
     // Kalan normal metin
     if (lastIndex < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastIndex),
-        style: textStyle,
-      ));
+      spans.add(TextSpan(text: text.substring(lastIndex), style: textStyle));
     }
 
     // Eğer hiç link yoksa normal Text döndür
     if (spans.isEmpty || !_urlRegex.hasMatch(text)) {
-      return Text(
-        text,
-        style: textStyle,
-      );
+      return Text(text, style: textStyle);
     }
 
-    return RichText(
-      text: TextSpan(children: spans),
-    );
+    return RichText(text: TextSpan(children: spans));
   }
 
   void _showGalleryPopup(BuildContext context) {
-    // Klavye kapalı olduğunda pop-up'ı göster
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      barrierColor: Colors.transparent,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (BuildContext dialogContext) {
-        // MediaQuery'yi dialog context'inden al (klavye durumunu doğru almak için)
-        final mediaQuery = MediaQuery.of(dialogContext);
-        final keyboardHeight = mediaQuery.viewInsets.bottom;
-        
-        return Stack(
-          children: [
-            // Arka plan overlay (tıklanınca kapanır)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () => Navigator.of(dialogContext).pop(),
-                child: Container(color: Colors.transparent),
-              ),
-            ),
-            // Pop-up menü - sol alt köşede, input alanının üstünde
-            // Klavye kapalıysa sabit pozisyon, açıksa klavye yüksekliğini hesaba kat
-            Positioned(
-              bottom: keyboardHeight > 0 ? keyboardHeight + 80.h : 80.h,
-              left: 16.w,
-              child: Material(
-                elevation: 8,
-                borderRadius: BorderRadius.circular(12.r),
-                child: Container(
-                  width: 180.w,
+        Widget attachmentItem({
+          required IconData icon,
+          required String label,
+          required Color bgColor,
+          required VoidCallback onTap,
+        }) {
+          return GestureDetector(
+            onTap: onTap,
+            child: Column(
+              children: [
+                Container(
+                  width: 50.w,
+                  height: 50.h,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(
-                      color: Colors.blue.shade200,
-                      width: 1,
-                    ),
+                    color: bgColor,
+                    shape: BoxShape.circle,
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Kamera seçeneği
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () async {
-                            Navigator.of(dialogContext).pop();
-                            await ref.read(AllControllers.chatViewController.notifier).pickImageFromCamera();
-                          },
-                          borderRadius: BorderRadius.only(
-                            topLeft: Radius.circular(12.r),
-                            topRight: Radius.circular(12.r),
-                          ),
-                          child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.camera_alt_outlined,
-                                  color: Colors.black87,
-                                  size: 22,
-                                ),
-                                SizedBox(width: 12.w),
-                                Text(
-                                  Translate.translate("camera", context),
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.black87,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 15.sp,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      Divider(height: 1, thickness: 0.5, color: Colors.grey.shade300),
-                      // Galeri seçeneği
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () async {
-                            Navigator.of(dialogContext).pop();
-                            await ref.read(AllControllers.chatViewController.notifier).pickImage();
-                          },
-                          borderRadius: BorderRadius.only(
-                            bottomLeft: Radius.circular(12.r),
-                            bottomRight: Radius.circular(12.r),
-                          ),
-                          child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.photo_library_outlined,
-                                  color: Colors.black87,
-                                  size: 22,
-                                ),
-                                SizedBox(width: 12.w),
-                                Text(
-                                  Translate.translate("gallery", context),
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.black87,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 15.sp,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: Icon(icon, color: Colors.white, size: 21.sp),
+                ),
+                SizedBox(height: 7.h),
+                Text(
+                  label,
+                  style: GoogleFonts.quicksand(
+                    color: Colors.white,
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          );
+        }
+
+        return Container(
+          margin: EdgeInsets.only(bottom: MediaQuery.of(dialogContext).viewInsets.bottom),
+          padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 14.h),
+          decoration: BoxDecoration(
+            color: const Color(0xFF050505),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16.r)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.18), width: 1),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Attachment',
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => Navigator.of(dialogContext).pop(),
+                      child: Icon(Icons.close, color: Colors.white, size: 20.sp),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16.h),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    attachmentItem(
+                      icon: Icons.image_rounded,
+                      label: Translate.translate("gallery", context),
+                      bgColor: const Color(0xFF0B3B80),
+                      onTap: () async {
+                        Navigator.of(dialogContext).pop();
+                        await ref.read(AllControllers.chatViewController.notifier).pickImage();
+                      },
+                    ),
+                    SizedBox(width: 24.w),
+                    attachmentItem(
+                      icon: Icons.photo_camera_rounded,
+                      label: Translate.translate("camera", context),
+                      bgColor: const Color(0xFFC89A0A),
+                      onTap: () async {
+                        Navigator.of(dialogContext).pop();
+                        await ref.read(AllControllers.chatViewController.notifier).pickImageFromCamera();
+                      },
+                    ),
+                    SizedBox(width: 24.w),
+                    attachmentItem(
+                      icon: Icons.list_rounded,
+                      label: 'Survey',
+                      bgColor: const Color(0xFFAE4343),
+                      onTap: () {
+                        Navigator.of(dialogContext).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Survey yakinda eklenecek')),
+                        );
+                      },
+                    ),
+                    SizedBox(width: 24.w),
+                    attachmentItem(
+                      icon: Icons.description_rounded,
+                      label: Translate.translate(TranslateKeys.document, context),
+                      bgColor: const Color(0xFF6FA31E),
+                      onTap: () {
+                        Navigator.of(dialogContext).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Document yakinda eklenecek')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -319,177 +338,239 @@ class _ChatViewState extends ConsumerState<ChatView> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        leading: IconButton(onPressed: ()=>Navigator.pop(context), icon: Icon(CupertinoIcons.back,color: Colors.white,)),
-        centerTitle: true,
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            GestureDetector(
-              onTap: () {
-                _showFullScreenImage(context, controller.agent?.photoURL ?? "");
-              },
-              child:  ClipRRect(
-              borderRadius: BorderRadius.circular(40.r),
-              child: CachedNetworkImage(
-                imageUrl: controller.agent?.photoURL ?? "",
-                width: 40.w,
-                height: 40.h,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!,
-                  highlightColor: Colors.grey[100]!,
-                  child: Container(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          leading: IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: Icon(CupertinoIcons.back, color: Colors.white),
+          ),
+          centerTitle: true,
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  _showFullScreenImage(
+                    context,
+                    controller.agent?.photoURL ?? "",
+                  );
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(40.r),
+                  child: CachedNetworkImage(
+                    imageUrl: controller.agent?.photoURL ?? "",
                     width: 40.w,
                     height: 40.h,
-                    color: Colors.white,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!,
+                      highlightColor: Colors.grey[100]!,
+                      child: Container(
+                        width: 40.w,
+                        height: 40.h,
+                        color: Colors.white,
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      width: 40.w,
+                      height: 40.h,
+                      color: Colors.grey[300],
+                      child: Icon(Icons.person, size: 25),
+                    ),
                   ),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  width: 40.w,
-                  height: 40.h,
-                  color: Colors.grey[300],
-                  child: Icon(Icons.person, size: 25),
                 ),
               ),
+
+              SizedBox(width: 10.w),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      ref
+                          .read(AllControllers.agentsViewController.notifier)
+                          .pushAgentView(controller.agent!);
+                    },
+                    child: Text(
+                      controller.agent?.name ?? "",
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 17.sp,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (controller.chatState == ChatState.botWriting)
+                    Text(
+                      Translate.translate("typing", context),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.grey,
+                        fontSize: 12.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  if (controller.chatState == ChatState.botAudioRecording)
+                    Text(
+                      Translate.translate("recording_audio", context),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.grey,
+                        fontSize: 12.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              onPressed: () async {
+                timer?.cancel();
+                await navigatorKey.currentState?.pushNamed("/voiceCallView");
+                if (!mounted) return;
+                startStream();
+              },
+              icon: SvgPicture.asset(
+                "assets/icons/call.svg",
+                color: Colors.white,
+              ),
             ),
+            IconButton(
+              onPressed: () async {
+                timer?.cancel();
+                await navigatorKey.currentState?.pushNamed("/videoCallView");
+                if (!mounted) return;
+                startStream();
+              },
+              icon: SvgPicture.asset("assets/icons/vieo_call.svg"),
             ),
-                               
-            SizedBox(width: 10.w),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                GestureDetector(
-                  onTap: (){
-                    ref.read(AllControllers.agentsViewController.notifier).pushAgentView(controller.agent!);
+          ],
+        ),
+
+        // --- BODY ---
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Mesaj Listesi
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: EdgeInsets.symmetric(
+                    vertical: 15.h,
+                    horizontal: 10.w,
+                  ),
+                  itemCount:
+                      _getItemCount(messages) +
+                      (controller.chatState == ChatState.botWriting ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    final baseItemCount = _getItemCount(messages);
+                    if (controller.chatState == ChatState.botWriting &&
+                        index == baseItemCount) {
+                      return _buildTypingIndicator(controller);
+                    }
+
+                    final item = _getItemAtIndex(messages, index);
+                    if (item is String) {
+                      // Tarih başlığı
+                      return _buildDateHeader(item);
+                    } else {
+                      // Mesaj
+                      final msg = item as MessageModel;
+                      return Align(
+                        alignment: msg.sender == "user"
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: _chatBubble(msg),
+                      );
+                    }
                   },
-                  child: Text(
-                    controller.agent?.name ?? "",
-                    style: GoogleFonts.quicksand(
-                      color: Colors.white,
-                      fontSize: 17.sp,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
                 ),
-                if (controller.chatState == ChatState.botWriting)
-                  Text(
-                    Translate.translate("typing", context),
-                    style: GoogleFonts.quicksand(
-                      color: Colors.grey,
-                      fontSize: 12.sp,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                if (controller.chatState == ChatState.botAudioRecording)
-                  Text(
-                    Translate.translate("recording_audio", context),
-                    style: GoogleFonts.quicksand(
-                      color: Colors.grey,
-                      fontSize: 12.sp,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-                    IconButton(
-            onPressed: () => _showOptionsMenu(context),
-            icon: SvgPicture.asset("assets/icons/call.svg",color: Colors.white,),
+              ),
+
+              // Yazı alanı
+              _messageInput(controller.responseWaiting!),
+            ],
           ),
-          IconButton(
-            onPressed: () => _showOptionsMenu(context),
-            icon: SvgPicture.asset("assets/icons/vieo_call.svg"),
-          ),
-        ],
-      ),
-      
-      // --- BODY ---
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Mesaj Listesi
-            Expanded(
-              child: ListView.builder(
-                      controller: _scrollController,
-                      key: ValueKey('messages_list_${_currentlyPlayingMessageId ?? 'none'}'), // Key değiştiğinde tüm widget'lar yeniden oluşturulur
-                      padding: EdgeInsets.symmetric(vertical: 15.h, horizontal: 10.w),
-                      itemCount: _getItemCount(messages),
-                      itemBuilder: (context, index) {
-                        final item = _getItemAtIndex(messages, index);
-                        if (item is String) {
-                          // Tarih başlığı
-                          return _buildDateHeader(item);
-                        } else {
-                          // Mesaj
-                          final msg = item as MessageModel;
-                          return Align(
-                            alignment: msg.sender == "user"
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: _chatBubble(msg),
-                          );
-                        }
-                      },
-                    ),
-            ),
-      
-            // Yazı alanı
-            _messageInput(controller.responseWaiting!),
-          ],
         ),
       ),
-          ),
     );
   }
 
   Widget _chatBubble(MessageModel message) {
     if (message.messageType == "text") {
+      final isUser = message.sender == "user";
       return Column(
         children: [
-          Align(
-            alignment: message.sender == "user" ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+          if (isUser)
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onLongPressStart: null,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                  margin: EdgeInsets.only(
+                    top: 8.h,
+                    bottom: 8.h,
+                    right: 12.w,
+                    left: 50.w,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xffAB10E2)),
+                    color: const Color(0xffAB10E2).withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(30).r,
+                      topRight: const Radius.circular(30).r,
+                      bottomLeft: const Radius.circular(30).r,
+                      bottomRight: const Radius.circular(0),
+                    ),
+                  ),
+                  child: _buildTextWithLinks(message.message, Colors.white),
+                ),
+              ),
+            )
+          else
+            Container(
               margin: EdgeInsets.only(
                 top: 8.h,
                 bottom: 8.h,
-                right: message.sender == "user" ? 12.w : 50.w,
-                left: message.sender == "bot" ? 12.w : 50.w,
+                left: 12.w,
+                right: 50.w,
               ),
-              decoration: BoxDecoration(
-                border: Border.all(
-                    color: message.sender == "user"
-                    ? Color(0xffAB10E2)
-                    : Colors.white.withValues(alpha: 0.3),
-                ),
-                color: message.sender == "user"
-                    ? Color(0xffAB10E2).withValues(alpha: 0.5)
-                    : Colors.black.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(30).r,
-                  topRight: const Radius.circular(30).r,
-                  bottomLeft: message.sender == "user"
-                      ? const Radius.circular(30).r
-                      : const Radius.circular(0),
-                  bottomRight: message.sender == "user"
-                      ? const Radius.circular(0)
-                      : const Radius.circular(30).r,
-                ),
-              ),
-              child: _buildTextWithLinks(
-                message.message,
-                Colors.white,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildBotAvatar(),
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: GestureDetector(
+                      onLongPressStart: (details) => _showMessageActionMenu(
+                        globalPosition: details.globalPosition,
+                        messageText: message.message,
+                      ),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 12.w,
+                          vertical: 8.h,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3),
+                          ),
+                          color: Colors.black.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(30).r,
+                            topRight: const Radius.circular(30).r,
+                            bottomLeft: const Radius.circular(0),
+                            bottomRight: const Radius.circular(30).r,
+                          ),
+                        ),
+                        child: _buildTextWithLinks(message.message, Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-                  Align(
-          alignment: message.sender == "user" ? Alignment.centerRight : Alignment.centerLeft,
-          child: Text(dateParser(message.createdAt),style: GoogleFonts.poppins(color: Colors.grey,fontSize: 10.sp,fontWeight: FontWeight.w500),),
-        )
         ],
       );
     } else if (message.messageType == "voice") {
@@ -501,24 +582,145 @@ class _ChatViewState extends ConsumerState<ChatView> {
     }
   }
 
+  Future<void> _showMessageActionMenu({
+    required Offset globalPosition,
+    required String messageText,
+  }) async {
+    final selectedAction = await showMenu<String>(
+      context: context,
+      color: const Color(0xff242424),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+      position: RelativeRect.fromLTRB(
+        globalPosition.dx,
+        globalPosition.dy,
+        MediaQuery.of(context).size.width - globalPosition.dx,
+        MediaQuery.of(context).size.height - globalPosition.dy,
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'speak',
+          child: SizedBox(
+            width: 150.w,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                Text('Seslendir', style: TextStyle(color: Colors.white)),
+                Icon(Icons.volume_up_outlined, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'copy',
+          child: SizedBox(
+            width: 150.w,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                Text('Kopyala', style: TextStyle(color: Colors.white)),
+                Icon(Icons.copy_rounded, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
 
+    if (!mounted || selectedAction == null) return;
+
+    if (selectedAction == 'copy') {
+      await Clipboard.setData(ClipboardData(text: messageText));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mesaj kopyalandi')),
+      );
+      return;
+    }
+
+    await _speakMessageWithAgentVoice(messageText);
+  }
+
+  Future<void> _speakMessageWithAgentVoice(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+
+    final apiKey = AppConstants.elevenLabsApiKey.trim();
+    if (apiKey.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ElevenLabs API key bulunamadi')),
+      );
+      return;
+    }
+
+    final agent = ref.read(AllControllers.chatViewController).agent;
+    final voiceId = (agent?.voiceId?.trim().isNotEmpty ?? false)
+        ? agent!.voiceId!.trim()
+        : AppConstants.elevenLabsVoiceId;
+    final ttsUrl = Uri.parse(
+      'https://api.elevenlabs.io/v1/text-to-speech/$voiceId',
+    );
+
+    try {
+      final response = await http.post(
+        ttsUrl,
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg',
+        },
+        body: jsonEncode({
+          'text': trimmed,
+          'model_id': 'eleven_multilingual_v2',
+          'voice_settings': {'stability': 0.4, 'similarity_boost': 0.8},
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ses üretilemedi (${response.statusCode})'),
+          ),
+        );
+        return;
+      }
+
+      final Uint8List audioBytes = response.bodyBytes;
+      if (audioBytes.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ses verisi bos dondu')),
+        );
+        return;
+      }
+
+      await _ttsPlayer.stop();
+      await _ttsPlayer.play(ap.BytesSource(audioBytes));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Seslendirme hatasi: $e')),
+      );
+    }
+  }
 
   Widget imageBubble(MessageModel message) {
     var json = jsonDecode(message.message);
     final imageUrl = json["imageURL"] ?? "";
     final userMessage = json["message"];
     final aiExplanation = json["aiExplanation"];
-    
-    return Container(
+
+    final content = Container(
       margin: EdgeInsets.only(
         top: 8.h,
         bottom: 8.h,
-        right: message.sender == "user" ? 12.w : 50.w,
-        left: message.sender == "bot" ? 12.w : 50.w,
+        right: message.sender == "user" ? 12.w : 0,
+        left: message.sender == "bot" ? 0 : 50.w,
       ),
       child: Column(
-        crossAxisAlignment: message.sender == "user" 
-            ? CrossAxisAlignment.end 
+        crossAxisAlignment: message.sender == "user"
+            ? CrossAxisAlignment.end
             : CrossAxisAlignment.start,
         children: [
           // Resim
@@ -557,7 +759,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
               ),
             ),
           ),
-          
+
           // Kullanıcı mesajı varsa göster
           if (userMessage != null && userMessage.toString().isNotEmpty) ...[
             SizedBox(height: 8.h),
@@ -580,10 +782,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
               ),
             ),
           ],
-          
+
           // AI açıklaması varsa göster (bot mesajlarında)
-          if (aiExplanation != null && 
-              aiExplanation.toString().isNotEmpty && 
+          if (aiExplanation != null &&
+              aiExplanation.toString().isNotEmpty &&
               message.sender == "bot") ...[
             SizedBox(height: 8.h),
             Container(
@@ -604,122 +806,153 @@ class _ChatViewState extends ConsumerState<ChatView> {
         ],
       ),
     );
+
+    if (message.sender == "bot") {
+      return Container(
+        margin: EdgeInsets.only(left: 12.w, right: 50.w),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildBotAvatar(),
+            SizedBox(width: 10.w),
+            Expanded(child: content),
+          ],
+        ),
+      );
+    }
+
+    return content;
   }
 
-  Widget voiceBuble(MessageModel message){
-    var json = jsonDecode(message.message);
-    // Bu mesajın text visibility state'ini al (yoksa false)
-    final isTextVisible = _messageTextVisibility[message.id] ?? false;
-  
-    return Column(
-      children: [
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-          margin: EdgeInsets.only(
-            top: 8.h,
-            bottom: 8.h,
-            right: message.sender == "user" ? 12.w : 50.w,
-            left: message.sender == "bot" ? 12.w : 50.w,
-          ),
-          decoration: BoxDecoration(
-            color: message.sender == "user"
-                ? MyColors.purple
-                : const Color(0xffF4F4F4),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(35).r,
-              topRight: const Radius.circular(35).r,
-              bottomLeft: message.sender == "user"
-                  ? const Radius.circular(35).r
-                  : const Radius.circular(0),
-              bottomRight: message.sender == "user"
-                  ? const Radius.circular(0)
-                  : const Radius.circular(35).r,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // GestureDetector ile tıklama event'ini yakalayarak klavye kapanmasını engelle
-              // WhatsApp gibi davranış: klavye açıkken sesli mesaja tıklayınca klavye kapanmaz
-              // TextField'ın focus node'unu geçirerek, tıklandığında focus'u koruyoruz
-              _ControlledWavedAudioPlayer(
-                key: ValueKey('audio_${message.id}'),
-                messageId: message.id,
-                audioUrl: json["url"],
-                playedColor: message.sender == "user" ? Colors.white : MyColors.purple,
-                iconColor: Colors.black,
-                currentlyPlayingId: _currentlyPlayingMessageId,
-                globalAudioPlayer: _globalAudioPlayer,
-                textFieldFocusNode: _textFieldFocusNode,
-                onPlayStarted: (messageId) {
-                  if (!mounted) return;
-                  if (mounted) {
-                    setState(() {
-                      _currentlyPlayingMessageId = messageId;
-                    });
-                  }
-                },
-                onPlayStopped: (messageId) {
-                  if (!mounted) return;
-                  if (_currentlyPlayingMessageId == messageId) {
-                    if (mounted) {
-                      setState(() {
-                        _currentlyPlayingMessageId = null;
-                      });
-                    }
-                  }
-                },
-              ),
-              SizedBox(height:  5.h),
-              Align(
-                alignment: message.sender == "user" ? Alignment.centerRight : Alignment.centerLeft,
-                child: GestureDetector(
-                  onTap: () {
-                         setState(() {
-              // Sadece bu mesajın state'ini toggle et
-              _messageTextVisibility[message.id] = !isTextVisible;
-            });
-                  },
-                  child: Text(!isTextVisible ? Translate.translate("convert_to_text", context) : Translate.translate("hide_text", context),style: GoogleFonts.poppins(fontSize: 9.sp,fontWeight: FontWeight.w500,color:message.sender == "user" ? Colors.white: MyColors.purple),))),
-              if (isTextVisible) ...[
-                SizedBox(height: 8.h),
-                Text(
-                  json["text"],
-                  style: GoogleFonts.poppins(
-                    color: message.sender == "bot"
-                        ? const Color(0xff555555)
-                        : Colors.white,
-                    fontSize: 14.sp,
-                  ),
-                ),
-              ],
-            ],
-          ),
+  Widget _buildBotAvatar() {
+    final controller = ref.watch(AllControllers.chatViewController);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(40.r),
+      child: CachedNetworkImage(
+        imageUrl: controller.agent?.photoURL ?? "",
+        width: 44.w,
+        height: 44.h,
+        fit: BoxFit.cover,
+        errorWidget: (context, url, error) => Container(
+          width: 44.w,
+          height: 44.h,
+          color: Colors.grey[300],
+          child: Icon(Icons.person, size: 24.sp),
         ),
-        Align(
-          alignment: message.sender == "user" ? Alignment.centerRight : Alignment.centerLeft,
-          child: Text(dateParser(message.createdAt),style: GoogleFonts.poppins(color: Colors.grey,fontSize: 10.sp,fontWeight: FontWeight.w500),),
-        )
-      ],
+      ),
     );
   }
 
-  String dateParser(String date){
+  Widget voiceBuble(MessageModel message) {
+    final json = jsonDecode(message.message);
+    final audioUrl = (json["url"] ?? "").toString();
+
+    if (message.sender == "user") {
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+        margin: EdgeInsets.only(
+          top: 8.h,
+          bottom: 8.h,
+          right: 12.w,
+          left: 70.w,
+        ),
+        decoration: BoxDecoration(
+          color: MyColors.purple.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(24).r,
+            topRight: const Radius.circular(24).r,
+            bottomLeft: const Radius.circular(24).r,
+            bottomRight: const Radius.circular(6).r,
+          ),
+          border: Border.all(color: MyColors.purple.withValues(alpha: 0.9)),
+        ),
+        child: _buildVoicePlayer(
+          message.id,
+          audioUrl,
+          playedColor: Colors.white,
+          iconColor: Colors.black,
+        ),
+      );
+    }
+
+    return Container(
+      margin: EdgeInsets.only(top: 8.h, bottom: 8.h, right: 12.w, left: 12.w),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildBotAvatar(),
+          SizedBox(width: 10.w),
+          Flexible(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 0.72.sw),
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(16.r),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.30)),
+                ),
+                child: _buildVoicePlayer(
+                  message.id,
+                  audioUrl,
+                  playedColor: const Color(0xFFA214FF),
+                  iconColor: Colors.black,
+                  botStyle: true,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVoicePlayer(
+    int messageId,
+    String audioUrl, {
+    required Color playedColor,
+    required Color iconColor,
+    bool botStyle = false,
+  }) {
+    return _ControlledWavedAudioPlayer(
+      key: ValueKey('audio_$messageId'),
+      messageId: messageId,
+      audioUrl: audioUrl,
+      playedColor: playedColor,
+      iconColor: iconColor,
+      botStyle: botStyle,
+      currentlyPlayingId: _currentlyPlayingMessageId,
+      globalAudioPlayer: _globalAudioPlayer,
+      textFieldFocusNode: _textFieldFocusNode,
+      onPlayStarted: (id) {
+        if (!mounted) return;
+        setState(() => _currentlyPlayingMessageId = id);
+      },
+      onPlayStopped: (id) {
+        if (!mounted) return;
+        if (_currentlyPlayingMessageId == id) {
+          setState(() => _currentlyPlayingMessageId = null);
+        }
+      },
+    );
+  }
+
+  String dateParser(String date) {
     DateTime dateTime = DateTime.parse(date);
     String hour = "";
     String minute = "";
     if (dateTime.hour < 10) {
       hour = "0${dateTime.hour}";
-    }else{
+    } else {
       hour = dateTime.hour.toString();
     }
-    var x = dateTime.minute / 10 ;
+    var x = dateTime.minute / 10;
 
     if (x.runtimeType.toString() == "int") {
-      minute  = "${dateTime.minute}0";
-    }else if(dateTime.minute < 10){
-     minute = "0${dateTime.minute}";
-    }else{
+      minute = "${dateTime.minute}0";
+    } else if (dateTime.minute < 10) {
+      minute = "0${dateTime.minute}";
+    } else {
       minute = dateTime.minute.toString();
     }
     return "$hour:$minute";
@@ -728,20 +961,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// Mesajları tarihlerine göre gruplar ve tarih başlıkları ekler
   int _getItemCount(List<MessageModel> messages) {
     if (messages.isEmpty) return 0;
-    
+
     int count = messages.length;
     DateTime? lastDate;
-    
+
     for (var msg in messages) {
       final msgDate = DateTime.parse(msg.createdAt);
       final msgDateOnly = DateTime(msgDate.year, msgDate.month, msgDate.day);
-      
+
       if (lastDate == null || !_isSameDay(msgDateOnly, lastDate)) {
         count++; // Tarih başlığı için ekstra item
         lastDate = msgDateOnly;
       }
     }
-    
+
     return count;
   }
 
@@ -749,12 +982,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
   dynamic _getItemAtIndex(List<MessageModel> messages, int index) {
     int currentIndex = 0;
     DateTime? lastDate;
-    
+
     for (int i = 0; i < messages.length; i++) {
       final msg = messages[i];
       final msgDate = DateTime.parse(msg.createdAt);
       final msgDateOnly = DateTime(msgDate.year, msgDate.month, msgDate.day);
-      
+
       // Yeni bir gün mü?
       if (lastDate == null || !_isSameDay(msgDateOnly, lastDate)) {
         // Tarih başlığı ekle
@@ -764,14 +997,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
         currentIndex++;
         lastDate = msgDateOnly;
       }
-      
+
       // Mesaj ekle
       if (currentIndex == index) {
         return msg;
       }
       currentIndex++;
     }
-    
+
     // Fallback (olması gerekmez ama güvenlik için)
     return messages.isNotEmpty ? messages.last : null;
   }
@@ -779,8 +1012,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// İki tarihin aynı gün olup olmadığını kontrol eder
   bool _isSameDay(DateTime date1, DateTime date2) {
     return date1.year == date2.year &&
-           date1.month == date2.month &&
-           date1.day == date2.day;
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
   /// Tarih başlığını formatlar (Bugün, Dün, veya tam tarih)
@@ -789,7 +1022,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(Duration(days: 1));
     final dateOnly = DateTime(date.year, date.month, date.day);
-    
+
     if (_isSameDay(dateOnly, today)) {
       return Translate.translate("today", context);
     } else if (_isSameDay(dateOnly, yesterday)) {
@@ -798,8 +1031,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
       // Tam tarih formatı
       final locale = Localizations.localeOf(context);
       if (locale.languageCode == 'tr') {
-        final months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-                       'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+        final months = [
+          'Ocak',
+          'Şubat',
+          'Mart',
+          'Nisan',
+          'Mayıs',
+          'Haziran',
+          'Temmuz',
+          'Ağustos',
+          'Eylül',
+          'Ekim',
+          'Kasım',
+          'Aralık',
+        ];
         return '${date.day} ${months[date.month - 1]} ${date.year}';
       } else {
         return DateFormat('d MMMM yyyy', 'en').format(date);
@@ -815,18 +1060,54 @@ class _ChatViewState extends ConsumerState<ChatView> {
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
           decoration: BoxDecoration(
-            color: Colors.grey.shade200,
+            color: Colors.white.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(12.r),
           ),
           child: Text(
             dateText,
             style: GoogleFonts.poppins(
-              color: Colors.black87,
+              color: Colors.white,
               fontSize: 12.sp,
               fontWeight: FontWeight.w500,
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator(ChatScreenViewModel controller) {
+    return Container(
+      margin: EdgeInsets.only(left: 12.w, right: 50.w, top: 8.h, bottom: 8.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(40.r),
+            child: CachedNetworkImage(
+              imageUrl: controller.agent?.photoURL ?? "",
+              width: 44.w,
+              height: 44.h,
+              fit: BoxFit.cover,
+              errorWidget: (context, url, error) => Container(
+                width: 44.w,
+                height: 44.h,
+                color: Colors.grey[300],
+                child: Icon(Icons.person, size: 24.sp),
+              ),
+            ),
+          ),
+          SizedBox(width: 10.w),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(24.r),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+            ),
+            child: const _ChatTypingDots(),
+          ),
+        ],
       ),
     );
   }
@@ -838,11 +1119,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(60.r),
-            child: Image.asset(
-              "assets/hello.gif",
-              width: 120.w,
-              height: 120.h,
-            ),
+            child: Image.asset("assets/hello.gif", width: 120.w, height: 120.h),
           ),
           SizedBox(height: 20.h),
           Container(
@@ -855,11 +1132,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   color: Colors.grey.withOpacity(0.2),
                   offset: const Offset(0, 3),
                   blurRadius: 6,
-                )
+                ),
               ],
             ),
             child: Text(
-              "Say hi!",
+              Translate.translate(TranslateKeys.sayHi, context),
               style: GoogleFonts.quicksand(
                 color: Colors.black,
                 fontSize: 17.sp,
@@ -873,46 +1150,91 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   Widget _messageInput(bool isLoading) {
-final controllerStream =  ref.watch(AllControllers.chatViewController.notifier).messageController;
-final chatController =  ref.watch(AllControllers.chatViewController);
-final chatControllerNotifier =  ref.read(AllControllers.chatViewController.notifier);
-    
+    final controllerStream = ref
+        .watch(AllControllers.chatViewController.notifier)
+        .messageController;
+    final chatController = ref.watch(AllControllers.chatViewController);
+    final chatControllerNotifier = ref.read(
+      AllControllers.chatViewController.notifier,
+    );
+    _syncRecordingUiState(chatController.recordState);
+
     // Kayıt yapılıyor
     if (chatController.recordState == RecordState.recording) {
       return Container(
         width: MediaQuery.sizeOf(context).width,
-        padding: EdgeInsets.symmetric(horizontal: 15.w),
+        padding: EdgeInsets.symmetric(horizontal: 10.w),
         margin: EdgeInsets.symmetric(horizontal: 15.w),
-        height: 45.h,
+        height: 38.h,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(50.r),
-          color: const Color(0xffF7F7F7)
+          borderRadius: BorderRadius.circular(24.r),
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFF020819),
+              const Color(0xFF061033),
+              const Color(0xFF08164A),
+            ],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1),
         ),
         child: Row(
           children: [
-            // Stop/İptal butonu (sol taraf)
-            IconButton(
-              onPressed: () => chatControllerNotifier.stoppingAudio(), 
-              icon: HeroIcon(HeroIcons.stopCircle, style: HeroIconStyle.solid,),
+            Container(
+              width: 18.w,
+              height: 18.h,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+              ),
+              child: Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 12.sp,
+              ),
             ),
+            SizedBox(width: 5.w),
+            Text(
+              _formatRecordingDuration(_recordingUiSeconds),
+              style: GoogleFonts.quicksand(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 8.5.sp,
+              ),
+            ),
+            SizedBox(width: 7.w),
             Expanded(
               child: AudioWaveforms(
                 margin: EdgeInsets.zero,
                 padding: EdgeInsets.zero,
                 waveStyle: WaveStyle(
-                  waveColor: MyColors.purple,
+                  waveColor: Colors.white,
+                  spacing: 2.6,
+                  waveThickness: 2.2,
+                  showTop: true,
+                  showBottom: true,
                   extendWaveform: true,
-                  showMiddleLine: false
+                  showMiddleLine: false,
                 ),
-                size: Size(MediaQuery.sizeOf(context).width, 40.h), 
-                recorderController: chatControllerNotifier.recorderController
+                size: Size(MediaQuery.sizeOf(context).width, 20.h),
+                recorderController: chatControllerNotifier.recorderController,
+              ),
+            ),
+            SizedBox(width: 6.w),
+            GestureDetector(
+              onTap: () => chatControllerNotifier.stopRecordingAndSend(),
+              child: Icon(
+                Icons.send_rounded,
+                size: 16.sp,
+                color: Colors.white,
               ),
             ),
           ],
         ),
       );
     }
-    
+
     // Kayıt durdurulmuş - gönderme butonu göster
     if (chatController.recordState == RecordState.stopped) {
       return Container(
@@ -922,7 +1244,7 @@ final chatControllerNotifier =  ref.read(AllControllers.chatViewController.notif
         height: 45.h,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(50.r),
-          color: Colors.black.withValues(alpha: 0.4)
+          color: Colors.black.withValues(alpha: 0.4),
         ),
         child: Row(
           children: [
@@ -953,76 +1275,93 @@ final chatControllerNotifier =  ref.read(AllControllers.chatViewController.notif
               ),
             ),
             SizedBox(width: 10.w),
-          
+
             GestureDetector(
               onTap: () => chatControllerNotifier.sendStoppedRecording(),
-              child: Icon(
-                Icons.send,
-                color: Colors.white,
-                size: 20,
-              ),
+              child: Icon(Icons.send, color: Colors.white, size: 20),
             ),
           ],
         ),
       );
     }
-    
+
     // Normal input (kayıt yok)
     return Padding(
       padding: EdgeInsets.fromLTRB(16.w, 5.h, 16.w, 15.h),
-      child:  Column(
+      child: Column(
         children: [
-          if(ref.watch(AllControllers.chatViewController.notifier).selectedImage != null)...[
-           Container(
-     
-            height: 60.h,
-            padding: EdgeInsets.only(right: 10),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(39).r,
-              boxShadow: [BoxShadow(blurRadius: 2,color: const Color.fromARGB(255, 221, 221, 221))]
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisAlignment: MainAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 60.w,
-                  height:60.h,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(39).r,
-                    image: DecorationImage(image: AssetImage(ref.watch(AllControllers.chatViewController.notifier).selectedImage!.path),fit: BoxFit.cover)
-                  ),
-                  
-                ),
-                SizedBox(width: 10.w,),
-                Text("Görsel",style: GoogleFonts.quicksand(color: Colors.black,fontWeight: FontWeight.w500),),
-                SizedBox(width: 30.w,),
-                GestureDetector(
-                  onTap: () {
-                    ref.read(AllControllers.chatViewController.notifier).removeImage();
-                  },
-                  child: Container(
-                    width: 20.w,
-                    height: 20.h,
+          if (ref
+                  .watch(AllControllers.chatViewController.notifier)
+                  .selectedImage !=
+              null) ...[
+            Container(
+              width: double.infinity,
+              constraints: BoxConstraints(minHeight: 60.h),
+              padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(20).r,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 60.w,
+                    height: 60.h,
                     decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(50).r
+                      borderRadius: BorderRadius.circular(12).r,
                     ),
-                    child: Center(child: Icon(Icons.close,color: Colors.red,size: 15.w,),),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12).r,
+                      child: Image.file(
+                        File(
+                          ref
+                              .watch(AllControllers.chatViewController.notifier)
+                              .selectedImage!
+                              .path,
+                        ),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
-                )
-
-              ],
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: Text(
+                      Translate.translate(TranslateKeys.image, context),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      ref
+                          .read(AllControllers.chatViewController.notifier)
+                          .removeImage();
+                    },
+                    child: Container(
+                      width: 24.w,
+                      height: 24.h,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(50).r,
+                      ),
+                      child: Center(
+                        child: Icon(Icons.close, color: Colors.red, size: 15.sp),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-           ),
 
-           SizedBox(height: 10.h,),
+            SizedBox(height: 10.h),
           ],
-
-
-
 
           MyTextField(
             controller: controllerStream,
@@ -1030,21 +1369,17 @@ final chatControllerNotifier =  ref.read(AllControllers.chatViewController.notif
             filled: true,
             fillColor: Colors.black.withValues(alpha: 0.4),
             border: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+              borderSide: BorderSide(
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
               borderRadius: BorderRadius.circular(40),
             ),
             hintText: Translate.translate(TranslateKeys.enterMessage, context),
             hintStyle: GoogleFonts.quicksand(color: Colors.white),
             prefixIcon: GestureDetector(
               onTap: () {
-                // Klavyeyi kapat
                 FocusScope.of(context).unfocus();
-                // Klavye animasyonunun bitmesini bekle, sonra popup'ı göster
-                Future.delayed(Duration(milliseconds: 300), () {
-                  if (mounted) {
-                    _showGalleryPopup(context);
-                  }
-                });
+                _showGalleryPopup(context);
               },
               child: HeroIcon(
                 HeroIcons.plus,
@@ -1053,101 +1388,137 @@ final chatControllerNotifier =  ref.read(AllControllers.chatViewController.notif
                 size: 24,
               ),
             ),
-            textStyle: GoogleFonts.quicksand(color: Colors.white,fontWeight: FontWeight.w600,fontSize: 13.sp),
+            textStyle: GoogleFonts.quicksand(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 13.sp,
+            ),
             suffixIcon: AnimatedSwitcher(
-              duration: Duration(milliseconds:50),
-          
-              transitionBuilder: (child, animation) => ScaleTransition(scale: animation ,child: child,),
-              child: suffixIcon(isLoading),)
+              duration: Duration(milliseconds: 50),
+
+              transitionBuilder: (child, animation) =>
+                  ScaleTransition(scale: animation, child: child),
+              child: suffixIcon(isLoading),
+            ),
           ),
         ],
       ),
     );
   }
 
+  void _syncRecordingUiState(RecordState state) {
+    if (state == RecordState.recording) {
+      if (_recordingUiTimer != null) return;
+      _recordingUiSeconds = 0;
+      _recordingUiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() {
+          _recordingUiSeconds++;
+        });
+      });
+      return;
+    }
+    _recordingUiTimer?.cancel();
+    _recordingUiTimer = null;
+    _recordingUiSeconds = 0;
+  }
+
+  String _formatRecordingDuration(int seconds) {
+    final minutePart = (seconds ~/ 60).toString().padLeft(1, '0');
+    final secondPart = (seconds % 60).toString().padLeft(2, '0');
+    return '$minutePart:$secondPart';
+  }
 
   /// Mikrofon butonu - tıklayınca kayıt başlar
-  Widget _buildInstagramStyleMicrophoneButton(ChatScreenViewController notifier) {
+  Widget _buildInstagramStyleMicrophoneButton(
+    ChatScreenViewController notifier,
+  ) {
     return GestureDetector(
       onTap: () async {
         // Tıklayınca kayıt başlat
         debugPrint("🎤 onTap - Kayıt başlatılıyor...");
         await notifier.startRecording();
       },
-      child: SvgPicture.asset("assets/icons/mic.svg")
+      child: SvgPicture.asset("assets/icons/mic.svg"),
     );
   }
 
-Widget suffixIcon(bool isLoading){
-  final controllerStream =  ref.watch(AllControllers.chatViewController.notifier).messageController;
-  final chatControllerNotifier =  ref.read(AllControllers.chatViewController.notifier);
-  final hasImage = chatControllerNotifier.selectedImage != null;
-  
-  if (isLoading) {
-    // Modern loading animasyonu - 3 nokta
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-      child: _buildLoadingDots(),
+  Widget suffixIcon(bool isLoading) {
+    final controllerStream = ref
+        .watch(AllControllers.chatViewController.notifier)
+        .messageController;
+    final chatControllerNotifier = ref.read(
+      AllControllers.chatViewController.notifier,
     );
-  } else {
-    // Eğer resim seçilmişse VEYA mesaj yazılmışsa gönder butonu göster
-    if (hasImage || controllerStream.text.trim().isNotEmpty) {
-      return _buildSendButton();
+    final hasImage = chatControllerNotifier.selectedImage != null;
+
+    if (isLoading) {
+      // Modern loading animasyonu - 3 nokta
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+        child: _buildLoadingDots(),
+      );
     } else {
-      // Ne resim ne de mesaj varsa mikrofon göster - Instagram tarzı
-      return _buildInstagramStyleMicrophoneButton(chatControllerNotifier);
+      // Eğer resim seçilmişse VEYA mesaj yazılmışsa gönder butonu göster
+      if (hasImage || controllerStream.text.trim().isNotEmpty) {
+        return _buildSendButton();
+      } else {
+        // Ne resim ne de mesaj varsa mikrofon göster - Instagram tarzı
+        return _buildInstagramStyleMicrophoneButton(chatControllerNotifier);
+      }
     }
   }
-}
 
-
-
-
-
-
-
-  Widget onlineWidget(){
+  Widget onlineWidget() {
     return Row(
       children: [
-        Container(width: 4.w,height: 4.h,decoration: BoxDecoration(color: Color(0xff34C759),borderRadius: BorderRadius.circular(20).r),),
-       SizedBox(width: 3.w,),
-        Text("Online",style: GoogleFonts.quicksand(color: Colors.white,fontSize: 12.sp,fontWeight: FontWeight.w600),)
+        Container(
+          width: 4.w,
+          height: 4.h,
+          decoration: BoxDecoration(
+            color: Color(0xff34C759),
+            borderRadius: BorderRadius.circular(20).r,
+          ),
+        ),
+        SizedBox(width: 3.w),
+        Text(
+          Translate.translate("agent_profile_online", context),
+          style: GoogleFonts.quicksand(
+            color: Colors.white,
+            fontSize: 12.sp,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }
 
+  /// Modern loading animasyonu - 3 nokta
+  Widget _buildLoadingDots() {
+    return SizedBox(width: 34.w, height: 30.h, child: _LoadingDotsWidget());
+  }
 
-
-/// Modern loading animasyonu - 3 nokta
-Widget _buildLoadingDots() {
-  return SizedBox(
-    width: 40.w,
-    height: 40.h,
-    child: _LoadingDotsWidget(),
-  );
-}
-
-/// Modern gönder butonu
-Widget _buildSendButton() {
-  return Material(
-    color: Colors.transparent,
-    child: InkWell(
-      onTap: sendMessage,
-      borderRadius: BorderRadius.circular(50),
-      child: Container(
-        width: 40.w,
-        height: 40.h,
-        padding: EdgeInsets.all(8.w),
-        child: HeroIcon(
-          HeroIcons.paperAirplane,
-          style: HeroIconStyle.solid,
-          color: Colors.white,
-          size: 20,
+  /// Modern gönder butonu
+  Widget _buildSendButton() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: sendMessage,
+        borderRadius: BorderRadius.circular(50),
+        child: Container(
+          width: 40.w,
+          height: 40.h,
+          padding: EdgeInsets.all(8.w),
+          child: HeroIcon(
+            HeroIcons.paperAirplane,
+            style: HeroIconStyle.solid,
+            color: Colors.white,
+            size: 20,
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   void _showOptionsMenu(BuildContext context) {
     showModalBottomSheet(
@@ -1179,7 +1550,10 @@ Widget _buildSendButton() {
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Colors.red),
                 title: Text(
-                  Translate.translate(TranslateKeys.deleteConversation, context),
+                  Translate.translate(
+                    TranslateKeys.deleteConversation,
+                    context,
+                  ),
                   style: GoogleFonts.quicksand(
                     fontSize: 16.sp,
                     fontWeight: FontWeight.w600,
@@ -1200,7 +1574,7 @@ Widget _buildSendButton() {
   void _showReportDialog(BuildContext context) {
     String? selectedReason;
     final TextEditingController descriptionController = TextEditingController();
-    
+
     final List<String> reportReasons = [
       'inappropriate_content',
       'harassment',
@@ -1250,7 +1624,10 @@ Widget _buildSendButton() {
                         child: DropdownButton<String>(
                           isExpanded: true,
                           hint: Text(
-                            Translate.translate(TranslateKeys.selectReason, context),
+                            Translate.translate(
+                              TranslateKeys.selectReason,
+                              context,
+                            ),
                             style: GoogleFonts.quicksand(),
                           ),
                           value: selectedReason,
@@ -1273,7 +1650,10 @@ Widget _buildSendButton() {
                     ),
                     SizedBox(height: 20.h),
                     Text(
-                      Translate.translate(TranslateKeys.reportDescription, context),
+                      Translate.translate(
+                        TranslateKeys.reportDescription,
+                        context,
+                      ),
                       style: GoogleFonts.quicksand(
                         fontWeight: FontWeight.w600,
                         fontSize: 14.sp,
@@ -1284,7 +1664,10 @@ Widget _buildSendButton() {
                       controller: descriptionController,
                       maxLines: 4,
                       decoration: InputDecoration(
-                        hintText: Translate.translate(TranslateKeys.reportDescriptionHint, context),
+                        hintText: Translate.translate(
+                          TranslateKeys.reportDescriptionHint,
+                          context,
+                        ),
                         hintStyle: GoogleFonts.quicksand(
                           color: Colors.grey,
                           fontSize: 13.sp,
@@ -1328,7 +1711,10 @@ Widget _buildSendButton() {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  Translate.translate(TranslateKeys.reportDescriptionHint, context),
+                                  Translate.translate(
+                                    TranslateKeys.reportDescriptionHint,
+                                    context,
+                                  ),
                                 ),
                               ),
                             );
@@ -1352,7 +1738,10 @@ Widget _buildSendButton() {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    Translate.translate(TranslateKeys.reportSentSuccess, context),
+                                    Translate.translate(
+                                      TranslateKeys.reportSentSuccess,
+                                      context,
+                                    ),
                                   ),
                                   backgroundColor: Colors.green,
                                 ),
@@ -1361,7 +1750,10 @@ Widget _buildSendButton() {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    Translate.translate(TranslateKeys.reportSentError, context),
+                                    Translate.translate(
+                                      TranslateKeys.reportSentError,
+                                      context,
+                                    ),
                                   ),
                                   backgroundColor: Colors.red,
                                 ),
@@ -1392,9 +1784,10 @@ Widget _buildSendButton() {
   }
 
   Future<bool> _sendReport(String reason, String description) async {
-    return await ref.read(AllControllers.chatViewController.notifier).sendReport(reason, description);
+    return await ref
+        .read(AllControllers.chatViewController.notifier)
+        .sendReport(reason, description);
   }
-
 
   void _showFullScreenImage(BuildContext context, String imageUrl) {
     Navigator.of(context).push(
@@ -1416,16 +1809,10 @@ Widget _buildSendButton() {
                 imageUrl: imageUrl,
                 fit: BoxFit.contain,
                 placeholder: (context, url) => Center(
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                  ),
+                  child: CircularProgressIndicator(color: Colors.white),
                 ),
                 errorWidget: (context, url, error) => Center(
-                  child: Icon(
-                    Icons.person,
-                    size: 100,
-                    color: Colors.white,
-                  ),
+                  child: Icon(Icons.person, size: 100, color: Colors.white),
                 ),
               ),
             ),
@@ -1435,8 +1822,6 @@ Widget _buildSendButton() {
       ),
     );
   }
-
-  
 
   void _showDeleteDialog(BuildContext context) {
     showDialog(
@@ -1455,10 +1840,11 @@ Widget _buildSendButton() {
             ),
           ),
           content: Text(
-            Translate.translate(TranslateKeys.deleteConversationMessage, context),
-            style: GoogleFonts.quicksand(
-              fontSize: 14.sp,
+            Translate.translate(
+              TranslateKeys.deleteConversationMessage,
+              context,
             ),
+            style: GoogleFonts.quicksand(fontSize: 14.sp),
           ),
           actions: [
             TextButton(
@@ -1474,17 +1860,18 @@ Widget _buildSendButton() {
             ElevatedButton(
               onPressed: () async {
                 final success = await _deleteConversation();
-               navigatorKey.currentState?.pop();
+                navigatorKey.currentState?.pop();
 
                 if (success) {
-               
-                   navigatorKey.currentState?.pop();
-                
+                  navigatorKey.currentState?.pop();
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        Translate.translate(TranslateKeys.conversationDeletedError, context),
+                        Translate.translate(
+                          TranslateKeys.conversationDeletedError,
+                          context,
+                        ),
                       ),
                       backgroundColor: Colors.red,
                     ),
@@ -1512,10 +1899,10 @@ Widget _buildSendButton() {
   }
 
   Future<bool> _deleteConversation() async {
-    return await ref.read(AllControllers.chatViewController.notifier).deleteConversation();
+    return await ref
+        .read(AllControllers.chatViewController.notifier)
+        .deleteConversation();
   }
-
-  
 }
 
 /// Loading dots animasyonu için StatefulWidget
@@ -1546,6 +1933,7 @@ class _LoadingDotsWidgetState extends State<_LoadingDotsWidget>
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(3, (index) {
         return AnimatedBuilder(
@@ -1553,13 +1941,17 @@ class _LoadingDotsWidgetState extends State<_LoadingDotsWidget>
           builder: (context, child) {
             final delay = index * 0.2;
             final animationValue = ((_controller.value + delay) % 1.0);
-            final opacity = animationValue < 0.5 
-                ? animationValue * 2 
+            final opacity = animationValue < 0.5
+                ? animationValue * 2
                 : 2 - (animationValue * 2);
-            final scale = 0.7 + (animationValue < 0.5 ? animationValue * 0.6 : (1 - animationValue) * 0.6);
-            
+            final scale =
+                0.7 +
+                (animationValue < 0.5
+                    ? animationValue * 0.6
+                    : (1 - animationValue) * 0.6);
+
             return Container(
-              margin: EdgeInsets.symmetric(horizontal: 3.w),
+              margin: EdgeInsets.symmetric(horizontal: 2.w),
               width: 8.w * scale,
               height: 8.w * scale,
               decoration: BoxDecoration(
@@ -1574,17 +1966,75 @@ class _LoadingDotsWidgetState extends State<_LoadingDotsWidget>
   }
 }
 
+class _ChatTypingDots extends StatefulWidget {
+  const _ChatTypingDots();
+
+  @override
+  State<_ChatTypingDots> createState() => _ChatTypingDotsState();
+}
+
+class _ChatTypingDotsState extends State<_ChatTypingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 52.w,
+      height: 16.h,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(3, (index) {
+          return AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final phase = (_controller.value - (index * 0.16)) % 1.0;
+              final opacity = phase < 0.5 ? 0.35 + (phase * 1.3) : 1 - phase;
+              return Container(
+                margin: EdgeInsets.symmetric(horizontal: 4.w),
+                width: 10.w,
+                height: 10.w,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: opacity.clamp(0.25, 1)),
+                ),
+              );
+            },
+          );
+        }),
+      ),
+    );
+  }
+}
+
 // WavedAudioPlayer widget'ını sarmalayan widget - aynı anda sadece bir sesli mesaj oynatmak için
 class _ControlledWavedAudioPlayer extends StatefulWidget {
   final int messageId;
   final String audioUrl;
   final Color playedColor;
   final Color iconColor;
+  final bool botStyle;
   final int? currentlyPlayingId;
   final ap.AudioPlayer globalAudioPlayer;
   final Function(int) onPlayStarted;
   final Function(int) onPlayStopped;
-  final FocusNode? textFieldFocusNode; // TextField'ın focus node'unu saklamak için
+  final FocusNode?
+  textFieldFocusNode; // TextField'ın focus node'unu saklamak için
 
   const _ControlledWavedAudioPlayer({
     super.key,
@@ -1592,6 +2042,7 @@ class _ControlledWavedAudioPlayer extends StatefulWidget {
     required this.audioUrl,
     required this.playedColor,
     required this.iconColor,
+    required this.botStyle,
     required this.currentlyPlayingId,
     required this.globalAudioPlayer,
     required this.onPlayStarted,
@@ -1600,61 +2051,169 @@ class _ControlledWavedAudioPlayer extends StatefulWidget {
   });
 
   @override
-  State<_ControlledWavedAudioPlayer> createState() => _ControlledWavedAudioPlayerState();
+  State<_ControlledWavedAudioPlayer> createState() =>
+      _ControlledWavedAudioPlayerState();
 }
 
-class _ControlledWavedAudioPlayerState extends State<_ControlledWavedAudioPlayer> {
-  GlobalKey _wavedPlayerKey = GlobalKey();
+class _ControlledWavedAudioPlayerState
+    extends State<_ControlledWavedAudioPlayer> {
+  StreamSubscription<Duration>? _durationSub;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<void>? _completeSub;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
 
   @override
   void initState() {
     super.initState();
-    _wavedPlayerKey = GlobalKey();
+    _durationSub = widget.globalAudioPlayer.onDurationChanged.listen((value) {
+      if (!mounted || widget.currentlyPlayingId != widget.messageId) return;
+      setState(() => _duration = value);
+    });
+    _positionSub = widget.globalAudioPlayer.onPositionChanged.listen((value) {
+      if (!mounted || widget.currentlyPlayingId != widget.messageId) return;
+      setState(() => _position = value);
+    });
+    _completeSub = widget.globalAudioPlayer.onPlayerComplete.listen((_) {
+      if (!mounted || widget.currentlyPlayingId != widget.messageId) return;
+      widget.onPlayStopped(widget.messageId);
+      setState(() => _position = Duration.zero);
+    });
   }
 
   @override
   void didUpdateWidget(_ControlledWavedAudioPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Eğer başka bir mesaj oynatılmaya başlandıysa, widget'ı yeniden oluştur
-    if (oldWidget.currentlyPlayingId == widget.messageId && 
+    if (oldWidget.currentlyPlayingId == widget.messageId &&
         widget.currentlyPlayingId != widget.messageId) {
-      _wavedPlayerKey = GlobalKey();
-    }
-    // Eğer bu mesaj oynatılmaya başlandıysa, widget'ı yeniden oluştur
-    if (oldWidget.currentlyPlayingId != widget.messageId && 
-        widget.currentlyPlayingId == widget.messageId) {
-      _wavedPlayerKey = GlobalKey();
+      setState(() => _position = Duration.zero);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
+  void dispose() {
+    _durationSub?.cancel();
+    _positionSub?.cancel();
+    _completeSub?.cancel();
+    super.dispose();
+  }
 
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: () {
-        // Sesli mesaja tıklandığında TextField'ın focus'unu koru
-        // Bu sayede klavye kapanmaz
-        if (widget.textFieldFocusNode != null && widget.textFieldFocusNode!.hasFocus) {
-          // Focus'u koru - klavyeyi kapatma
-          // Hemen focus'u tekrar request et (kısa bir delay ile)
-          Future.delayed(Duration(milliseconds: 50), () {
-            if (widget.textFieldFocusNode!.canRequestFocus && !widget.textFieldFocusNode!.hasFocus) {
-              widget.textFieldFocusNode!.requestFocus();
-            }
-          });
-        }
+  Future<void> _togglePlay() async {
+    if (widget.audioUrl.trim().isEmpty) return;
+    final isCurrent = widget.currentlyPlayingId == widget.messageId;
+    try {
+      if (isCurrent) {
+        await widget.globalAudioPlayer.stop();
+        widget.onPlayStopped(widget.messageId);
+        if (!mounted) return;
+        setState(() => _position = Duration.zero);
+        return;
+      }
+      await widget.globalAudioPlayer.stop();
+      widget.onPlayStarted(widget.messageId);
+      await widget.globalAudioPlayer.play(
+        ap.UrlSource(widget.audioUrl, mimeType: 'audio/mpeg'),
+      );
+      final duration = await widget.globalAudioPlayer.getDuration();
+      if (mounted && duration != null && duration > Duration.zero) {
+        setState(() => _duration = duration);
+      }
+    } catch (err) {
+      debugPrint('Audio player error: $err');
+      widget.onPlayStopped(widget.messageId);
+    }
+  }
+
+  double get _progress {
+    if (_duration.inMilliseconds <= 0) return 0;
+    return (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0);
+  }
+
+  Widget _buildWaveBars() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Daha doğal bir waveform görünümü için simetrik desen.
+        const pattern = <double>[
+          0.24, 0.34, 0.46, 0.60, 0.78, 0.52, 0.86, 0.66, 0.92, 0.58,
+          0.98, 0.70, 1.00, 0.72, 0.96, 0.62, 0.90, 0.56, 0.82, 0.48,
+          0.70, 0.42, 0.58, 0.36, 0.46, 0.30,
+        ];
+        final barCount = pattern.length;
+        const barWidth = 2.0;
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(barCount, (index) {
+            final barHeight = (4.8.h + (pattern[index] * 10.8.h)).clamp(5.h, 15.h);
+            final isPlayed = _progress >= ((index + 1) / barCount);
+            const playedColor = Color(0xFFAB10E2);
+            const unplayedColor = Color(0xFFD9D9D9);
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              width: barWidth,
+              height: barHeight,
+              decoration: BoxDecoration(
+                color: isPlayed ? playedColor : unplayedColor,
+                borderRadius: BorderRadius.circular(4.r),
+              ),
+            );
+          }),
+        );
       },
-      child: WavedAudioPlayer(
-        key: _wavedPlayerKey,
-        showTiming: false,
-        source: ap.UrlSource(widget.audioUrl, mimeType: 'audio/mpeg'),
-        playedColor: widget.playedColor,
-        iconColor: widget.iconColor,
-        onError: (err) {
-          print('Audio player error: $err');
-        },
-      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isPlayingThis = widget.currentlyPlayingId == widget.messageId;
+    if (widget.botStyle) {
+      return SizedBox(
+        height: 34.h,
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: _togglePlay,
+              child: Container(
+                width: 30.w,
+                height: 30.w,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isPlayingThis ? Icons.pause : Icons.play_arrow_rounded,
+                  color: Colors.black,
+                  size: 18.sp,
+                ),
+              ),
+            ),
+            SizedBox(width: 8.w),
+            Expanded(child: _buildWaveBars()),
+          ],
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: _togglePlay,
+          child: Container(
+            width: 30.w,
+            height: 30.w,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isPlayingThis ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              color: widget.iconColor,
+              size: 20.sp,
+            ),
+          ),
+        ),
+        SizedBox(width: 10.w),
+        Expanded(child: _buildWaveBars()),
+      ],
     );
   }
 }
