@@ -240,7 +240,7 @@ class OnboardViewState extends ConsumerState<OnboardView> {
                     onTap: () {
                       Navigator.pushNamedAndRemoveUntil(
                         context,
-                        "/login",
+                        "/register",
                         (a) => false,
                       );
                     },
@@ -285,8 +285,11 @@ class OnboardViewState extends ConsumerState<OnboardView> {
               // Misafir giriş butonu
                      MyButton(
                       onTap: () async {
-                        debugPrint("👤 Guest button clicked");
-                        await ref.read(AllControllers.onboardViewController.notifier).guestLogin();
+                        debugPrint("👤 Guest button clicked → register flow");
+                        navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                          '/register',
+                          (route) => false,
+                        );
                       },
                       margin: EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 20),
                       radius: BorderRadius.circular(50),
@@ -341,8 +344,11 @@ class OnboardViewState extends ConsumerState<OnboardView> {
             
                         MyButton(
                       onTap: () async {
-                        debugPrint("👤 Guest button clicked");
-                        await ref.read(AllControllers.onboardViewController.notifier).guestLogin();
+                        debugPrint("👤 Guest button clicked → register flow");
+                        navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                          '/register',
+                          (route) => false,
+                        );
                       },
                       margin: EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 20),
                       radius: BorderRadius.circular(50),

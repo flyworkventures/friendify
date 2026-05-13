@@ -12,12 +12,16 @@ import 'package:shimmer/shimmer.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
+import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:friendfy/utils/hero_icon_converter.dart';
 
 class AgentsScreen extends ConsumerStatefulWidget {
-  const AgentsScreen({super.key});
+  /// Alt sekmede gösterildiğinde AppBar başlığı (Karakter Seç) gizlenir.
+  final bool embeddedInBottomNav;
+
+  const AgentsScreen({super.key, this.embeddedInBottomNav = false});
 
   @override
   ConsumerState<AgentsScreen> createState() => _AgentsScreenState();
@@ -93,8 +97,9 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    List<AgentModel> allAgents =
-        ref.watch(AllControllers.agentsViewController).agents ?? [];
+    List<AgentModel> allAgents = (ref.watch(AllControllers.agentsViewController).agents ?? [])
+        .where((a) => a.system != 2)
+        .toList();
     List<AgentModel> allUserAgents =
         ref.watch(AllControllers.agentsViewController).userAgents ?? [];
     bool loading = ref
@@ -107,20 +112,24 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
+      appBar: widget.embeddedInBottomNav
+            ? null
+            :  AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
 
-        title: Text(
-          Translate.translate("select_character", context),
-          style: GoogleFonts.quicksand(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 17.sp,
-          ),
-        ),
+        title: widget.embeddedInBottomNav
+            ? null
+            : Text(
+                Translate.translate("select_character", context),
+                style: GoogleFonts.quicksand(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 17.sp,
+                ),
+              ),
         /*     actions: [
           IconButton(
             onPressed: () => _showFilterBottomSheet(context), 
@@ -134,7 +143,10 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
               child: SizedBox(
                 width: 35,
                 height: 35,
-                child: CircularProgressIndicator(color: Colors.black),
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
               ),
             )
           : SingleChildScrollView(
@@ -153,11 +165,11 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                           bottom: 10.h,
                         ),
                         child: Text(
-                          Translate.translate("your_personal_friends", context),
+                          Translate.translate("agents_my_creations", context),
                           style: GoogleFonts.quicksand(
                             color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 18.sp,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20.sp,
                           ),
                         ),
                       ),
@@ -167,10 +179,9 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                         padding: EdgeInsets.only(
                           left: 10.w,
                           right: 10.w,
-                          bottom: 20.h,
                         ),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          mainAxisExtent: 360.h,
+                          mainAxisExtent: 262.h,
                           mainAxisSpacing: 10.w,
                           crossAxisSpacing: 5.h,
                           crossAxisCount: 2,
@@ -182,11 +193,27 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                           return agentWidget(item);
                         },
                       ),
-                      SizedBox(height: 20.h),
+                      SizedBox(height: 15.h),
                     ],
 
                     // Others (System Agents) Section
                     if (agents.isNotEmpty) ...[
+                                            Padding(
+                        padding: EdgeInsets.only(
+                          left: 20.w,
+                          right: 20.w,
+                          top: 15.h,
+                          bottom: 10.h,
+                        ),
+                        child: Text(
+                          Translate.translate("agents_characters", context),
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20.sp,
+                          ),
+                        ),
+                      ),
                       GridView.builder(
                         physics: NeverScrollableScrollPhysics(),
                         padding: EdgeInsets.only(
@@ -195,7 +222,7 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                           bottom: 20.h,
                         ),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          mainAxisExtent: 360.h,
+                          mainAxisExtent: 262.h,
                           mainAxisSpacing: 10.w,
                           crossAxisSpacing: 5.h,
                           crossAxisCount: 2,
@@ -245,12 +272,7 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
     List<String> interest = List.from(jsonDecode(agent.interestsType));
     for (var element in interest) {
       icons.add(
-        HeroIcon(
-          interestToIcon[element]!,
-          color: Colors.white,
-          size: 18,
-          style: HeroIconStyle.solid,
-        ),
+        interestIcon(element, size: 18, color: Colors.white, style: HeroIconStyle.solid),
       );
     }
 
@@ -268,90 +290,88 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
       },
 
       child: Container(
+        padding: EdgeInsets.only(bottom: 10.h),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16.r),
           color: Colors.black.withValues(alpha: 0.2),
           border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: ClipRRect(
-                borderRadius: BorderRadiusGeometry.circular(16),
-                child: CachedNetworkImage(
-                  imageUrl: agent.photoURL,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: 276.h,
-
-                  placeholder: (context, url) => Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!,
-                    highlightColor: Colors.grey[100]!,
-                    child: Container(color: Colors.white),
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    color: Colors.grey[300],
-                    child: Icon(Icons.person, size: 50),
-                  ),
-                ),
+              padding: const EdgeInsets.all(8.0).copyWith(bottom: 0),
+              child: FutureBuilder<String?>(
+                future: LocalService.getSelectedAgentPhoto(agent.id),
+                builder: (context, snapshot) {
+                  final imageUrl = snapshot.data ?? agent.photoURL;
+                  return ClipRRect(
+                    borderRadius: BorderRadiusGeometry.circular(16),
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.cover,
+                      width: 186.w,
+                      height: 171.h,
+                       alignment: Alignment(0, -1),
+                      placeholder: (context, url) => Shimmer.fromColors(
+                        baseColor: Colors.grey[300]!,
+                        highlightColor: Colors.grey[100]!,
+                        child: Container(color: Colors.white),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: Colors.grey[300],
+                        child: Icon(Icons.person, size: 50),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-            Align(
-              alignment: Alignment.bottomLeft,
-              child: Expanded(
-                child: Container(
-                  padding: EdgeInsets.only(
-                    right: 10.w,
-                    left: 10.w,
-                    bottom: 5.h,
-                  ),
-                  decoration: BoxDecoration(),
-
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // İsim
-                      Text(
-                        agent.name,
-                        style: GoogleFonts.quicksand(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14.sp,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              offset: Offset(0, 1),
-                              blurRadius: 3,
-                            ),
-                          ],
+            Padding(
+              padding: EdgeInsets.only(
+                right: 10.w,
+                left: 10.w,
+                top: 15.h,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    agent.name,
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14.sp,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          offset: Offset(0, 1),
+                          blurRadius: 3,
                         ),
-                      ),
-
-                      // Karakter (speakingStyle)
-                      if (agent.speakingStyle != null &&
-                          agent.speakingStyle!.isNotEmpty)
-                        Text(
-                          agent.speakingStyle ?? "",
-                          style: GoogleFonts.quicksand(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w400,
-                            fontSize: 10.sp,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withValues(alpha: 0.5),
-                                offset: Offset(0, 1),
-                                blurRadius: 3,
-                              ),
-                            ],
+                      ],
+                    ),
+                  ),
+                  if (agent.speakingStyle != null &&
+                      agent.speakingStyle!.isNotEmpty)
+                    Text(
+                      agent.speakingStyle ?? "",
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w400,
+                        fontSize: 10.sp,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            offset: Offset(0, 1),
+                            blurRadius: 3,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
-                ),
+                        ],
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
               ),
             ),
           ],
@@ -464,8 +484,8 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                         return _filterChip(
                           label: Translate.translate(interest, context),
                           selected: tempSelectedInterests.contains(interest),
-                          icon: HeroIcon(
-                            interestToIcon[interest]!,
+                          icon: interestIcon(
+                            interest,
                             size: 16,
                             color: tempSelectedInterests.contains(interest)
                                 ? Colors.white

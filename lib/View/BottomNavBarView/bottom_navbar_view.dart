@@ -36,17 +36,18 @@ class _BottomNavbarViewState extends ConsumerState<BottomNavbarView> {
   }
 
   Future<void> _checkAndRequestNotificationPermission() async {
-    // Eğer dialog zaten gösterildiyse, tekrar gösterme
-    if (_permissionDialogShown) {
+    if (_permissionDialogShown) return;
+
+    final hasAskedBefore = await NotificationService.hasAskedPermissionBefore();
+    if (hasAskedBefore) {
+      _permissionDialogShown = true;
       return;
     }
 
-    // Daha önce izin sorulmuş mu kontrol et
-    final hasAskedBefore = await NotificationService.hasAskedPermissionBefore();
-    
-    // Eğer daha önce sorulmuşsa, tekrar sorma (Apple kuralı)
-    if (hasAskedBefore) {
-      _permissionDialogShown = true; // Flag'i set et
+    final alreadyGranted = await NotificationService.checkNotificationPermission();
+    if (alreadyGranted) {
+      _permissionDialogShown = true;
+      await NotificationService.markPermissionAsked();
       return;
     }
 

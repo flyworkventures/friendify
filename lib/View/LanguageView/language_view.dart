@@ -7,6 +7,7 @@ import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/locale_provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:heroicons/heroicons.dart';
 
 class LanguageView extends ConsumerStatefulWidget {
   const LanguageView({super.key});
@@ -17,72 +18,26 @@ class LanguageView extends ConsumerStatefulWidget {
 
 class _LanguageViewState extends ConsumerState<LanguageView> {
   final List<_LanguageOption> _languageOptions = const [
-    _LanguageOption(
-      locale: Locale('en', 'US'),
-      title: 'English',
-      flagEmoji: '🇬🇧',
-    ),
-    _LanguageOption(
-      locale: Locale('de', 'DE'),
-      title: 'German',
-      flagEmoji: '🇩🇪',
-    ),
-    _LanguageOption(
-      locale: Locale('it', 'IT'),
-      title: 'Italian',
-      flagEmoji: '🇮🇹',
-    ),
-    _LanguageOption(
-      locale: Locale('fr', 'FR'),
-      title: 'French',
-      flagEmoji: '🇫🇷',
-    ),
-    _LanguageOption(
-      locale: Locale('tr', 'TR'),
-      title: 'Turkish',
-      flagEmoji: '🇹🇷',
-    ),
-    _LanguageOption(
-      locale: Locale('ja', 'JP'),
-      title: 'Japanese',
-      flagEmoji: '🇯🇵',
-    ),
-    _LanguageOption(
-      locale: Locale('es', 'ES'),
-      title: 'Spanish',
-      flagEmoji: '🇪🇸',
-    ),
-    _LanguageOption(
-      locale: Locale('ru', 'RU'),
-      title: 'Russian',
-      flagEmoji: '🇷🇺',
-    ),
-    _LanguageOption(
-      locale: Locale('ko', 'KR'),
-      title: 'Korean',
-      flagEmoji: '🇰🇷',
-    ),
-    _LanguageOption(
-      locale: Locale('hi', 'IN'),
-      title: 'Hindi',
-      flagEmoji: '🇮🇳',
-    ),
-    _LanguageOption(
-      locale: Locale('pt', 'PT'),
-      title: 'Portuguese',
-      flagEmoji: '🇵🇹',
-    ),
-    _LanguageOption(
-      locale: Locale('zh', 'CN'),
-      title: 'Chinese',
-      flagEmoji: '🇨🇳',
-    ),
+    _LanguageOption(locale: Locale('en', 'US'), title: 'English'),
+    _LanguageOption(locale: Locale('de', 'DE'), title: 'German'),
+    _LanguageOption(locale: Locale('it', 'IT'), title: 'Italian'),
+    _LanguageOption(locale: Locale('fr', 'FR'), title: 'French'),
+    _LanguageOption(locale: Locale('tr', 'TR'), title: 'Turkish'),
+    _LanguageOption(locale: Locale('ja', 'JP'), title: 'Japanese'),
+    _LanguageOption(locale: Locale('es', 'ES'), title: 'Spanish'),
+    _LanguageOption(locale: Locale('ru', 'RU'), title: 'Russian'),
+    _LanguageOption(locale: Locale('ko', 'KR'), title: 'Korean'),
+    _LanguageOption(locale: Locale('hi', 'IN'), title: 'Hindi'),
+    _LanguageOption(locale: Locale('pt', 'PT'), title: 'Portuguese'),
+    _LanguageOption(locale: Locale('zh', 'CN'), title: 'Chinese'),
   ];
 
   @override
   Widget build(BuildContext context) {
     final appPrv = ref.watch(appProvider);
-    final Locale currentLocale = appPrv.currentLang ?? const Locale('en', 'US');
+    final Locale currentLocale = appPrv.currentLang ??
+        Localizations.maybeLocaleOf(context) ??
+        const Locale('en', 'US');
 
     return BackgroundWidget(
       child: Scaffold(
@@ -124,7 +79,14 @@ class _LanguageContentState extends State<_LanguageContent> {
   @override
   void initState() {
     super.initState();
-    _selectedLocale = widget.currentLocale;
+    _selectedLocale = widget.options
+            .firstWhere(
+              (option) =>
+                  option.locale.languageCode ==
+                  widget.currentLocale.languageCode,
+              orElse: () => widget.options.first,
+            )
+            .locale;
   }
 
   @override
@@ -132,7 +94,7 @@ class _LanguageContentState extends State<_LanguageContent> {
     return Column(
       children: [
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 18.h),
+          padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 18.h).copyWith(bottom: 10.h),
           child: Row(
             children: [
               GestureDetector(
@@ -167,8 +129,7 @@ class _LanguageContentState extends State<_LanguageContent> {
             itemBuilder: (context, index) {
               final lang = widget.options[index];
               final isSelected =
-                  _selectedLocale.languageCode == lang.locale.languageCode &&
-                  _selectedLocale.countryCode == lang.locale.countryCode;
+                  _selectedLocale.languageCode == lang.locale.languageCode;
 
               return GestureDetector(
                 onTap: () {
@@ -178,7 +139,7 @@ class _LanguageContentState extends State<_LanguageContent> {
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h).copyWith(bottom: 5.h),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14.r),
                     border: Border.all(
@@ -206,14 +167,31 @@ class _LanguageContentState extends State<_LanguageContent> {
                       Container(
                         width: 36.w,
                         height: 36.w,
-                        alignment: Alignment.center,
+                        clipBehavior: Clip.antiAlias,
                         decoration: const BoxDecoration(
-                          color: Colors.white,
+                         
                           shape: BoxShape.circle,
                         ),
-                        child: Text(
-                          lang.flagEmoji,
-                          style: TextStyle(fontSize: 22.sp),
+                        child: Padding(
+                          padding: EdgeInsets.all(2.w),
+                          child: ClipOval(
+                            child: Image.asset(
+                              _flagAssetPath(lang.locale),
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                              errorBuilder: (context, error, stackTrace) {
+                                return ColoredBox(
+                                  color: Colors.grey.shade300,
+                                  child: Icon(
+                                    Icons.language_rounded,
+                                    size: 18.sp,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                         ),
                       ),
                       SizedBox(width: 12.w),
@@ -221,7 +199,7 @@ class _LanguageContentState extends State<_LanguageContent> {
                         lang.title,
                         style: GoogleFonts.quicksand(
                           color: Colors.white,
-                          fontSize: 22.sp,
+                          fontSize: 16.sp,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -233,7 +211,7 @@ class _LanguageContentState extends State<_LanguageContent> {
           ),
         ),
         Padding(
-          padding: EdgeInsets.fromLTRB(20.w, 14.h, 20.w, 26.h),
+          padding: EdgeInsets.fromLTRB(20.w, 14.h, 20.w, 0.h),
           child: GestureDetector(
             onTap: () => widget.onSave(_selectedLocale),
             child: Container(
@@ -248,14 +226,21 @@ class _LanguageContentState extends State<_LanguageContent> {
                 ),
               ),
               child: Center(
-                child: Text(
-                  "✨ ${Translate.translate(TranslateKeys.editCharacterSaveChanges, context)}",
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [   
+                    HeroIcon(HeroIcons.sparkles,color: Colors.white,style:HeroIconStyle.solid,),
+                    SizedBox(width: 10.w,),
+                    Text(
+                  "${Translate.translate(TranslateKeys.editCharacterSaveChanges, context)}",
                   style: GoogleFonts.quicksand(
                     color: Colors.white,
                     fontSize: 20.sp,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                  ],
+                )
               ),
             ),
           ),
@@ -268,11 +253,46 @@ class _LanguageContentState extends State<_LanguageContent> {
 class _LanguageOption {
   final Locale locale;
   final String title;
-  final String flagEmoji;
 
   const _LanguageOption({
     required this.locale,
     required this.title,
-    required this.flagEmoji,
   });
+}
+
+/// Önce ülke kodu (`jp`, `kr`, `es`…), yoksa dil kodu ile bayrak dosyası.
+String _flagAssetPath(Locale locale) {
+  final cc = locale.countryCode?.toLowerCase();
+  if (cc != null && cc.isNotEmpty) {
+    return 'assets/flags/$cc.png';
+  }
+  final lc = locale.languageCode.toLowerCase();
+  switch (lc) {
+    case 'ja':
+      return 'assets/flags/jp.png';
+    case 'ko':
+      return 'assets/flags/kr.png';
+    case 'es':
+      return 'assets/flags/es.png';
+    case 'en':
+      return 'assets/flags/us.png';
+    case 'zh':
+      return 'assets/flags/cn.png';
+    case 'pt':
+      return 'assets/flags/pt.png';
+    case 'hi':
+      return 'assets/flags/in.png';
+    case 'de':
+      return 'assets/flags/de.png';
+    case 'it':
+      return 'assets/flags/it.png';
+    case 'fr':
+      return 'assets/flags/fr.png';
+    case 'tr':
+      return 'assets/flags/tr.png';
+    case 'ru':
+      return 'assets/flags/ru.png';
+    default:
+      return 'assets/flags/xx.png';
+  }
 }

@@ -152,6 +152,7 @@
   "force_update_hint": "Toque no botão abaixo para atualizar.",
   "force_update_action": "Atualizar",
   "edit_character_title": "Editar personagem",
+  "create_character_title": "Criar personagem",
   "edit_character_name_label": "Nome do personagem",
   "edit_character_name_hint": "Digite o nome do personagem",
   "edit_character_interests_traits_title": "Interesses e tracos",
@@ -164,5 +165,12 @@
   "edit_character_voices_load_failed": "Nao foi possivel carregar as vozes",
   "edit_character_select_gender_for_voices": "Selecione primeiro feminino ou masculino para ver as vozes",
   "edit_character_no_voice_for_gender": "Nenhuma voz encontrada para esse genero",
-  "language": "Idioma"
+  "language": "Idioma",
+  "notification_permission_title": "Permissões de notificação",
+  "notification_permission_message": "Ative as permissões de notificação para receber avisos sobre novas mensagens e atualizações importantes.",
+  "enable_notifications": "Ativar",
+  "not_now": "Agora não",
+  "select_character": "Selecionar personagem",
+  "agents_my_creations": "Minhas criações",
+  "agents_characters": "Personagens"
 }

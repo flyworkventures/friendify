@@ -1,0 +1,5 @@
+"NSUserNotificationsUsageDescription" = "Friendifyは、友達のことを思い出させるために通知を送信したいと考えています。";
+"NSMicrophoneUsageDescription" = "Friendifyは音声通話とビデオ通話のためにマイクへのアクセスが必要です。";
+"NSCameraUsageDescription" = "Friendifyはビデオ通話のためにカメラへのアクセスが必要です。";
+"NSSpeechRecognitionUsageDescription" = "Friendifyは通話中に音声をテキストに変換するために音声認識を使用します。";
+"NSPhotoLibraryUsageDescription" = "Friendifyはチャットで写真を選択して送信するためにフォトライブラリへのアクセスが必要です。";

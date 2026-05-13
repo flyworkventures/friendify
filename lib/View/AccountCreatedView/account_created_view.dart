@@ -4,17 +4,18 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:friendfy/Controllers/all_controllers.dart';
+import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
-import 'package:friendfy/Controllers/all_controllers.dart';
-import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
 import 'package:friendfy/Widgets/smooth_slide.dart';
 import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Kayıt sonrası: 4 adım saf UI (her biri 1 sn), ardından [RegisterViewController.createUser] (hoş geldin dahil).
+/// Kayıt sonrası: 4 adım saf UI (her biri 1 sn), ardından onboarding akışına devam.
 class AccountCreatedView extends ConsumerStatefulWidget {
   const AccountCreatedView({super.key});
 
@@ -32,49 +33,94 @@ class _AccountCreatedViewState extends ConsumerState<AccountCreatedView> {
 
   Timer? _stepTimer;
   int _completedSteps = 0;
-  bool _signupStarted = false;
-  bool _signupBusy = false;
-  bool _signupOk = false;
+  bool _isCompletingFlow = false;
 
   @override
   void initState() {
     super.initState();
+    debugPrint("🧭 [AccountCreated] initState");
     _stepTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       setState(() => _completedSteps++);
+      debugPrint("🧭 [AccountCreated] progress step=$_completedSteps");
       if (_completedSteps >= 4) {
         t.cancel();
         _stepTimer = null;
-        _kickOffSignup();
+        debugPrint("🧭 [AccountCreated] progress done -> _completeAccountFlow");
+        _completeAccountFlow();
       }
     });
   }
 
-  void _kickOffSignup() {
-    if (_signupStarted) return;
-    _signupStarted = true;
-    _runSignup();
-  }
+  Future<void> _completeAccountFlow() async {
+    if (_isCompletingFlow || !mounted) {
+      debugPrint(
+        "🧭 [AccountCreated] skip _completeAccountFlow isCompleting=$_isCompletingFlow mounted=$mounted",
+      );
+      return;
+    }
+    _isCompletingFlow = true;
+    debugPrint("🧭 [AccountCreated] _completeAccountFlow started");
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    final pendingAuth = localService.getOnboardingPendingAuth();
+    debugPrint(
+      "🧭 [AccountCreated] pendingAuth exists=${pendingAuth != null} data=${pendingAuth?.toString()}",
+    );
 
-  Future<void> _runSignup() async {
-    if (!mounted) return;
-    setState(() {
-      _signupBusy = true;
-      _signupOk = false;
-    });
-    final ok = await ref.read(AllControllers.registerViewController.notifier).createUser();
-    if (!mounted) return;
-    setState(() {
-      _signupBusy = false;
-      _signupOk = ok;
-    });
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(Translate.translate(TranslateKeys.accountCreationSignupFailed, context)),
-        ),
+    if (pendingAuth != null) {
+      final email = pendingAuth["email"]?.toString().trim() ?? "";
+      final credential = pendingAuth["credential"]?.toString().trim() ?? "";
+      final fallbackUsername = pendingAuth["fallbackUsername"]?.toString();
+      debugPrint(
+        "🧭 [AccountCreated] pendingAuth parsed email=$email credential=$credential fallbackUsername=$fallbackUsername",
+      );
+      if (email.isNotEmpty && credential.isNotEmpty) {
+        final registerNotifier = ref.read(
+          AllControllers.registerViewController.notifier,
+        );
+        debugPrint("🧭 [AccountCreated] hydrateFromLocalAnswers starting");
+        await registerNotifier.hydrateFromLocalAnswers(
+          email: email,
+          credential: credential,
+          fallbackUsername: fallbackUsername,
+        );
+        if (credential == "apple") {
+          final appleUserIdentifier =
+              pendingAuth["appleUserIdentifier"]?.toString().trim() ?? "";
+          final appleToken =
+              pendingAuth["appleToken"]?.toString().trim() ?? "";
+          if (appleUserIdentifier.isNotEmpty) {
+            registerNotifier.updateAppleUserIdentifier(appleUserIdentifier);
+          }
+          if (appleToken.isNotEmpty) {
+            registerNotifier.updateAppleToken(appleToken);
+          }
+        }
+        debugPrint("🧭 [AccountCreated] createUser starting");
+        final created = await registerNotifier.createUser();
+        debugPrint("🧭 [AccountCreated] createUser result=$created");
+        if (!created) {
+          _isCompletingFlow = false;
+          debugPrint("🧭 [AccountCreated] createUser failed -> stay on page");
+          return;
+        }
+      }
+      await localService.clearOnboardingPendingAuth();
+      debugPrint("🧭 [AccountCreated] pendingAuth cleared");
+    } else {
+      debugPrint(
+        "🧭 [AccountCreated] no pendingAuth (Onboard->Register only): "
+        "createUser skipped here; OnboardingDemoChat will guestLogin for token",
       );
     }
+
+    if (!mounted) return;
+    debugPrint("🧭 [AccountCreated] navigating -> /onboardingDemoChatView");
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      '/onboardingDemoChatView',
+      (route) => false,
+    );
   }
 
   @override
@@ -86,8 +132,7 @@ class _AccountCreatedViewState extends ConsumerState<AccountCreatedView> {
   @override
   Widget build(BuildContext context) {
     final mutedPurple = const Color(0xFF2D1B4E);
-    final canContinue = _signupOk && !_signupBusy;
-    final showRetry = !_signupBusy && _signupStarted && !_signupOk && _completedSteps >= 4;
+    final canContinue = _completedSteps >= 4 && !_isCompletingFlow;
 
     return Scaffold(
       body: BackgroundWidget(
@@ -132,55 +177,15 @@ crossAxisAlignment: CrossAxisAlignment.center,
                               itemBuilder: (context, index) => _buildStepRow(context, index),
                             ),
                           ),
-                          if (showRetry) ...[
-                            SizedBox(height: 8.h),
-                            Center(
-                              child: TextButton(
-                                onPressed: _runSignup,
-                                child: Text(
-                                  Translate.translate(TranslateKeys.retry, context),
-                                  style: GoogleFonts.quicksand(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15.sp,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-
-
           Opacity(
                             opacity: canContinue ? 1 : 0.5,
                             child: AbsorbPointer(
-                              absorbing: !canContinue || _signupBusy,
-                              child: _signupBusy
-                                  ? MyButton(
-                                      onTap: null,
-                                      size: Size(MediaQuery.sizeOf(context).width, 50.h),
-                                      backgroundColor: mutedPurple,
-                                      radius: BorderRadius.circular(40).r,
-                                      child: Center(
-                                        child: SizedBox(
-                                          width: 24.w,
-                                          height: 24.w,
-                                          child: const CircularProgressIndicator(
-                                            color: Colors.white,
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  : canContinue
+                              absorbing: !canContinue,
+                              child: canContinue
                                       ? MyGradientButton(
-                                          onTap: () {
-                                            navigatorKey.currentState?.pushNamedAndRemoveUntil(
-                                              '/bottomNavbar',
-                                              (route) => false,
-                                            );
-                                          },
+                                          onTap: _completeAccountFlow,
                                           size: Size(MediaQuery.sizeOf(context).width, 50.h),
-                                          margin: EdgeInsets.zero,
+                                          margin: EdgeInsets.symmetric(horizontal: 16.w),
                                           radius: BorderRadius.circular(40).r,
                                           child: Center(
                                             child: Text(

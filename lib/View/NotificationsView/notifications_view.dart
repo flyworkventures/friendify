@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/notification_model.dart';
+import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -21,117 +23,158 @@ class _NotificationsViewState extends ConsumerState<NotificationsView> {
     final viewModel = ref.watch(AllControllers.notificationsViewController);
     final sortedNotifications = viewModel.sortedNotifications;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF060612),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF05060E),
-                    const Color(0xFF140428),
-                    const Color(0xFF2B0A5E).withValues(alpha: 0.75),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(8.w, 6.h, 8.w, 4.h),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => navigatorKey.currentState?.pop(),
-                        icon: const Icon(
-                          Icons.chevron_left_rounded,
-                          color: Colors.white,
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          Translate.translate(
-                            TranslateKeys.notificationsListTitle,
-                            context,
-                          ),
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.quicksand(
+    return BackgroundWidget(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+   
+            SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(8.w, 6.h, 8.w, 4.h),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          onPressed: () => navigatorKey.currentState?.pop(),
+                          icon: const Icon(
+                            Icons.chevron_left_rounded,
                             color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 35.sp,
+                            size: 32,
                           ),
                         ),
-                      ),
-                      PopupMenuButton<String>(
-                        color: const Color(0xFF1A1A2A),
-                        onSelected: (value) {
-                          if (value == 'readAll') {
-                            ref
-                                .read(
-                                  AllControllers.notificationsViewController
-                                      .notifier,
-                                )
-                                .markAllAsRead();
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            value: 'readAll',
-                            child: Text(
-                              'Mark all as read',
-                              style: GoogleFonts.quicksand(color: Colors.white),
-                            ),
-                          ),
-                        ],
-                        child: Padding(
-                          padding: EdgeInsets.all(12.w),
-                          child: Icon(
-                            Icons.more_vert_rounded,
-                            color: Colors.white.withValues(alpha: 0.85),
-                            size: 22.sp,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: sortedNotifications.isEmpty
-                      ? Center(
+                        Expanded(
                           child: Text(
                             Translate.translate(
-                              TranslateKeys.notificationsEmpty,
+                              TranslateKeys.notificationsListTitle,
                               context,
                             ),
+                            textAlign: TextAlign.center,
                             style: GoogleFonts.quicksand(
-                              color: Colors.white70,
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 20.sp,
                             ),
                           ),
-                        )
-                      : ListView.builder(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 18.w,
-                            vertical: 10.h,
-                          ),
-                          itemCount: sortedNotifications.length,
-                          itemBuilder: (context, index) {
-                            final notification = sortedNotifications[index];
-                            return _buildNotificationItem(notification, context);
-                          },
                         ),
-                ),
-              ],
+                        PopupMenuButton<String>(
+                          color: Colors.black,
+                          padding: EdgeInsets.zero,
+                          menuPadding: EdgeInsets.zero,
+                          offset: Offset(0, 40.h),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10.r),
+                          ),
+                          onSelected: (value) {
+                            if (value == 'readAll') {
+                              ref
+                                  .read(
+                                    AllControllers.notificationsViewController
+                                        .notifier,
+                                  )
+                                  .markAllAsRead();
+                            } else if (value == 'clearAll') {
+                              ref
+                                  .read(
+                                    AllControllers.notificationsViewController
+                                        .notifier,
+                                  )
+                                  .clearNotifications();
+                            }
+                          },
+                          itemBuilder: (context) => [
+                         
+                            PopupMenuItem(
+                              value: 'clearAll',
+                              child: Row(
+                                children: [
+                                 SvgPicture.asset("assets/icons/trash2.svg", width: 16.w, height: 16.h, color: Colors.white,),
+                                  SizedBox(width: 8.w),
+                                  Text(
+                                    Translate.translate(
+                                      TranslateKeys.notificationsClearAll,
+                                      context,
+                                    ),
+                                    style: GoogleFonts.quicksand(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.sp
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          child: Padding(
+                            padding: EdgeInsets.all(12.w),
+                            child: Icon(
+                              Icons.more_vert_rounded,
+                              color: Colors.white.withValues(alpha: 0.85),
+                              size: 22.sp,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: sortedNotifications.isEmpty
+                        ? Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                        
+                          Center(child: SvgPicture.asset("assets/icons/notification.svg", width: 100.w, height: 100.h,),),
+                          Center(
+                            child: Text(
+                              Translate.translate(
+                                TranslateKeys.notificationsEmpty,
+                                context,
+                              ),
+                              style: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontSize: 24.sp,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: Center(
+                                                            child: Text(
+                                Translate.translate(
+                                  TranslateKeys.notificationsEmptyDescription,
+                                  context,
+                                ),
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontSize: 14.sp,
+                                
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                                            ),
+                                                          ),
+                              )
+                        ],)
+                        : ListView.builder(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 18.w,
+                              vertical: 10.h,
+                            ),
+                            itemCount: sortedNotifications.length,
+                            itemBuilder: (context, index) {
+                              final notification = sortedNotifications[index];
+                              return _buildNotificationItem(notification, context);
+                            },
+                          ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

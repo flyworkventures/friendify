@@ -1,0 +1,5 @@
+"NSUserNotificationsUsageDescription" = "Friendify आपको आपके दोस्तों के बारे में याद दिलाने के लिए सूचनाएं भेजना चाहता है।";
+"NSMicrophoneUsageDescription" = "Friendify को वॉइस और वीडियो कॉल के लिए आपके माइक्रोफ़ोन तक पहुंच चाहिए।";
+"NSCameraUsageDescription" = "Friendify को वीडियो कॉल के लिए आपके कैमरे तक पहुंच चाहिए।";
+"NSSpeechRecognitionUsageDescription" = "Friendify कॉल के दौरान आपकी आवाज़ को टेक्स्ट में बदलने के लिए स्पीच रिकग्निशन का उपयोग करता है।";
+"NSPhotoLibraryUsageDescription" = "Friendify को चैट में फ़ोटो चुनने और भेजने के लिए आपकी फ़ोटो लाइब्रेरी तक पहुंच चाहिए।";

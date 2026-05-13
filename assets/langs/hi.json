@@ -152,6 +152,7 @@
   "force_update_hint": "अपडेट करने के लिए नीचे दिए गए बटन पर टैप करें।",
   "force_update_action": "अपडेट करें",
   "edit_character_title": "कैरेक्टर एडिट करें",
+  "create_character_title": "कैरेक्टर बनाएँ",
   "edit_character_name_label": "कैरेक्टर नाम",
   "edit_character_name_hint": "कैरेक्टर का नाम दर्ज करें",
   "edit_character_interests_traits_title": "रुचियां और गुण",
@@ -164,5 +165,12 @@
   "edit_character_voices_load_failed": "आवाज़ें लोड नहीं हो सकीं",
   "edit_character_select_gender_for_voices": "आवाज़ें देखने के लिए पहले महिला या पुरुष चुनें",
   "edit_character_no_voice_for_gender": "इस लिंग के लिए कोई आवाज़ नहीं मिली",
-  "language": "भाषा"
+  "language": "भाषा",
+  "notification_permission_title": "नोटिफिकेशन अनुमति",
+  "notification_permission_message": "नए संदेशों और महत्वपूर्ण अपडेट के बारे में सूचनाएं प्राप्त करने के लिए कृपया नोटिफिकेशन अनुमति सक्षम करें।",
+  "enable_notifications": "अनुमति दें",
+  "not_now": "अभी नहीं",
+  "select_character": "पात्र चुनें",
+  "agents_my_creations": "मेरे निर्माण",
+  "agents_characters": "पात्र"
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:heroicons/heroicons.dart';
 
 Map<String,HeroIcons> icons = {
@@ -336,3 +337,23 @@ Map<String, HeroIcons> interestToIcon = {
 "hobbiesAndCrafts": HeroIcons.moon,
 
 };
+
+Widget interestIcon(
+  String key, {
+  double size = 18,
+  Color? color,
+  HeroIconStyle style = HeroIconStyle.solid,
+}) {
+  if (key == "travelAndCulture") {
+    return Image.asset(
+      "assets/icons/plane.png",
+      width: size,
+      height: size,
+    );
+  }
+  final heroIcon = interestToIcon[key];
+  if (heroIcon == null) {
+    return SizedBox(width: size, height: size);
+  }
+  return HeroIcon(heroIcon, size: size, color: color, style: style);
+}

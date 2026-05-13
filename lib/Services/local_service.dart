@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/rendering.dart';
 import 'package:friendfy/Local/local_db_keys.dart';
 import 'package:random_string/random_string.dart';
@@ -57,6 +59,103 @@ class LocalService {
     }
   }
 
+  String? getPostAuthAction() {
+    return prefs.getString(LocalDbKeys.postAuthAction);
+  }
+
+  Future<void> setPostAuthAction(String action) async {
+    await prefs.setString(LocalDbKeys.postAuthAction, action);
+  }
+
+  Future<void> clearPostAuthAction() async {
+    await prefs.remove(LocalDbKeys.postAuthAction);
+  }
+
+  Map<String, dynamic>? getOnboardingAnswers() {
+    final raw = prefs.getString(LocalDbKeys.onboardingAnswers);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (e) {
+      debugPrint("Onboarding cevapları okunurken hata: $e");
+    }
+    return null;
+  }
+
+  Future<void> saveOnboardingAnswers(Map<String, dynamic> answers) async {
+    await prefs.setString(LocalDbKeys.onboardingAnswers, jsonEncode(answers));
+  }
+
+  Map<String, dynamic>? getOnboardingPendingAuth() {
+    final raw = prefs.getString(LocalDbKeys.onboardingPendingAuth);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (e) {
+      debugPrint("Onboarding pending auth okunurken hata: $e");
+    }
+    return null;
+  }
+
+  Future<void> saveOnboardingPendingAuth(Map<String, dynamic> authData) async {
+    await prefs.setString(
+      LocalDbKeys.onboardingPendingAuth,
+      jsonEncode(authData),
+    );
+  }
+
+  Future<void> clearOnboardingPendingAuth() async {
+    await prefs.remove(LocalDbKeys.onboardingPendingAuth);
+  }
+
+  bool isOnboardingFunnelActive() {
+    return prefs.getBool(LocalDbKeys.onboardingFunnelActive) ?? false;
+  }
+
+  Future<void> setOnboardingFunnelActive(bool value) async {
+    await prefs.setBool(LocalDbKeys.onboardingFunnelActive, value);
+  }
+
+  bool isOnboardingGuestSession() {
+    return prefs.getBool(LocalDbKeys.onboardingGuestSession) ?? false;
+  }
+
+  Future<void> setOnboardingGuestSession(bool value) async {
+    await prefs.setBool(LocalDbKeys.onboardingGuestSession, value);
+  }
+
+  bool isOnboardingVideoGatePending() {
+    return prefs.getBool(LocalDbKeys.onboardingVideoGatePending) ?? false;
+  }
+
+  Future<void> setOnboardingVideoGatePending(bool value) async {
+    await prefs.setBool(LocalDbKeys.onboardingVideoGatePending, value);
+  }
+
+  static String selectedAgentPhotoKey(int agentId) {
+    return "${LocalDbKeys.selectedAgentPhotoPrefix}$agentId";
+  }
+
+  static Future<void> saveSelectedAgentPhoto({
+    required int agentId,
+    required String photoUrl,
+  }) async {
+    if (photoUrl.trim().isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(selectedAgentPhotoKey(agentId), photoUrl.trim());
+  }
+
+  static Future<String?> getSelectedAgentPhoto(int agentId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(selectedAgentPhotoKey(agentId));
+    if (value == null || value.trim().isEmpty) return null;
+    return value;
+  }
+
   static Future<bool> deleteData(String key) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -73,9 +172,7 @@ class LocalService {
     final todayString = "${today.year}-${today.month}-${today.day}";
     final lastDate = prefs.getString(LocalDbKeys.dailyMessageDate);
 
-    // Bugün ilk mesaj mı?
     if (lastDate != todayString) {
-      // Farklı bir gün, sayacı sıfırla
       await prefs.setInt(LocalDbKeys.dailyMessageCount, 0);
       await prefs.setString(LocalDbKeys.dailyMessageDate, todayString);
       return 0;
@@ -108,9 +205,7 @@ class LocalService {
     final todayString = "${today.year}-${today.month}-${today.day}";
     final lastDate = prefs.getString(LocalDbKeys.dailyPhotoDate);
 
-    // Bugün ilk fotoğraf mı?
     if (lastDate != todayString) {
-      // Farklı bir gün, sayacı sıfırla
       await prefs.setInt(LocalDbKeys.dailyPhotoCount, 0);
       await prefs.setString(LocalDbKeys.dailyPhotoDate, todayString);
       return 0;
@@ -143,9 +238,7 @@ class LocalService {
     final todayString = "${today.year}-${today.month}-${today.day}";
     final lastDate = prefs.getString(LocalDbKeys.dailyAudioDate);
 
-    // Bugün ilk sesli mesaj mı?
     if (lastDate != todayString) {
-      // Farklı bir gün, sayacı sıfırla
       await prefs.setInt(LocalDbKeys.dailyAudioCount, 0);
       await prefs.setString(LocalDbKeys.dailyAudioDate, todayString);
       return 0;
@@ -191,7 +284,6 @@ class LocalService {
   /// UUID oluşturucu fonksiyon
   String _generateUUID() {
     var randomString = randomNumeric(15);
-
     return randomString;
   }
 

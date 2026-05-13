@@ -10,7 +10,6 @@ import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Http/http_service.dart';
 
 import 'package:friendfy/Models/user_model.dart';
-import 'package:friendfy/Models/notification_model.dart';
 import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/Services/notification_service.dart';
 import 'package:friendfy/Services/premium_service.dart';
@@ -115,6 +114,58 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
     state = state.copyWith(aiPreferredTime: slug);
   }
 
+  Future<void> hydrateFromLocalAnswers({
+    required String email,
+    required String credential,
+    String? fallbackUsername,
+  }) async {
+    updateEmail(email);
+    updateCredential(credential);
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    final answers = localService.getOnboardingAnswers() ?? {};
+    final storedUsername = (answers["username"] ?? "").toString().trim();
+    final finalUsername = storedUsername.isNotEmpty
+        ? storedUsername
+        : (fallbackUsername ?? "Friendify User");
+    usernameController.text = finalUsername;
+    updateUsername(finalUsername);
+
+    final rawBirthdate = answers["birthdate"]?.toString();
+    if (rawBirthdate != null && rawBirthdate.isNotEmpty) {
+      birthdate = DateTime.tryParse(rawBirthdate);
+    }
+    birthdate ??= DateTime(2000, 1, 1);
+    gender = answers["gender"]?.toString();
+
+    final rawHobbies = answers["hobbies"];
+    if (rawHobbies is List) {
+      hobbies = List<String>.from(rawHobbies.map((e) => e.toString()));
+      state = state.copyWith(selectedTags: List<String>.from(hobbies));
+    }
+    aiPartnerExpectation = answers["aiPartnerExpectation"]?.toString();
+    aiPreferredTime = answers["aiPreferredTime"]?.toString();
+    state = state.copyWith(
+      gender: gender,
+      aiPartnerExpectation: aiPartnerExpectation,
+      aiPreferredTime: aiPreferredTime,
+    );
+  }
+
+  Future<void> saveAnswersToLocal() async {
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    await localService.saveOnboardingAnswers({
+      "username": usernameController.text.trim(),
+      "gender": gender,
+      "birthdate": birthdate?.toIso8601String(),
+      "hobbies": hobbies,
+      "aiPartnerExpectation": aiPartnerExpectation,
+      "aiPreferredTime": aiPreferredTime,
+      "savedAt": DateTime.now().toIso8601String(),
+    });
+  }
+
   toggleTag(String tag) {
     List<String> currentTags = List<String>.from(state.selectedTags);
     if (currentTags.contains(tag)) {
@@ -207,7 +258,7 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
                   ?.toString(),
         );
 
-        final UserModel completeUserModel;
+        UserModel completeUserModel;
         if (json["user"] != null) {
           completeUserModel = UserModel.fromMap(
             Map<String, dynamic>.from(json["user"] as Map),
@@ -216,8 +267,33 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
             "✅ UserModel from backend with ID: ${completeUserModel.id}",
           );
         } else {
-          completeUserModel = userModel.copyWith(token: json["token"]);
-          debugPrint("⚠️ Using local UserModel (ID may be null)");
+          // Server user döndürmediyse verifyToken ile user bilgisini çek
+          final token = json["token"].toString();
+          final refreshToken = (json["refreshToken"] ?? "").toString();
+          try {
+            final verifyResponse = await httpService.post(
+              path: AppConstants.verifyTokenURL,
+              body: {"token": token, "refreshToken": refreshToken},
+              headers: {
+                "x-auth-token": token,
+                "x-refresh-token": refreshToken,
+                "Content-type": "application/json",
+              },
+            );
+            final verifyJson = jsonDecode(verifyResponse.body);
+            if (verifyJson["user"] != null) {
+              completeUserModel = UserModel.fromMap(
+                Map<String, dynamic>.from(verifyJson["user"] as Map),
+              ).copyWith(token: token, refreshToken: refreshToken);
+              debugPrint("✅ UserModel from verifyToken with ID: ${completeUserModel.id}");
+            } else {
+              completeUserModel = userModel.copyWith(token: token);
+              debugPrint("⚠️ Using local UserModel (ID may be null)");
+            }
+          } catch (e) {
+            completeUserModel = userModel.copyWith(token: json["token"]);
+            debugPrint("⚠️ verifyToken failed, using local UserModel: $e");
+          }
         }
 
         ref
@@ -227,7 +303,6 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
           "✅ UserController updated with user ID: ${completeUserModel.id}",
         );
 
-        await _sendWelcomeNotification(completeUserModel);
         await _createFreeTrialForNewUser(completeUserModel, ref);
 
         await Future.delayed(const Duration(milliseconds: 200));
@@ -311,8 +386,11 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
       );
       state = state.copyWith(currentIndex: state.currentIndex - 1);
     } else {
-      // İlk sayfadaysa geri git
-      navigatorKey.currentState?.pop();
+      // Register kök route olduğunda pop siyah ekrana düşürebilir; güvenli dönüş.
+      navigatorKey.currentState?.pushNamedAndRemoveUntil(
+        '/onboard',
+        (route) => false,
+      );
     }
   }
 
@@ -353,61 +431,7 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
     }
   }
 
-  /// Hoşgeldiniz bildirimi gönder
-  Future<void> _sendWelcomeNotification(UserModel user) async {
-    try {
-      debugPrint("🎉 Sending welcome notification for user: ${user.email}");
-
-      // Bildirim metinlerini dil koduna göre al
-      final prefs = await SharedPreferences.getInstance();
-      final langCode = prefs.getString('current_locale') ?? 'tr';
-
-      String title, body;
-      switch (langCode) {
-        case 'en':
-          title = 'Welcome to Friendify! 🎉';
-          body =
-              'We\'re excited to have you here. Start chatting with your AI friends!';
-          break;
-        case 'de':
-          title = 'Willkommen bei Friendify! 🎉';
-          body =
-              'Wir freuen uns, dich hier zu haben. Beginne jetzt mit deinen KI-Freunden zu chatten!';
-          break;
-        default: // tr
-          title = 'Friendify\'e Hoş Geldiniz! 🎉';
-          body =
-              'Sizi aramızda görmekten mutluluk duyuyoruz. AI arkadaşlarınızla sohbete başlayın!';
-      }
-
-      // Sistem bildirimi gönder
-      await NotificationService.showSystemNotification(
-        title: title,
-        body: body,
-        payload: 'welcome',
-      );
-
-      // Bildirimi notifications listesine ekle
-      final notification = NotificationModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: title,
-        body: body,
-        createdAt: DateTime.now(),
-        type: NotificationType.welcome,
-        payload: 'welcome',
-      );
-
-      ref
-          ?.read(AllControllers.notificationsViewController.notifier)
-          .addNotification(notification);
-
-      debugPrint("✅ Welcome notification sent");
-    } catch (e) {
-      debugPrint("❌ Error sending welcome notification: $e");
-    }
-  }
-
-  /// Yeni kullanıcı için 2 günlük free trial oluştur ve bildirim gönder
+  /// Yeni kullanıcı için 2 günlük free trial oluştur
   Future<void> _createFreeTrialForNewUser(UserModel user, Ref? ref) async {
     try {
       debugPrint(
@@ -483,10 +507,6 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
         );
       }
 
-      // Backend başarılı olsa da olmasa da bildirim gönder
-      debugPrint("📨 [FREE TRIAL] Sending trial started notification...");
-      await _sendTrialStartedNotification(user, freeTrial);
-
       debugPrint("⏰ [FREE TRIAL] Scheduling trial ended notification...");
       await _scheduleTrialEndedNotification(user, freeTrial);
 
@@ -494,85 +514,6 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
     } catch (e, stackTrace) {
       debugPrint("❌ [FREE TRIAL] Error creating free trial: $e");
       debugPrint("❌ [FREE TRIAL] StackTrace: $stackTrace");
-    }
-  }
-
-  /// Free trial başladı bildirimi gönder
-  Future<void> _sendTrialStartedNotification(
-    UserModel user,
-    dynamic freeTrial,
-  ) async {
-    try {
-      debugPrint("📨 [TRIAL NOTIFICATION] Sending trial started notification");
-      debugPrint(
-        "📨 [TRIAL NOTIFICATION] User: ${user.email}, Trial end: ${freeTrial.endDate}",
-      );
-
-      final prefs = await SharedPreferences.getInstance();
-      final langCode = prefs.getString('current_locale') ?? 'tr';
-      debugPrint("📨 [TRIAL NOTIFICATION] Language: $langCode");
-
-      String title, body;
-      switch (langCode) {
-        case 'en':
-          title = 'Free Trial Started! 🎁';
-          body = 'Your 2-day free trial has started. Enjoy unlimited features!';
-          break;
-        case 'de':
-          title = 'Kostenlose Testversion gestartet! 🎁';
-          body =
-              'Ihre 2-tägige kostenlose Testversion hat begonnen. Genießen Sie unbegrenzte Funktionen!';
-          break;
-        default: // tr
-          title = 'Ücretsiz Deneme Başladı! 🎁';
-          body =
-              '2 günlük ücretsiz denemeniz başladı. Sınırsız özelliklerin tadını çıkarın!';
-      }
-
-      debugPrint("📨 [TRIAL NOTIFICATION] Title: $title");
-      debugPrint("📨 [TRIAL NOTIFICATION] Body: $body");
-
-      // Sistem bildirimi gönder
-      debugPrint(
-        "📨 [TRIAL NOTIFICATION] Calling NotificationService.showSystemNotification...",
-      );
-      await NotificationService.showSystemNotification(
-        title: title,
-        body: body,
-        payload: 'trial_started',
-      );
-      debugPrint("✅ [TRIAL NOTIFICATION] System notification sent");
-
-      // Bildirimi notifications listesine ekle
-      final notification = NotificationModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: title,
-        body: body,
-        createdAt: DateTime.now(),
-        type: NotificationType.trialStarted,
-        payload: 'trial_started',
-      );
-
-      debugPrint("📨 [TRIAL NOTIFICATION] Adding to notifications list...");
-      if (ref != null) {
-        ref
-            ?.read(AllControllers.notificationsViewController.notifier)
-            .addNotification(notification);
-        debugPrint("✅ [TRIAL NOTIFICATION] Added to notifications list");
-      } else {
-        debugPrint(
-          "⚠️ [TRIAL NOTIFICATION] Ref is null, cannot add to notifications list",
-        );
-      }
-
-      debugPrint(
-        "✅ [TRIAL NOTIFICATION] Trial started notification process completed",
-      );
-    } catch (e, stackTrace) {
-      debugPrint(
-        "❌ [TRIAL NOTIFICATION] Error sending trial started notification: $e",
-      );
-      debugPrint("❌ [TRIAL NOTIFICATION] StackTrace: $stackTrace");
     }
   }
 

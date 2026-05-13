@@ -9,6 +9,7 @@ import 'package:friendfy/Http/http_service.dart';
 
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Models/chat_model.dart';
+import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:friendfy/Services/premium_service.dart';
@@ -53,10 +54,13 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
     }
   }
 
-  Future<void> startChat(AgentModel selectedAgent) async {
+  Future<void> startChat(AgentModel selectedAgent, {bool onboardingFunnel = false}) async {
     final prepared = await _prepareChatForAgent(selectedAgent);
     if (!prepared) return;
-    await navigatorKey.currentState?.pushNamed("/chatView");
+    await navigatorKey.currentState?.pushNamed(
+      "/chatView",
+      arguments: onboardingFunnel ? {"onboardingFunnel": true} : null,
+    );
   }
 
   Future<void> startVoiceCall(AgentModel selectedAgent) async {
@@ -69,6 +73,32 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
     final prepared = await _prepareChatForAgent(selectedAgent);
     if (!prepared) return;
     await navigatorKey.currentState?.pushNamed("/videoCallView");
+  }
+
+  int _extractSavedAgentId(String responseBody, {required int fallbackAgentId}) {
+    try {
+      final decoded = jsonDecode(responseBody);
+      final id = _readAgentId(decoded);
+      return id ?? fallbackAgentId;
+    } catch (_) {
+      return fallbackAgentId;
+    }
+  }
+
+  int? _readAgentId(dynamic value) {
+    if (value is Map) {
+      for (final key in const ['agentId', 'botId', 'id']) {
+        final raw = value[key];
+        if (raw is int) return raw;
+        if (raw is String) return int.tryParse(raw);
+      }
+
+      for (final key in const ['agent', 'agentData', 'bot', 'botData', 'data']) {
+        final nested = _readAgentId(value[key]);
+        if (nested != null) return nested;
+      }
+    }
+    return null;
   }
 
   _printConversationState(String msg) {
@@ -87,6 +117,8 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
     required String gender,
     required List<String> interests,
     String? voiceId,
+    String? selectedPhotoUrl,
+    bool isCreateFlow = false,
   }) async {
     final user = ref?.read(AllControllers.userController);
     final userId = user?.id?.toString();
@@ -108,6 +140,10 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
       // Kontrol: Kullanıcının kendi karakteri mi? (system == 0 ve creatorId eşleşiyor mu?)
       final bool isOwnAgent =
           originalAgent.system == 0 && originalAgent.creatorId == userId;
+      final hasSelectedPhoto =
+          selectedPhotoUrl != null && selectedPhotoUrl.trim().isNotEmpty;
+      final resolvedPhotoUrl =
+          hasSelectedPhoto ? selectedPhotoUrl.trim() : originalAgent.photoURL;
 
       log("🔍 [AGENT EDIT] Agent ID: ${originalAgent.id}");
       log("🔍 [AGENT EDIT] Agent Creator ID: ${originalAgent.creatorId}");
@@ -123,7 +159,7 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
         'interests': jsonEncode(interests),
         'interestsType':
             originalAgent.interestsType, // Keep original interest types
-        'photoURL': originalAgent.photoURL,
+        'photoURL': resolvedPhotoUrl,
         'characterTags': originalAgent.characterTags,
         'speakingStyle': originalAgent.speakingStyle,
         'voiceId': (voiceId != null && voiceId.isNotEmpty)
@@ -214,6 +250,17 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
       }
 
       if (response.statusCode == 200) {
+        if (hasSelectedPhoto) {
+          final savedAgentId = _extractSavedAgentId(
+            response.body,
+            fallbackAgentId: originalAgent.id,
+          );
+          await LocalService.saveSelectedAgentPhoto(
+            agentId: savedAgentId,
+            photoUrl: resolvedPhotoUrl,
+          );
+        }
+
         // Kullanıcının botlarını yeniden çek
         await ref
             ?.read(AllControllers.agentsViewController.notifier)
@@ -222,9 +269,10 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
 
         state = state.copyWith(loadingScreen: false);
 
-        // Show success message and navigate back
         navigatorKey.currentState?.pop();
-        navigatorKey.currentState?.pop();
+        if (!isCreateFlow) {
+          navigatorKey.currentState?.pop();
+        }
       } else {
         log("❌ [AGENT EDIT] Failed: ${response.body}");
         state = state.copyWith(loadingScreen: false);

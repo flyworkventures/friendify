@@ -9,6 +9,7 @@ import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
@@ -25,7 +26,8 @@ class LoginView extends ConsumerStatefulWidget {
   ConsumerState<LoginView> createState() => LoginViewState();
 }
 
-class LoginViewState extends ConsumerState<LoginView> {
+class LoginViewState extends ConsumerState<LoginView>
+    with SingleTickerProviderStateMixin {
   TextEditingController emailController = TextEditingController(
     text: "ahmet@fly-work.com",
   );
@@ -33,6 +35,59 @@ class LoginViewState extends ConsumerState<LoginView> {
     text: "tester123",
   );
   bool loading = false;
+  late final AnimationController _headerAnimationController;
+  late final Animation<double> _daisyOpacity;
+  late final Animation<Offset> _daisySlide;
+  late final Animation<double> _laraOpacity;
+  late final Animation<Offset> _laraSlide;
+
+  @override
+  void initState() {
+    super.initState();
+    _headerAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+
+    _daisyOpacity = CurvedAnimation(
+      parent: _headerAnimationController,
+      curve: const Interval(0.0, 0.75, curve: Curves.easeOutCubic),
+    );
+    _daisySlide = Tween<Offset>(
+      begin: const Offset(0, 0.12),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _headerAnimationController,
+        curve: const Interval(0.0, 0.75, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _laraOpacity = CurvedAnimation(
+      parent: _headerAnimationController,
+      curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
+    );
+    _laraSlide = Tween<Offset>(
+      begin: const Offset(0, 0.12),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _headerAnimationController,
+        curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _headerAnimationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _headerAnimationController.dispose();
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -49,18 +104,30 @@ class LoginViewState extends ConsumerState<LoginView> {
                   children: [
                     Align(
                       alignment: Alignment.bottomLeft,
-                      child: Image.asset(
-                        "assets/images/daisy.png",
-                        width: 212.w,
-                        height: 263.7.h,
+                      child: FadeTransition(
+                        opacity: _daisyOpacity,
+                        child: SlideTransition(
+                          position: _daisySlide,
+                          child: Image.asset(
+                            "assets/images/daisy.png",
+                            width: 212.w,
+                            height: 263.7.h,
+                          ),
+                        ),
                       ),
                     ),
                     Align(
                       alignment: Alignment.topRight,
-                      child: Image.asset(
-                        "assets/images/lara.png",
-                        width: 207.w,
-                        height: 257.31.h,
+                      child: FadeTransition(
+                        opacity: _laraOpacity,
+                        child: SlideTransition(
+                          position: _laraSlide,
+                          child: Image.asset(
+                            "assets/images/lara.png",
+                            width: 207.w,
+                            height: 257.31.h,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -171,9 +238,11 @@ class LoginViewState extends ConsumerState<LoginView> {
                 MyButton(
                   onTap: () async {
                     debugPrint("👤 Guest button clicked");
-                    await ref
-                        .read(AllControllers.onboardViewController.notifier)
-                        .guestLogin();
+                    if (!mounted) return;
+                    Navigator.of(context).pushNamedAndRemoveUntil(
+                      '/register',
+                      (route) => false,
+                    );
                   },
                   margin: EdgeInsets.symmetric(
                     horizontal: 20,
@@ -229,9 +298,11 @@ class LoginViewState extends ConsumerState<LoginView> {
                 MyButton(
                   onTap: () async {
                     debugPrint("👤 Guest button clicked");
-                    await ref
-                        .read(AllControllers.onboardViewController.notifier)
-                        .guestLogin();
+                    if (!mounted) return;
+                    Navigator.of(context).pushNamedAndRemoveUntil(
+                      '/register',
+                      (route) => false,
+                    );
                   },
                   margin: EdgeInsets.symmetric(
                     horizontal: 20,
@@ -280,26 +351,47 @@ class LoginViewState extends ConsumerState<LoginView> {
                 ),
               ),
 
-              GestureDetector(
-                onTap: () async {
-                  await launchUrl(
-                    Uri.parse("https://fly-work.com/friendify/privacy-policy/"),
-                  );
-                },
-                child: SubstringHighlight(
-                  text: Translate.translate("privacy_data_text", context),
-                  term: Translate.translate("privacy_data_highlight", context),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20.w),
+                child: RichText(
                   textAlign: TextAlign.center,
-                  textStyle: GoogleFonts.quicksand(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w400,
-                    fontSize: 12.sp,
-                  ),
-                  textStyleHighlight: GoogleFonts.quicksand(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    decoration: TextDecoration.underline,
-                    fontSize: 12.sp,
+                  text: TextSpan(
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w400,
+                      fontSize: 12.sp,
+                    ),
+                    children: [
+                      TextSpan(text: "Verilerinizi "),
+                      TextSpan(
+                        text: "Gizlilik Politikamız",
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                          fontSize: 12.sp,
+                        ),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = () {
+                            launchUrl(Uri.parse("https://fly-work.com/friendify/privacy-policy/"));
+                          },
+                      ),
+                      TextSpan(text: " ve "),
+                      TextSpan(
+                        text: "Çerez Politikamızda",
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                          fontSize: 12.sp,
+                        ),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = () {
+                            launchUrl(Uri.parse("https://fly-work.com/friendify/cookies/"));
+                          },
+                      ),
+                      TextSpan(text: " nasıl işlediğimizi öğrenin"),
+                    ],
                   ),
                 ),
               ),

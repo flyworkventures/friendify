@@ -484,7 +484,6 @@ Future<Map<String, String>> _getNotificationTexts() async {
     final prefs = await SharedPreferences.getInstance();
     final String? langCode = prefs.getString('current_locale') ?? 'tr';
     
-    // Default metinler (Türkçe)
     final Map<String, Map<String, String>> translations = {
       'tr': {
         'title': '👋 Arkadaşların seni bekliyor!',
@@ -497,6 +496,42 @@ Future<Map<String, String>> _getNotificationTexts() async {
       'de': {
         'title': '👋 Deine Freunde warten auf dich!',
         'body': 'Du hast Freunde, die sich auf Friendify nach dir erkundigen. Starte jetzt einen Chat!',
+      },
+      'es': {
+        'title': '👋 ¡Tus amigos te están esperando!',
+        'body': 'Tienes amigos que quieren saber de ti en Friendify. ¡Empieza a chatear ahora!',
+      },
+      'fr': {
+        'title': '👋 Vos amis vous attendent !',
+        'body': 'Vous avez des amis qui pensent à vous sur Friendify. Commencez à discuter maintenant !',
+      },
+      'it': {
+        'title': '👋 I tuoi amici ti stanno aspettando!',
+        'body': 'Hai amici che si chiedono come stai su Friendify. Inizia a chattare ora!',
+      },
+      'ja': {
+        'title': '👋 友達があなたを待っています！',
+        'body': 'Friendifyであなたのことを気にかけている友達がいます。今すぐチャットを始めましょう！',
+      },
+      'ko': {
+        'title': '👋 친구들이 기다리고 있어요!',
+        'body': 'Friendify에서 당신을 궁금해하는 친구들이 있어요. 지금 바로 채팅을 시작하세요!',
+      },
+      'ru': {
+        'title': '👋 Ваши друзья ждут вас!',
+        'body': 'На Friendify есть друзья, которые думают о вас. Начните общаться прямо сейчас!',
+      },
+      'hi': {
+        'title': '👋 आपके दोस्त आपका इंतज़ार कर रहे हैं!',
+        'body': 'Friendify पर आपके बारे में सोचने वाले दोस्त हैं। अभी चैट शुरू करें!',
+      },
+      'pt': {
+        'title': '👋 Seus amigos estão esperando por você!',
+        'body': 'Você tem amigos curiosos sobre você no Friendify. Comece a conversar agora!',
+      },
+      'zh': {
+        'title': '👋 你的朋友正在等你！',
+        'body': '在Friendify上有朋友想念你。现在就开始聊天吧！',
       },
     };
     

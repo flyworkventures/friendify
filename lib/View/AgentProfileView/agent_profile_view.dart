@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 
@@ -10,6 +11,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
+import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
@@ -30,12 +32,83 @@ class AgentProfileView extends ConsumerStatefulWidget {
 
 class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
   List<Widget> icons = [];
+  int? _selectedPhotoAgentId;
+  String? _selectedPhotoUrl;
+  final PageController _photoPageController = PageController();
+  Timer? _photoAutoTimer;
+  int _currentPhotoIndex = 0;
+  List<String> _carouselPhotos = const [];
+
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
     init();
+    _loadSelectedPhoto();
   }
+
+  @override
+  void dispose() {
+    _photoAutoTimer?.cancel();
+    _photoPageController.dispose();
+    super.dispose();
+  }
+
+  void _syncCarouselPhotos(List<String> photos) {
+    final isSame = photos.length == _carouselPhotos.length &&
+        () {
+          for (var i = 0; i < photos.length; i++) {
+            if (photos[i] != _carouselPhotos[i]) return false;
+          }
+          return true;
+        }();
+    if (isSame) return;
+    _carouselPhotos = photos;
+    _currentPhotoIndex = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_photoPageController.hasClients) {
+        _photoPageController.jumpToPage(0);
+      }
+      _restartPhotoAutoTimer();
+    });
+  }
+
+  void _restartPhotoAutoTimer() {
+    _photoAutoTimer?.cancel();
+    if (_carouselPhotos.length < 2) return;
+    _photoAutoTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted) return;
+      if (!_photoPageController.hasClients) return;
+      if (_carouselPhotos.length < 2) return;
+      final nextIndex = (_currentPhotoIndex + 1) % _carouselPhotos.length;
+      _photoPageController.animateToPage(
+        nextIndex,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  List<String> _buildCarouselPhotos(AgentModel agent, String mainPhotoUrl) {
+    final ordered = <String>[];
+    final seen = <String>{};
+
+    void addUrl(String? url) {
+      if (url == null) return;
+      final trimmed = url.trim();
+      if (trimmed.isEmpty) return;
+      if (!seen.add(trimmed)) return;
+      ordered.add(trimmed);
+    }
+
+    addUrl(mainPhotoUrl);
+    for (final url in agent.photoURLs) {
+      addUrl(url);
+    }
+    addUrl(agent.photoURL);
+    return ordered;
+  }
+
 
   init() {
     AgentModel? agent = ref
@@ -44,15 +117,21 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
     List<String> interest = List.from(jsonDecode(agent?.interestsType));
     for (var element in interest) {
       icons.add(
-        HeroIcon(
-          interestToIcon[element]!,
-          color: MyColors.purple,
-          size: 18,
-          style: HeroIconStyle.outline,
-        ),
+        interestIcon(element, size: 18, color: MyColors.purple, style: HeroIconStyle.outline),
       );
       setState(() {});
     }
+  }
+
+  Future<void> _loadSelectedPhoto() async {
+    final agent = ref.read(AllControllers.agentsProfileViewController).agent;
+    if (agent == null) return;
+    final savedPhotoUrl = await LocalService.getSelectedAgentPhoto(agent.id);
+    if (!mounted) return;
+    setState(() {
+      _selectedPhotoAgentId = agent.id;
+      _selectedPhotoUrl = savedPhotoUrl;
+    });
   }
 
   @override
@@ -60,11 +139,26 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
     AgentModel? agent = ref
         .watch(AllControllers.agentsProfileViewController)
         .agent;
+    if (agent == null) {
+      return BackgroundWidget(
+        child: const Scaffold(
+          backgroundColor: Colors.transparent,
+          body: SizedBox.shrink(),
+        ),
+      );
+    }
     final userId = ref.read(AllControllers.userController)?.id?.toString();
 
     // Kontrol: Kullanıcının kendi karakteri mi?
-    final bool isOwnAgent =
-        agent != null && agent.system == 0 && agent.creatorId == userId;
+    final bool isOwnAgent = agent.system == 0 && agent.creatorId == userId;
+    if (_selectedPhotoAgentId != agent.id) {
+      _loadSelectedPhoto();
+    }
+    final agentPhotoUrl = _selectedPhotoAgentId == agent.id
+        ? (_selectedPhotoUrl ?? agent.photoURL)
+        : agent.photoURL;
+    final carouselPhotos = _buildCarouselPhotos(agent, agentPhotoUrl);
+    _syncCarouselPhotos(carouselPhotos);
 
     return BackgroundWidget(
       child: Scaffold(
@@ -119,26 +213,50 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadiusGeometry.circular(16),
-                            child: CachedNetworkImage(
+                            child: SizedBox(
                               width: MediaQuery.sizeOf(context).width,
                               height: double.infinity,
-                              fit: BoxFit.cover,
-                              imageUrl: agent!.photoURL,
-                              placeholder: (context, url) => Shimmer.fromColors(
-                                baseColor: Colors.grey[300]!,
-                                highlightColor: Colors.grey[100]!,
-                                child: Container(
-                                  width: MediaQuery.sizeOf(context).width,
-                                  height: 336.h,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                width: MediaQuery.sizeOf(context).width,
-                                height: 336.h,
-                                color: Colors.grey[300],
-                                child: Icon(Icons.person, size: 80),
-                              ),
+                              child: carouselPhotos.isEmpty
+                                  ? Container(
+                                      color: Colors.grey[300],
+                                      child: Icon(Icons.person, size: 80),
+                                    )
+                                  : PageView.builder(
+                                      controller: _photoPageController,
+                                      physics: const BouncingScrollPhysics(),
+                                      itemCount: carouselPhotos.length,
+                                      onPageChanged: (index) {
+                                        setState(() {
+                                          _currentPhotoIndex = index;
+                                        });
+                                        _restartPhotoAutoTimer();
+                                      },
+                                      itemBuilder: (context, index) {
+                                        return CachedNetworkImage(
+                                          width: MediaQuery.sizeOf(context).width,
+                                          height: double.infinity,
+                                          fit: BoxFit.cover,
+                                          imageUrl: carouselPhotos[index],
+                                          placeholder: (context, url) =>
+                                              Shimmer.fromColors(
+                                            baseColor: Colors.grey[300]!,
+                                            highlightColor: Colors.grey[100]!,
+                                            child: Container(
+                                              width: MediaQuery.sizeOf(context).width,
+                                              height: 336.h,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          errorWidget:
+                                              (context, url, error) => Container(
+                                            width: MediaQuery.sizeOf(context).width,
+                                            height: 336.h,
+                                            color: Colors.grey[300],
+                                            child: Icon(Icons.person, size: 80),
+                                          ),
+                                        );
+                                      },
+                                    ),
                             ),
                           ),
 

@@ -1,0 +1,5 @@
+"NSUserNotificationsUsageDescription" = "Friendify, arkadaşlarınızı hatırlatmak için size bildirim göndermek istiyor.";
+"NSMicrophoneUsageDescription" = "Friendify, sesli ve görüntülü aramalar için mikrofonunuza erişim istiyor.";
+"NSCameraUsageDescription" = "Friendify, görüntülü aramalar için kameranıza erişim istiyor.";
+"NSSpeechRecognitionUsageDescription" = "Friendify, aramalar sırasında sesinizi metne dönüştürmek için konuşma tanıma özelliğini kullanır.";
+"NSPhotoLibraryUsageDescription" = "Friendify, sohbette fotoğraf seçip göndermek için fotoğraf kitaplığınıza erişim istiyor.";

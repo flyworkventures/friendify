@@ -23,15 +23,16 @@ class _YourMatchesState extends ConsumerState<YourMatches> {
   @override
   Widget build(BuildContext context) {
     final appPrv = ref.watch(appProvider);
-    List<AgentModel>? agents = ref
-        .read(AllControllers.agentsViewController)
-        .agents;
+    final agents = ref.watch(AllControllers.agentsViewController).agents;
+    if (agents == null || agents.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return SizedBox(
-      height: 240.h,
+      height: 197.h,
       child: ListView(
         shrinkWrap: true,
         scrollDirection: Axis.horizontal,
-        children: agents!.map((e) => agentWidget(e, appPrv)).toList(),
+        children: agents.map((e) => agentWidget(e, appPrv)).toList(),
       ),
     );
   }
@@ -44,8 +45,8 @@ class _YourMatchesState extends ConsumerState<YourMatches> {
             .startChat(agent);
       },
       child: Container(
-        height: 240.h,
-        width: 152.w,
+        height: 197.h,
+        width: 143.w,
         margin: EdgeInsets.only(right: 10).r,
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(20).r),
         child: Stack(
@@ -56,6 +57,7 @@ class _YourMatchesState extends ConsumerState<YourMatches> {
                 imageUrl: agent.photoURL,
                 height: 240.h,
                 width: 152.w,
+                alignment: Alignment(0, -1),
                 fit: BoxFit.cover,
                 placeholder: (context, url) => Shimmer(
                   gradient: LinearGradient(colors: [Colors.white, Colors.grey]),
@@ -111,7 +113,7 @@ class _YourMatchesState extends ConsumerState<YourMatches> {
                             FittedBox(
                               child: Text(
                                 agent.getJobByLang(
-                                      app.currentLang?.countryCode ?? "en",
+                                      app.currentLang?.languageCode ?? "en",
                                     ) ??
                                     Translate.translate(
                                       "home_job_fallback",

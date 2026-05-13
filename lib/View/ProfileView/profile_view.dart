@@ -15,12 +15,14 @@ import 'package:friendfy/Widgets/button.dart';
 import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gradient_borders/gradient_borders.dart';
+import 'package:heroicons/heroicons.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
+import 'dart:ui';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class ProfileView extends ConsumerStatefulWidget {
@@ -40,22 +42,24 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
   }
 
   Future<void> _loadNotificationPreference() async {
-    // Gerçek sistem izin durumunu kontrol et
     final hasPermission =
         await NotificationService.checkNotificationPermission();
 
     final prefs = await SharedPreferences.getInstance();
-    final userPreference = prefs.getBool('notifications_enabled') ?? false;
 
-    // Eğer kullanıcı bildirimleri açmak istiyor ama izin yoksa, izin verilmedi olarak göster
-    final isEnabled = hasPermission && userPreference;
+    if (hasPermission) {
+      // Sistem izni varsa, SharedPreferences'ı da senkronize et
+      await prefs.setBool('notifications_enabled', true);
+    }
+
+    final isEnabled = hasPermission;
 
     setState(() {
       _notificationsEnabled = isEnabled;
     });
 
     debugPrint(
-      '📱 Notification permission status: $hasPermission, user preference: $userPreference, enabled: $isEnabled',
+      '📱 Notification permission status: $hasPermission, enabled: $isEnabled',
     );
   }
 
@@ -124,72 +128,75 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Column(
-        children: [
-          top(),
-          if (!isPremiumUser) buildPremiumWidget(),
-          SizedBox(height: 20.h),
-          listTile(
-            icon: SvgPicture.asset("assets/icons/user-edit.svg"),
-            text: Translate.translate("profile_settings", context),
-            onTap: () async {
-              navigatorKey.currentState?.pushNamed('/profileSettings');
-            },
-          ),
-
-          //listTile(icon: SvgPicture.asset("assets/icons/user-edit.svg"), text: "Premium!", onTap: ()=> pushPremium()),
-          listTile(
-            icon: SvgPicture.asset("assets/icons/profile.svg"),
-            text: Translate.translate("share_with_friends", context),
-            onTap: () {
-              _showInviteDialog(context);
-            },
-          ),
-          listTile(
-            icon: Icon(CupertinoIcons.globe, color: Colors.white),
-            text: Translate.translate(TranslateKeys.language, context),
-            onTap: () {
-              Navigator.of(context).pushNamed('/languageView');
-            },
-          ),
-
-          listTile(
-            icon: SvgPicture.asset("assets/icons/notification-bing.svg"),
-            text: Translate.translate(TranslateKeys.notifications, context),
-            trailing: CupertinoSwitch(
-              value: _notificationsEnabled,
-              activeColor: Color(0xffA213E4),
-              onChanged: _toggleNotifications,
+      body: SingleChildScrollView(
+        padding: EdgeInsets.only(bottom: 120).r,
+        child: Column(
+          children: [
+            top(),
+            if (!isPremiumUser) buildPremiumWidget(),
+            SizedBox(height: 20.h),
+            listTile(
+              icon: SvgPicture.asset("assets/icons/user-edit.svg",width: 24,),
+              text: Translate.translate("profile_settings", context),
+              onTap: () async {
+                navigatorKey.currentState?.pushNamed('/profileSettings');
+              },
             ),
-            onTap: () {},
-          ),
-
-          listTile(
-            icon: SvgPicture.asset("assets/icons/medal-star.svg"),
-            text: Translate.translate("rate_app", context),
-            onTap: () {
-              _rateApp();
-            },
-          ),
-          listTile(
-            icon: SvgPicture.asset("assets/icons/message-question.svg"),
-            text: Translate.translate("faqs", context),
-            onTap: () {
-              navigatorKey.currentState?.pushNamed('/faqView');
-            },
-          ),
-          listTile(
-            icon: SvgPicture.asset(
-              "assets/icons/logout.svg",
-              color: Colors.red,
+        
+            //listTile(icon: SvgPicture.asset("assets/icons/user-edit.svg"), text: "Premium!", onTap: ()=> pushPremium()),
+            listTile(
+              icon: SvgPicture.asset("assets/icons/profile.svg",width: 24,),
+              text: Translate.translate("share_with_friends", context),
+              onTap: () {
+                _showInviteDialog(context);
+              },
             ),
-            text: Translate.translate("sign_out", context),
-            onTap: () {
-              _showLogoutDialog(context);
-            },
-            isLogout: true,
-          ),
-        ],
+            listTile(
+              icon: Icon(CupertinoIcons.globe, color: Colors.white),
+              text: Translate.translate(TranslateKeys.language, context),
+              onTap: () {
+                navigatorKey.currentState?.pushNamed('/languageView');
+              },
+            ),
+        
+            listTile(
+              icon: SvgPicture.asset("assets/icons/notification-bing.svg"),
+              text: Translate.translate(TranslateKeys.notifications, context),
+              trailing: CupertinoSwitch(
+                value: _notificationsEnabled,
+                activeColor: Color(0xffA213E4),
+                onChanged: _toggleNotifications,
+              ),
+              onTap: () {},
+            ),
+        
+            listTile(
+              icon: SvgPicture.asset("assets/icons/medal-star.svg"),
+              text: Translate.translate("rate_app", context),
+              onTap: () {
+                _rateApp();
+              },
+            ),
+            listTile(
+              icon: SvgPicture.asset("assets/icons/message-question.svg"),
+              text: Translate.translate("faqs", context),
+              onTap: () {
+                navigatorKey.currentState?.pushNamed('/faqView');
+              },
+            ),
+            listTile(
+              icon: SvgPicture.asset(
+                "assets/icons/logout.svg",
+                color: Colors.red,
+              ),
+              text: Translate.translate("sign_out", context),
+              onTap: () {
+                _showLogoutDialog(context);
+              },
+              isLogout: true,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -214,13 +221,13 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                       ClipOval(
                         child: Container(
                           width: 86.w,
-                          height: 86.h,
+                          height: 86.w,
                           child: CachedNetworkImage(
                             imageUrl:
                                 ref
                                     .watch(AllControllers.userController)
                                     ?.photoURL ??
-                                "https://fakefriend.b-cdn.net/profile.png",
+                                "https://fakefriend.b-cdn.net/app/Group%201174.png",
                             fit: BoxFit.cover,
                             placeholder: (context, url) => Shimmer.fromColors(
                               baseColor: Colors.grey[300]!,
@@ -347,69 +354,74 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
   }
 
   Widget buildPremiumWidget() {
-    return Container(
-      height: 76.h,
-      width: double.infinity,
-      margin: EdgeInsets.symmetric(horizontal: 20).r,
-      padding: EdgeInsets.symmetric(horizontal: 20).r,
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage("assets/icons/gecis.png"),
-          fit: BoxFit.cover,
-        ),
-        borderRadius: BorderRadius.circular(16).r,
-        border: GradientBoxBorder(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xff3E0951).withValues(alpha: 0.1),
-              Color(0xffFFC107),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
+    return GestureDetector(
+      onTap: () {
+        pushPremium();
+      },
+      child: Container(
+        height: 76.h,
+        width: double.infinity,
+        margin: EdgeInsets.symmetric(horizontal: 20).r,
+        padding: EdgeInsets.symmetric(horizontal: 20).r,
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage("assets/icons/gecis.png"),
+            fit: BoxFit.cover,
           ),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                Image.asset("assets/icons/king.png", width: 53.w),
-                SizedBox(width: 10.w),
-                Expanded(
-                  child: Text(
-                    Translate.translate(
-                      "profile_premium_banner_title",
-                      context,
-                    ),
-                    style: GoogleFonts.quicksand(
-                      color: Colors.white,
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+          borderRadius: BorderRadius.circular(16).r,
+          border: GradientBoxBorder(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xff3E0951).withValues(alpha: 0.1),
+                Color(0xffFFC107),
               ],
+              begin: Alignment.centerRight,
+              end: Alignment.centerLeft,
             ),
           ),
-          MyGradientButton(
-            colors: [Color(0xffE1A903), Color(0xffC67A00)],
-            size: Size(120.w, 32.h),
-
-            radius: BorderRadius.circular(40).r,
-            child: Center(
-              child: Text(
-                Translate.translate("upgrade_plan", context),
-                style: GoogleFonts.quicksand(
-                  color: Colors.white,
-                  fontSize: 15.sp,
-                  fontWeight: FontWeight.bold,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Image.asset("assets/icons/king.png", width: 53.w),
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: Text(
+                      Translate.translate(
+                        "profile_premium_banner_title",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            MyGradientButton(
+              colors: [Color(0xffE1A903), Color(0xffC67A00)],
+              size: Size(120.w, 32.h),
+      onTap: () => pushPremium(),
+              radius: BorderRadius.circular(40).r,
+              child: Center(
+                child: Text(
+                  Translate.translate("upgrade_plan", context),
+                  style: GoogleFonts.quicksand(
+                    color: Colors.white,
+                    fontSize: 15.sp,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -426,14 +438,15 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
       onTap: () => onTap(),
       leading: Container(
         width: 38.w,
-        height: 38.h,
+        height: 36.h,
+
         decoration: BoxDecoration(
           color: isLogout
-              ? Colors.red.withValues(alpha: 0.4)
+              ? Colors.red.withValues(alpha: 0.2)
               : Colors.white.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(8).r,
         ),
-        child: Center(child: icon),
+        child: Center(child: SizedBox(width: 24.w, height: 24.h, child: icon,)),
       ),
       title: Text(
         text,
@@ -455,108 +468,193 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
     }
 
     final activePremium = PremiumService.getActivePremium(user);
+    final isPaidPremium = activePremium != null && activePremium.type == PremiumType.paid;
 
     String subscriptionText;
-    Color backgroundColor;
-    Color textColor;
+    Color textColor = Colors.white;
 
-    if (activePremium != null) {
-      // Premium üye
-      if (activePremium.type == PremiumType.paid) {
-        subscriptionText = Translate.translate(
-          "profile_badge_premium",
-          context,
-        );
-        backgroundColor = Color(0xffA213E4); // Mor renk
-        textColor = Colors.white;
-      } else if (activePremium.type == PremiumType.freeTrial) {
-        subscriptionText = Translate.translate(
-          "profile_badge_free_trial",
-          context,
-        );
-        backgroundColor = Color(0xffFFA500); // Turuncu renk
-        textColor = Colors.white;
-      } else {
-        subscriptionText = Translate.translate("profile_badge_trial", context);
-        backgroundColor = Color(0xffFFA500);
-        textColor = Colors.white;
-      }
+    if (isPaidPremium) {
+      subscriptionText = Translate.translate(
+        "profile_badge_premium",
+        context,
+      );
     } else {
-      // Premium değil
       subscriptionText = Translate.translate(
         "profile_badge_free_user",
         context,
       );
-      backgroundColor = Colors.grey; // Gri renk
-      textColor = Colors.white;
     }
 
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+      width: isPaidPremium ? 113.w : 140,
+      height: 30.h,
+      padding: EdgeInsets.symmetric(horizontal: 10.w),
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: isPaidPremium ? Color(0xffFFA500) : Colors.grey,
         borderRadius: BorderRadius.circular(20.r),
+        gradient: isPaidPremium ? LinearGradient(colors: [Color(0xffE1A903),Color(0xffC67A00)]) : null,
       ),
-      child: Text(
-        subscriptionText,
-        style: GoogleFonts.quicksand(
-          color: textColor,
-          fontWeight: FontWeight.w600,
-          fontSize: 11.sp,
+      child: isPaidPremium ? Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset("assets/icons/king.png",width: 22.w,),
+            SizedBox(width: 4.w,),
+            Text(
+              subscriptionText,
+              style: GoogleFonts.quicksand(
+                color: textColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 15.sp,
+              ),
+            ),
+          ],
         ),
-      ),
+      ) : Center(child: Text(
+              subscriptionText,
+              style: GoogleFonts.quicksand(
+                color: textColor,
+                fontWeight: FontWeight.w500,
+                fontSize: 15.sp,
+              ),
+            ),),
     );
   }
 
   void _showLogoutDialog(BuildContext context) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20.r),
-          ),
-          title: Text(
-            Translate.translate("logout_dialog_title", context),
-            style: GoogleFonts.quicksand(
-              fontWeight: FontWeight.w700,
-              fontSize: 18.sp,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final maxHeight = MediaQuery.sizeOf(context).height * 0.76;
+        return SafeArea(
+          top: false,
+          child: ClipRRect(
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(22.r),
+              topRight: Radius.circular(22.r),
             ),
-          ),
-          content: Text(
-            Translate.translate("logout_dialog_content", context),
-            style: GoogleFonts.quicksand(fontSize: 14.sp),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-              },
-              child: Text(
-                Translate.translate("cancel", context),
-                style: GoogleFonts.quicksand(
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w600,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                constraints: BoxConstraints(maxHeight: maxHeight),
+                color: const Color(0xFF050505).withValues(alpha: 0.94),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(height: 8.h),
+                    Container(
+                      width: 46.w,
+                      height: 4.h,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.26),
+                        borderRadius: BorderRadius.circular(100.r),
+                      ),
+                    ),
+                    SizedBox(height: 24.h),
+                    Container(
+                      width: 54.w,
+                      height: 52.w,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF44336).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12.r),
+                      ),
+                      child: Center(
+                        child: SvgPicture.asset(
+                          "assets/icons/logout.svg",
+                          width: 24.w,
+                          height: 24.h,
+                          color: Color(0xffF44336),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 18.h),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 18.w),
+                      child: Text(
+                        Translate.translate("logout_dialog_content", context),
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 18.sp,
+                          fontWeight: FontWeight.w700,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 10.h),
+
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(16.w, 18.h, 16.w, 20.h),
+                      child: Row(
+                        children: [
+              Expanded(
+                            child: SizedBox(
+                              height: 40.h,
+                              child: ElevatedButton(
+                                onPressed: () => Navigator.of(sheetContext).pop(),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFCE64FF),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(999.r),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: Text(
+                                  Translate.translate("cancel", context),
+                                  style: GoogleFonts.quicksand(
+                                    fontSize: 16.sp,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 10.w),
+                       
+               Expanded(
+                            child: SizedBox(
+                              height: 40.h,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.of(sheetContext).pop();
+                                  ref
+                                      .read(
+                                        AllControllers
+                                            .profileSettingsViewController
+                                            .notifier,
+                                      )
+                                      .logout();
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF9B9B9B),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(999.r),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: Text(
+                                  Translate.translate("sign_out", context),
+                                  style: GoogleFonts.quicksand(
+                                    fontSize: 16.sp,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                ref
-                    .read(AllControllers.profileSettingsViewController.notifier)
-                    .logout();
-              },
-              child: Text(
-                Translate.translate("sign_out", context),
-                style: GoogleFonts.quicksand(
-                  color: Colors.red,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+          ),
         );
       },
     );
@@ -585,7 +683,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
             children: [
               Center(
                 child: Text(
-                  "Share Friend",
+                  Translate.translate("share_with_friends", context),
                   style: GoogleFonts.quicksand(
                     fontSize: 34.sp * 0.5,
                     fontWeight: FontWeight.w500,
@@ -626,102 +724,57 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                       onTap: () async {
                         await Clipboard.setData(ClipboardData(text: inviteLink));
                         if (!mounted) return;
-
-                        final messenger = ScaffoldMessenger.of(context);
-                        messenger.hideCurrentSnackBar();
-                        messenger.showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: const Color(0xff070707),
-                            elevation: 0,
-                            duration: const Duration(seconds: 2),
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18.r),
-                              side: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.18),
+                        Navigator.of(sheetContext).pop();
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted) return;
+                          final messenger = ScaffoldMessenger.of(context);
+                          messenger.hideCurrentSnackBar();
+                          messenger.showSnackBar(
+                            SnackBar(
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: const Color(0xff070707),
+                              elevation: 0,
+                              duration: const Duration(seconds: 2),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 14.w,
+                                vertical: 12.h,
                               ),
-                            ),
-                            margin: EdgeInsets.fromLTRB(16.w, 0, 16.w, 24.h),
-                            content: Stack(
-                              children: [
-                                Padding(
-                                  padding: EdgeInsets.fromLTRB(
-                                    12.w,
-                                    12.h,
-                                    42.w,
-                                    12.h,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 44.w,
-                                        height: 44.w,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(12.r),
-                                        ),
-                                        child: Icon(
-                                          Icons.verified_rounded,
-                                          color: const Color(0xff34C759),
-                                          size: 24.sp,
-                                        ),
-                                      ),
-                                      SizedBox(width: 12.w),
-                                      Expanded(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              "Copied Successfully",
-                                              style: GoogleFonts.quicksand(
-                                                color: Colors.white,
-                                                fontSize: 22.sp * 0.5,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            SizedBox(height: 2.h),
-                                            Text(
-                                              "The link has been successfully copied.",
-                                              style: GoogleFonts.quicksand(
-                                                color: Colors.white.withValues(
-                                                  alpha: 0.75,
-                                                ),
-                                                fontSize: 18.sp * 0.5,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18.r),
+                                side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.18),
                                 ),
-                                Positioned(
-                                  top: 10.h,
-                                  right: 10.w,
-                                  child: InkWell(
-                                    onTap: messenger.hideCurrentSnackBar,
-                                    borderRadius: BorderRadius.circular(100.r),
-                                    child: Icon(
-                                      CupertinoIcons.xmark_circle_fill,
-                                      color: Colors.white.withValues(
-                                        alpha: 0.85,
+                              ),
+                              margin: EdgeInsets.fromLTRB(16.w, 0, 16.w, 24.h),
+                              content: Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle_rounded,
+                                    color: const Color(0xff34C759),
+                                    size: 20.sp,
+                                  ),
+                                  SizedBox(width: 10.w),
+                                  Expanded(
+                                    child: Text(
+                                      Translate.translate(
+                                        "profile_link_copied",
+                                        context,
                                       ),
-                                      size: 18.sp,
+                                      style: GoogleFonts.quicksand(
+                                        color: Colors.white,
+                                        fontSize: 13.sp,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        );
+                          );
+                        });
                       },
-                      child: Icon(
-                        CupertinoIcons.doc_on_clipboard,
+                      child: HeroIcon(
+                        HeroIcons.clipboard,
                         color: Colors.white,
                         size: 22.sp,
                       ),
@@ -736,6 +789,8 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
       },
     );
   }
+
+
 
   /// Uygulamayı App Store veya Play Store'da değerlendirmeye yönlendir
   Future<void> _rateApp() async {

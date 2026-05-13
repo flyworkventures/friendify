@@ -18,7 +18,7 @@ class MyBottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 7,right: 20,left: 20).r,
+      padding: EdgeInsets.only(right: 20,left: 20).r,
       child: ClipRRect(
          borderRadius: BorderRadius.circular(40),
         child: BackdropFilter(
@@ -69,7 +69,7 @@ class MyBottomNavBarItem {
         alignment: Alignment.center,
         child: SvgPicture.asset(
           icon,
-          color: isActive ? activeColor : inactiveColor,
+          color: isActive ? activeColor : Colors.white.withValues(alpha: 0.5),
 
         ),
       ),

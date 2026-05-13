@@ -328,18 +328,7 @@ Future<void> pickImage() async {
 
   Future<void> logout() async {
     try {
-      // Local storage'dan token'ı sil
-      await LocalService.deleteData("authToken");
-      
-      // Bildirimleri temizle
-      ref?.read(AllControllers.notificationsViewController.notifier).clearNotifications();
-      
-      // User state'ini temizle
-      ref?.read(AllControllers.userController.notifier).state = null;
-      
-      // Login sayfasına yönlendir
-      navigatorKey.currentState?.pushNamedAndRemoveUntil('/onboard', (route) => false);
-      
+      await _clearSessionAndNavigateToOnboard();
       log("User logged out successfully");
     } catch (e) {
       log("Error during logout: $e");
@@ -384,16 +373,7 @@ Future<void> pickImage() async {
         final responseData = jsonDecode(response.body);
         if (responseData['success'] == true) {
           debugPrint("✅ Account deleted successfully from server");
-          
-          // Local storage'dan token'ı sil
-          await LocalService.deleteData(LocalDbKeys.authToken);
-          
-          // Bildirimleri temizle
-          ref?.read(AllControllers.notificationsViewController.notifier).clearNotifications();
-          
-          // User state'ini temizle
-          ref?.read(AllControllers.userController.notifier).state = null;
-          
+
           // Navigation'dan ÖNCE isLoading'i false yap
           try {
             state = state.copyWith(isLoading: false);
@@ -401,14 +381,9 @@ Future<void> pickImage() async {
             log("⚠️ State update error (controller may be disposed): $e");
           }
           
-          // Login sayfasına yönlendir
-          try {
-            navigatorKey.currentState?.pushNamedAndRemoveUntil('/accountDeletedView', (route) => false);
-          } catch (e) {
-            log("⚠️ Navigation error: $e");
-          }
+          await _clearSessionAndNavigateToOnboard();
           
-          log("✅ Account deleted and user logged out");
+          log("✅ Account deleted and redirected to onboard");
         } else {
           debugPrint("❌ Server returned success=false: ${responseData['msg']}");
           try {
@@ -434,6 +409,42 @@ Future<void> pickImage() async {
       debugPrint("❌ Error deleting account: $e");
       debugPrint("📍 StackTrace: $stackTrace");
     }
+  }
+
+  Future<void> _clearSessionAndNavigateToOnboard() async {
+    // Kullanıcı state'i null olmadan önce kullanıcıya ait bildirimleri temizle.
+    await ref
+        ?.read(AllControllers.notificationsViewController.notifier)
+        .clearNotifications();
+
+    // Oturum ve kullanıcıya özel local verileri temizle.
+    await Future.wait([
+      LocalService.deleteData(LocalDbKeys.authToken),
+      LocalService.deleteData(LocalDbKeys.refreshToken),
+      LocalService.deleteData(LocalDbKeys.currentUser),
+      LocalService.deleteData(LocalDbKeys.postAuthAction),
+      LocalService.deleteData(LocalDbKeys.onboardingPendingAuth),
+      LocalService.deleteData(LocalDbKeys.onboardingAnswers),
+      LocalService.deleteData(LocalDbKeys.onboardingGuestSession),
+      LocalService.deleteData(LocalDbKeys.onboardingFunnelActive),
+      LocalService.deleteData(LocalDbKeys.onboardingVideoGatePending),
+      LocalService.deleteData(LocalDbKeys.dailyMessageCount),
+      LocalService.deleteData(LocalDbKeys.dailyMessageDate),
+      LocalService.deleteData(LocalDbKeys.dailyPhotoCount),
+      LocalService.deleteData(LocalDbKeys.dailyPhotoDate),
+      LocalService.deleteData(LocalDbKeys.dailyAudioCount),
+      LocalService.deleteData(LocalDbKeys.dailyAudioDate),
+      LocalService.deleteData(LocalDbKeys.characterEditCount),
+    ]);
+
+    // User state'ini temizle.
+    ref?.read(AllControllers.userController.notifier).state = null;
+
+    // Login'e dön.
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      '/login',
+      (route) => false,
+    );
   }
 
 }

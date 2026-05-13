@@ -152,6 +152,7 @@
   "force_update_hint": "下のボタンをタップして更新してください。",
   "force_update_action": "アップデート",
   "edit_character_title": "キャラクター編集",
+  "create_character_title": "キャラクターを作成",
   "edit_character_name_label": "キャラクター名",
   "edit_character_name_hint": "キャラクター名を入力",
   "edit_character_interests_traits_title": "興味・特性",
@@ -164,5 +165,12 @@
   "edit_character_voices_load_failed": "音声の読み込みに失敗しました",
   "edit_character_select_gender_for_voices": "音声を表示するには先に女性または男性を選択してください",
   "edit_character_no_voice_for_gender": "この性別に対応する音声が見つかりません",
-  "language": "言語"
+  "language": "言語",
+  "notification_permission_title": "通知の許可",
+  "notification_permission_message": "新しいメッセージや重要なアップデートの通知を受け取るには、通知の許可を有効にしてください。",
+  "enable_notifications": "許可する",
+  "not_now": "後で",
+  "select_character": "キャラクターを選択",
+  "agents_my_creations": "作成したキャラ",
+  "agents_characters": "キャラクター"
 }

@@ -22,6 +22,7 @@ import 'package:heroicons/heroicons.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:friendfy/Services/revenuecat_service.dart';
 import 'package:friendfy/Services/premium_service.dart';
+import 'package:friendfy/View/EditAgentView/edit_agent_view.dart';
 import 'package:friendfy/View/PremiumScreen/premium_screen.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
@@ -34,8 +35,6 @@ class HomeView extends ConsumerStatefulWidget {
 }
 
 class _HomeViewState extends ConsumerState<HomeView> {
-  bool premiumShowed = false;
-  bool _isInitializingPremium = false;
   Timer? timer;
 
   @override
@@ -49,12 +48,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
             .read(AllControllers.bottomNavbarController.notifier)
             .nextPage(context);
       });
-    });
-    // Widget tree build edildikten sonra premium kontrolü yap
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        initPremium();
-      }
     });
   }
 
@@ -170,70 +163,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
     }
   }
 
-  initPremium() async {
-    try {
-      // Eğer zaten başlatılıyorsa veya gösterildiyse, tekrar başlatma
-      if (_isInitializingPremium || premiumShowed) {
-        debugPrint("🚫 Premium already initialized or showed, skipping");
-        return;
-      }
-
-      _isInitializingPremium = true;
-
-      UserModel? user = ref.read(AllControllers.userController);
-      debugPrint("🔍 Checking premium status for user: ${user?.email}");
-
-      // Misafir kullanıcılar için premium ekranı otomatik açılmasın
-      if (user?.credential == "guest") {
-        debugPrint("👤 Guest user detected, skipping auto premium screen");
-        _isInitializingPremium = false;
-        return;
-      }
-
-      final hasActiveRevenueCatPremium =
-          await RevenueCatService.hasActiveEntitlement();
-      if (hasActiveRevenueCatPremium) {
-        debugPrint("✅ Active RevenueCat entitlement bulundu, paywall atlandi");
-        _isInitializingPremium = false;
-        return;
-      }
-
-      final isPremiumUser = PremiumService.isPremiumActive(user);
-
-      // Premium üyeliği olmayan kullanıcılar için premium ekranı göster
-      if (!isPremiumUser) {
-        debugPrint(
-          "💎 No premium membership found, will show paywall in 2 seconds",
-        );
-
-        await Future.delayed(Duration(seconds: 2));
-
-        // Widget hala mount edilmiş mi kontrol et
-        if (!mounted) {
-          debugPrint("⚠️ Widget disposed, cancelling premium screen");
-          _isInitializingPremium = false;
-          return;
-        }
-
-        // Premium ekranı gösterilmeden önce tekrar kontrol et
-        if (!premiumShowed) {
-          setState(() {
-            premiumShowed = true;
-          });
-          debugPrint("✅ Showing premium paywall");
-          await pushPremium();
-        }
-      } else {
-        debugPrint("✅ User has premium membership, skipping paywall");
-      }
-
-      _isInitializingPremium = false;
-    } catch (e) {
-      debugPrint("⚠️ Error in initPremium: $e");
-      _isInitializingPremium = false;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(AllControllers.userController);
@@ -242,64 +171,68 @@ class _HomeViewState extends ConsumerState<HomeView> {
         ref.watch(AllControllers.chatViewController).conversations ?? [];
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SingleChildScrollView(
-        padding: EdgeInsets.only(bottom: 90.h).r,
-        child: Column(
-          children: [
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                ).copyWith(right: 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    appBar(),
-                    SizedBox(height: 15.h),
-                    // premium ise öbür card
-                    FeelWidget(),
-                    SizedBox(height: 15.h),
-                    Text(
-                      Translate.translate("home_your_matches_title", context),
-                      style: GoogleFonts.quicksand(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16.sp,
+      body: SafeArea(
+        bottom: false,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(bottom: 40.h,top: 40.r).r,
+          child: Column(
+            children: [
+              
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                  ).copyWith(right: 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      appBar(isPremiumUser),
+                      SizedBox(height: 15.h),
+                      // premium ise öbür card
+                      FeelWidget(),
+                      SizedBox(height: 15.h),
+                      Text(
+                        Translate.translate("home_your_matches_title", context),
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16.sp,
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 10.h),
-                    YourMatches(),
-                    SizedBox(height: 20.h),
-
-                    Padding(
-                      padding: const EdgeInsets.only(right: 20),
-                      child: Row(
-                        children: [
-                          Expanded(child: createCharacterWidget()),
-                          SizedBox(width: 10.w),
-                          Expanded(child: editCharacterWidget()),
-                        ],
+                      SizedBox(height: 10.h),
+                      YourMatches(),
+                      SizedBox(height: 20.h),
+          
+                      Padding(
+                        padding: const EdgeInsets.only(right: 20),
+                        child: Row(
+                          children: [
+                            Expanded(child: createCharacterWidget()),
+                            SizedBox(width: 10.w),
+                            Expanded(child: editCharacterWidget()),
+                          ],
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 20.h),
-                    chatWithCyra(conversations),
-                    SizedBox(height: 10.h),
-
-                    if (!isPremiumUser) ...[
-                      premiumCard(),
+                      SizedBox(height: 20.h),
+                      chatWithCyra(conversations),
+                      
+          
+                      if (!isPremiumUser) ...[
+                        premiumCard(),
+                      ],
+          
+                      SizedBox(height: 20.h),
+          
+                      recentagent(),
                     ],
-
-                    SizedBox(height: 20.h),
-
-                    recentagent(),
-                  ],
+                  ),
                 ),
               ),
-            ),
-            if (Platform.isAndroid) ...[SizedBox(height: 20.h)],
-
-            SizedBox(height: 20.h),
-          ],
+              if (Platform.isAndroid) ...[SizedBox(height: 20.h)],
+          
+              SizedBox(height: 20.h),
+            ],
+          ),
         ),
       ),
     );
@@ -309,24 +242,32 @@ class _HomeViewState extends ConsumerState<HomeView> {
     return GestureDetector(
       onTap: () => pushPremium(),
       child: Container(
-        height: 167.h,
+        
+        height: 178.h,
         child: Stack(
           children: [
             Align(
               alignment: Alignment.bottomCenter,
               child: Container(
-                height: 158.h,
-                padding: EdgeInsets.symmetric(horizontal: 20),
+                height: 148.h,
+                padding: EdgeInsets.symmetric(horizontal: 15).r,
                 margin: EdgeInsets.only(right: 20),
                 decoration: BoxDecoration(
                   image: DecorationImage(
                     image: AssetImage("assets/premium-bckg.png"),
                     fit: BoxFit.cover,
                   ),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.2),
-                  ),
-                  borderRadius: BorderRadius.circular(35),
+                           border: GradientBoxBorder(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xff3E0951).withValues(alpha: 0.1),
+                Color(0xffFFC107),
+              ],
+              begin: Alignment.centerRight,
+              end: Alignment.centerLeft,
+            ),
+          ),
+                  borderRadius: BorderRadius.circular(16).r,
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -347,10 +288,13 @@ class _HomeViewState extends ConsumerState<HomeView> {
                           ),
 
                           Text(
-                            Translate.translate("premium_box_subtext", context),
+                            Translate.translate(
+                              "home_premium_card_subtitle",
+                              context,
+                            ),
                             style: GoogleFonts.quicksand(
                               color: Colors.white,
-                              fontSize: 11.sp,
+                              fontSize: 14.sp,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -403,10 +347,10 @@ class _HomeViewState extends ConsumerState<HomeView> {
             Align(
               alignment: Alignment.centerRight,
               child: Padding(
-                padding: const EdgeInsets.only(right: 40).r,
+                padding: const EdgeInsets.only(right: 30).r,
                 child: Image.asset(
                   "assets/premium_model.png",
-                  height: 164.h,
+                  height: 300.h,
                   fit: BoxFit.cover,
                 ),
               ),
@@ -426,7 +370,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
         );
       },
       child: Container(
-        height: 99.h,
+        height: 120.h,
         padding: EdgeInsets.all(15).r,
 
         decoration: BoxDecoration(
@@ -463,37 +407,44 @@ class _HomeViewState extends ConsumerState<HomeView> {
   }
 
   Widget createCharacterWidget() {
-    return Container(
-      height: 99.h,
-      padding: EdgeInsets.all(15).r,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(16).r,
-        color: Colors.black.withValues(alpha: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          SvgPicture.asset("assets/icons/create-user.svg"),
+    return GestureDetector(
+      onTap: () {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const EditAgentView(createFlow: true)),
+        );
+      },
+      child: Container(
+        height: 120.h,
+        padding: EdgeInsets.all(15).r,
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(16).r,
+          color: Colors.black.withValues(alpha: 0.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            SvgPicture.asset("assets/icons/create-user.svg"),
 
-          Text(
-            Translate.translate("home_create_character_title", context),
-            style: GoogleFonts.quicksand(
-              color: Colors.white,
-              fontSize: 16.sp,
-              fontWeight: FontWeight.bold,
+            Text(
+              Translate.translate("home_create_character_title", context),
+              style: GoogleFonts.quicksand(
+                color: Colors.white,
+                fontSize: 16.sp,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          Text(
-            Translate.translate("home_create_character_subtitle", context),
-            style: GoogleFonts.quicksand(
-              color: Colors.white,
-              fontSize: 12.sp,
-              fontWeight: FontWeight.w500,
+            Text(
+              Translate.translate("home_create_character_subtitle", context),
+              style: GoogleFonts.quicksand(
+                color: Colors.white,
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -780,7 +731,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
             fit: BoxFit.cover,
           ),
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(35).r,
+          borderRadius: BorderRadius.circular(16).r,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -840,7 +791,8 @@ class _HomeViewState extends ConsumerState<HomeView> {
                   SizedBox(height: 10.h),
                   Container(
                     height: 32.h,
-                    width: 132.w,
+                    width: 145.w,
+                    padding: EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(40).r,
@@ -853,6 +805,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                           "assets/icons/messages-2.svg",
                           width: 16.w,
                         ),
+                        SizedBox(width: 5.w,),
                         Text(
                           Translate.translate("home_start_chat_cta", context),
                           style: GoogleFonts.quicksand(
@@ -897,6 +850,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                     borderRadius: BorderRadius.circular(100),
                     child: CachedNetworkImage(
                       imageUrl: photoURL,
+                      alignment: Alignment(0, -1),
                       fit: BoxFit.cover,
                       placeholder: (context, url) => Shimmer.fromColors(
                         baseColor: Colors.grey[300]!,
@@ -1060,6 +1014,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
     );
   }
 
+
   Widget characterEdit() {
     final Shader linearGradient = LinearGradient(
       colors: <Color>[Color(0xffDA44bb), Color(0xff8921aa)],
@@ -1193,7 +1148,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
       child: Container(
         width: MediaQuery.sizeOf(context).width,
 
-        height: 150.h,
+        height: 170.h,
         padding: EdgeInsets.only(top: 10, bottom: 10),
         decoration: BoxDecoration(
           color: Colors.transparent,
@@ -1217,129 +1172,129 @@ class _HomeViewState extends ConsumerState<HomeView> {
             SizedBox(
               child: SizedBox(
                 width: MediaQuery.sizeOf(context).width,
-                height: 81.h,
-                child: ListView.builder(
+                height: 102.h,
+                child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   shrinkWrap: true,
                   padding: EdgeInsets.symmetric(
                     horizontal: 30,
                   ).copyWith(left: 0),
                   itemCount: recentAgents.length,
+                  separatorBuilder: (context, index) => SizedBox(width: 16.w),
                   itemBuilder: (context, index) {
                     if (index >= recentAgents.length) {
                       return SizedBox.shrink();
                     }
                     AgentModel agent = recentAgents[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 4.0),
-                      child: GestureDetector(
-                        onTap: () => ref
-                            .read(
-                              AllControllers
-                                  .agentsProfileViewController
-                                  .notifier,
-                            )
-                            .startChat(agent),
-                        child: SizedBox(
-                          height: 81.h,
-                          width: 55.w,
-                          child: Column(
-                            children: [
-                              SizedBox(
-                                height: 55.h,
-                                width: 55.w,
-                                child: Stack(
-                                  children: [
-                                    Center(
-                                      child: Container(
-                                        width: 51.w,
-                                        height: 51.h,
-                                        decoration: BoxDecoration(
-                                          border: Border.all(
-                                            width: 2,
-                                            color: MyColors.purple,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            50.r,
-                                          ),
+                    return GestureDetector(
+                      onTap: () => ref
+                          .read(
+                            AllControllers
+                                .agentsProfileViewController
+                                .notifier,
+                          )
+                          .startChat(agent),
+                      child: SizedBox(
+                        height: 120.h,
+                        width: 66.w,
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              height: 66.h,
+                              width: 66.w,
+                              child: Stack(
+                                children: [
+                                  Center(
+                                    child: Container(
+                                      width: 66.w,
+                                      height: 66.h,
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          width: 2,
+                                          color: MyColors.purple,
                                         ),
-                                        child: ClipOval(
-                                          child: CachedNetworkImage(
-                                            imageUrl: agent.photoURL,
-                                            fit: BoxFit.cover,
-                                            placeholder: (context, url) =>
-                                                Shimmer.fromColors(
-                                                  baseColor: Colors.grey[300]!,
-                                                  highlightColor:
-                                                      Colors.grey[100]!,
-                                                  child: Container(
-                                                    color: Colors.white,
-                                                  ),
+                                        borderRadius: BorderRadius.circular(
+                                          50.r,
+                                        ),
+                                      ),
+                                      child: ClipOval(
+                                        child: CachedNetworkImage(
+                                          imageUrl: agent.photoURL,
+                                          fit: BoxFit.cover,
+                                          alignment: Alignment(0, -1),
+                                          placeholder: (context, url) =>
+                                              Shimmer.fromColors(
+                                                baseColor: Colors.grey[300]!,
+                                                highlightColor:
+                                                    Colors.grey[100]!,
+                                                child: Container(
+                                                  color: Colors.white,
                                                 ),
-                                            errorWidget:
-                                                (context, url, error) =>
-                                                    Container(
-                                                      color: Colors.grey[300],
-                                                      child: Icon(
-                                                        Icons.person,
-                                                        size: 30,
-                                                      ),
+                                              ),
+                                          errorWidget:
+                                              (context, url, error) =>
+                                                  Container(
+                                                    color: Colors.grey[300],
+                                                    child: Icon(
+                                                      Icons.person,
+                                                      size: 30,
                                                     ),
-                                          ),
+                                                  ),
                                         ),
                                       ),
                                     ),
+                                  ),
 
-                                    Align(
-                                      alignment: Alignment.topRight,
-                                      child: Container(
-                                        width: 18.w,
-                                        height: 18.h,
-                                        padding: EdgeInsets.all(3),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            40,
-                                          ),
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              Color(0xffAB10E2),
-                                              Color(0xff2D30FF),
-                                            ],
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                          ),
+                                  Align(
+                                    alignment: Alignment.topRight,
+                                    child: Container(
+                                      width: 18.w,
+                                      height: 18.h,
+                                      padding: EdgeInsets.all(3),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(
+                                          40,
                                         ),
-                                        child: Center(
-                                          child: FittedBox(
-                                            child: Text(
-                                              Translate.translate(
-                                                "new",
-                                                context,
-                                              ).toLowerCase(),
-                                              style: GoogleFonts.quicksand(
-                                                color: Colors.white,
-                                              ),
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Color(0xffAB10E2),
+                                            Color(0xff2D30FF),
+                                          ],
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: FittedBox(
+                                          child: Text(
+                                            Translate.translate(
+                                              "new",
+                                              context,
+                                            ).toLowerCase(),
+                                            style: GoogleFonts.quicksand(
+                                              color: Colors.white,
                                             ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
+                            ),
 
-                              Text(
-                                agent.name,
-                                style: GoogleFonts.quicksand(
-                                  color: Colors.white,
-                                  fontSize: 14.sp,
-                                  fontWeight: FontWeight.bold,
-                                  height: 0,
-                                ),
-                                overflow: TextOverflow.ellipsis,
+                            Text(
+                              agent.name,
+                              style: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontSize: 14.sp,
+                                fontWeight: FontWeight.bold,
+                                height: 1.2,
                               ),
-                            ],
-                          ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
                       ),
                     );
@@ -1353,7 +1308,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
     );
   }
 
-  Widget appBar() {
+  Widget appBar(isPremiumUser) {
     return Padding(
       padding: const EdgeInsets.only(right: 20).r,
       child: Row(
@@ -1389,21 +1344,47 @@ class _HomeViewState extends ConsumerState<HomeView> {
             ],
           ),
 
+       Row(
+        children: [
+           if(isPremiumUser)...[
+                  GestureDetector(
+            onTap: () async {
+             
+            },
+            child: Container(
+              width: 32.r,
+              height: 32.r,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Color(0xffDC7AFF)),
+                color: Color(0xffDC7AFF).withValues(alpha: 0.2),
+              ),
+              child: Center(child: Image.asset("assets/icons/king.png",width: 20.w,)),
+            ),
+          ),
+
+          SizedBox(width: 10.w,),
+           ],
+
+
+
           GestureDetector(
             onTap: () async {
               await navigatorKey.currentState?.pushNamed('/notificationsView');
             },
             child: Container(
-              width: 32.w,
-              height: 32.h,
+              width: 32.r,
+              height: 32.r,
               decoration: BoxDecoration(
+                shape: BoxShape.circle,
                 border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                 color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(40),
               ),
               child: Center(child: SvgPicture.asset("assets/icons/bell.svg")),
             ),
           ),
+        ],
+       )
         ],
       ),
     );

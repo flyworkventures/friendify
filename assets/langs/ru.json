@@ -152,6 +152,7 @@
   "force_update_hint": "Нажмите кнопку ниже, чтобы обновить приложение.",
   "force_update_action": "Обновить",
   "edit_character_title": "Редактировать персонажа",
+  "create_character_title": "Создать персонажа",
   "edit_character_name_label": "Имя персонажа",
   "edit_character_name_hint": "Введите имя персонажа",
   "edit_character_interests_traits_title": "Интересы и черты",
@@ -164,5 +165,12 @@
   "edit_character_voices_load_failed": "Не удалось загрузить голоса",
   "edit_character_select_gender_for_voices": "Сначала выберите женский или мужской пол, чтобы увидеть голоса",
   "edit_character_no_voice_for_gender": "Для этого пола голос не найден",
-  "language": "Язык"
+  "language": "Язык",
+  "notification_permission_title": "Разрешения уведомлений",
+  "notification_permission_message": "Пожалуйста, включите разрешения уведомлений, чтобы получать оповещения о новых сообщениях и важных обновлениях.",
+  "enable_notifications": "Включить",
+  "not_now": "Не сейчас",
+  "select_character": "Выбрать персонажа",
+  "agents_my_creations": "Мои творения",
+  "agents_characters": "Персонажи"
 }

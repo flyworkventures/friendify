@@ -14,6 +14,7 @@ import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:friendfy/Repository/auth_repository.dart';
+import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:http/http.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,6 +26,89 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
 
   AuthRepository authRepository = AuthRepository();
   HttpService httpService = HttpService();
+
+  Future<void> _handlePostAuthActionOrHome() async {
+    final localService = LocalService(
+      prefs: await SharedPreferences.getInstance(),
+    );
+    final action = localService.getPostAuthAction();
+    await localService.clearPostAuthAction();
+    await localService.setOnboardingFunnelActive(false);
+
+    if (action == "go_premium") {
+      try {
+        await RevenueCatUI.presentPaywall(displayCloseButton: true);
+      } catch (e) {
+        debugPrint("⚠️ Paywall could not be shown: $e");
+      }
+    }
+    await navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      '/bottomNavbar',
+      (route) => false,
+    );
+  }
+
+  Future<void> _navigateToRegisterFlow() async {
+    // createUser sadece token döndürüyor, user ID yok.
+    // verifyToken ile tam user model'i (ID dahil) çekelim.
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    final token = await localService.getToken();
+    final refreshToken = await localService.getRefreshToken();
+
+    if (token != null && token.isNotEmpty) {
+      final httpService = HttpService(ref: ref);
+      try {
+        final response = await httpService.post(
+          path: AppConstants.verifyTokenURL,
+          body: {"token": token, "refreshToken": refreshToken ?? ""},
+          headers: {
+            "x-auth-token": token,
+            "x-refresh-token": refreshToken ?? "",
+            "Content-type": "application/json",
+          },
+        );
+        final json = jsonDecode(response.body);
+        if (json["msg"] == "Valid Token" || json["code"] == "TOKEN_RENEWED") {
+          UserModel userModel = UserModel.fromMap(json["user"]);
+          userModel = userModel.copyWith(token: token);
+          if (refreshToken != null && refreshToken.isNotEmpty) {
+            userModel = userModel.copyWith(refreshToken: refreshToken);
+          }
+          ref.read(AllControllers.userController.notifier).updateUserModel(userModel);
+          debugPrint("✅ [RegisterFlow] User model refreshed with ID: ${userModel.id}");
+        }
+      } catch (e) {
+        debugPrint("⚠️ [RegisterFlow] verifyToken error: $e");
+      }
+    }
+
+    await ref
+        .read(AllControllers.chatViewController.notifier)
+        .getConversations();
+    await ref
+        .read(AllControllers.agentsViewController.notifier)
+        .getAgents();
+    await ref
+        .read(AllControllers.agentsViewController.notifier)
+        .getRecentAgents();
+
+    final chatState = ref.read(AllControllers.chatViewController);
+    final hasExistingConversations =
+        chatState.conversations != null && chatState.conversations!.isNotEmpty;
+
+    final onboardingAlreadyDone = localService.isOnboardingFunnelActive();
+
+    if (hasExistingConversations || onboardingAlreadyDone) {
+      debugPrint("✅ [RegisterFlow] Mevcut sohbet veya tamamlanmış onboarding – ana sayfaya yönlendiriliyor");
+      await _handlePostAuthActionOrHome();
+    } else {
+      await navigatorKey.currentState?.pushNamedAndRemoveUntil(
+        '/onboardingDemoChatView',
+        (route) => false,
+      );
+    }
+  }
 
   googleAuth() async {
     try {
@@ -64,27 +148,36 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
 
         if (response.statusCode == 200) {
           debugPrint("✨ [Google Auth] New user detected (status 200)");
-          debugPrint("✨ [Google Auth] Navigating to registration...");
 
-          ref
-              .read(AllControllers.registerViewController.notifier)
-              .updateEmail(googleSignInAccount.email);
-          ref
-              .read(AllControllers.registerViewController.notifier)
-              .updateCredential("google");
+          final prefs = await SharedPreferences.getInstance();
+          final localAnswers = LocalService(prefs: prefs).getOnboardingAnswers();
+          final hasLocalAnswers = localAnswers != null && localAnswers.isNotEmpty;
 
-          // Set display name as username if available
-          if (googleSignInAccount.displayName != null &&
-              googleSignInAccount.displayName!.isNotEmpty) {
-            ref
-                .read(AllControllers.registerViewController.notifier)
-                .updateUsername(googleSignInAccount.displayName!);
-            debugPrint(
-              "✅ [Google Auth] Username set to: ${googleSignInAccount.displayName}",
+          if (!hasLocalAnswers) {
+            debugPrint("📝 [Google Auth] Onboarding cevapları yok – register akışına yönlendiriliyor");
+            await localService.saveOnboardingPendingAuth({
+              "email": googleSignInAccount.email,
+              "credential": "google",
+              "fallbackUsername": googleSignInAccount.displayName ?? "",
+            });
+            navigatorKey.currentState?.pushNamedAndRemoveUntil(
+              '/register',
+              (route) => false,
             );
+            return;
           }
 
-          await navigatorKey.currentState?.pushNamed('/register');
+          final registerNotifier = ref.read(
+            AllControllers.registerViewController.notifier,
+          );
+          await registerNotifier.hydrateFromLocalAnswers(
+            email: googleSignInAccount.email,
+            credential: "google",
+            fallbackUsername: googleSignInAccount.displayName,
+          );
+          final created = await registerNotifier.createUser();
+          if (!created) return;
+          await _navigateToRegisterFlow();
         } else {
           debugPrint(
             "✨ [Google Auth] Existing user detected (status ${response.statusCode})",
@@ -132,10 +225,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
           debugPrint("✅ [Google Auth] Recent agents fetched");
 
           debugPrint("✨ [Google Auth] All data fetched, navigating to home");
-          await navigatorKey.currentState?.pushNamedAndRemoveUntil(
-            '/bottomNavbar',
-            (route) => false,
-          );
+          await _handlePostAuthActionOrHome();
         }
       } else {
         debugPrint("⚠️ [Google Auth] Google Sign-In account is null");
@@ -187,16 +277,37 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
         debugPrint("📡 Server response: ${response.statusCode}");
 
         if (response.statusCode == 200) {
-          debugPrint(
-            "✨ Facebook Account 200 - New user, navigating to register",
+          debugPrint("✨ Facebook Account 200 - New user creating account");
+
+          final fbPrefs = await SharedPreferences.getInstance();
+          final fbLocalAnswers = LocalService(prefs: fbPrefs).getOnboardingAnswers();
+          final fbHasLocalAnswers = fbLocalAnswers != null && fbLocalAnswers.isNotEmpty;
+
+          if (!fbHasLocalAnswers) {
+            debugPrint("📝 [Facebook Auth] Onboarding cevapları yok – register akışına yönlendiriliyor");
+            await localService.saveOnboardingPendingAuth({
+              "email": email,
+              "credential": "facebook",
+              "fallbackUsername": name,
+            });
+            navigatorKey.currentState?.pushNamedAndRemoveUntil(
+              '/register',
+              (route) => false,
+            );
+            return;
+          }
+
+          final registerNotifier = ref.read(
+            AllControllers.registerViewController.notifier,
           );
-          ref
-              .read(AllControllers.registerViewController.notifier)
-              .updateEmail(email);
-          ref
-              .read(AllControllers.registerViewController.notifier)
-              .updateCredential("facebook");
-          await navigatorKey.currentState?.pushNamed('/register');
+          await registerNotifier.hydrateFromLocalAnswers(
+            email: email,
+            credential: "facebook",
+            fallbackUsername: name,
+          );
+          final created = await registerNotifier.createUser();
+          if (!created) return;
+          await _navigateToRegisterFlow();
         } else {
           debugPrint("✨ Facebook Account exists, logging in");
           var json = jsonDecode(response.body);
@@ -227,10 +338,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
               .getRecentAgents();
 
           debugPrint("✨ All data fetched, navigating to home");
-          await navigatorKey.currentState?.pushNamedAndRemoveUntil(
-            '/bottomNavbar',
-            (route) => false,
-          );
+          await _handlePostAuthActionOrHome();
         }
       } else {
         debugPrint("⚠️ Facebook login cancelled or failed");
@@ -279,16 +387,41 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
         debugPrint("📡 Server response: ${response.statusCode}");
 
         if (response.statusCode == 200) {
-          debugPrint("✨ Apple Account 200 - New user, navigating to register");
+          debugPrint("✨ Apple Account 200 - New user creating account");
+
+          final applePrefs = await SharedPreferences.getInstance();
+          final appleLocalAnswers = LocalService(prefs: applePrefs).getOnboardingAnswers();
+          final appleHasLocalAnswers = appleLocalAnswers != null && appleLocalAnswers.isNotEmpty;
+
+          if (!appleHasLocalAnswers) {
+            debugPrint("📝 [Apple Auth] Onboarding cevapları yok – register akışına yönlendiriliyor");
+            final resolvedEmail =
+                email ?? "$userIdentifier@privaterelay.appleid.com";
+            await localService.saveOnboardingPendingAuth({
+              "email": resolvedEmail,
+              "credential": "apple",
+              "fallbackUsername": fullName ?? "",
+              "appleUserIdentifier": userIdentifier,
+              "appleToken": authorizationCode ?? "",
+            });
+            navigatorKey.currentState?.pushNamedAndRemoveUntil(
+              '/register',
+              (route) => false,
+            );
+            return;
+          }
+
           final registerController = ref.read(
             AllControllers.registerViewController.notifier,
           );
-          registerController.updateEmail(
-            email ?? "$userIdentifier@privaterelay.appleid.com",
+          final resolvedEmail =
+              email ?? "$userIdentifier@privaterelay.appleid.com";
+          await registerController.hydrateFromLocalAnswers(
+            email: resolvedEmail,
+            credential: "apple",
+            fallbackUsername: fullName,
           );
-          registerController.updateCredential("apple");
 
-          // Apple userIdentifier ve authorizationCode kaydet (register sırasında kullanılacak)
           registerController.updateAppleUserIdentifier(userIdentifier);
           if (authorizationCode != null && authorizationCode.isNotEmpty) {
             registerController.updateAppleToken(authorizationCode);
@@ -300,14 +433,9 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
             "🍎 Apple UserIdentifier stored for registration: $userIdentifier",
           );
 
-          // Apple'dan alınan kullanıcı adını username controller'a ekle
-          if (fullName != null && fullName.isNotEmpty) {
-            registerController.usernameController.text = fullName;
-            registerController.updateUsername(fullName);
-            debugPrint("✅ Apple username set to controller: $fullName");
-          }
-
-          await navigatorKey.currentState?.pushNamed('/register');
+          final created = await registerController.createUser();
+          if (!created) return;
+          await _navigateToRegisterFlow();
         } else {
           debugPrint("✨ Apple Account exists, logging in");
           var json = jsonDecode(response.body);
@@ -338,10 +466,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
               .getRecentAgents();
 
           debugPrint("✨ All data fetched, navigating to home");
-          await navigatorKey.currentState?.pushNamedAndRemoveUntil(
-            '/bottomNavbar',
-            (route) => false,
-          );
+          await _handlePostAuthActionOrHome();
         }
       } else {
         debugPrint("⚠️ Apple login cancelled or failed");
@@ -352,7 +477,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
     }
   }
 
-  guestLogin() async {
+  Future<bool> guestLogin({bool navigateToHome = true}) async {
     try {
       debugPrint("👤 guestLogin started");
       LocalService localService = LocalService(
@@ -403,19 +528,21 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
             .read(AllControllers.agentsViewController.notifier)
             .getRecentAgents();
 
-        debugPrint("✨ All data fetched, navigating to home");
-        await navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          '/bottomNavbar',
-          (route) => false,
-        );
+        if (navigateToHome) {
+          debugPrint("✨ All data fetched, navigating to home");
+          await _handlePostAuthActionOrHome();
+        }
+        return true;
       } else {
         debugPrint("❌ Guest login failed: ${response.statusCode}");
         var errorJson = jsonDecode(response.body);
         debugPrint("❌ Error: ${errorJson['msg']}");
+        return false;
       }
     } catch (e, stackTrace) {
       debugPrint("❌ Error in guestLogin: $e");
       debugPrint("📍 StackTrace: $stackTrace");
+      return false;
     }
   }
 }

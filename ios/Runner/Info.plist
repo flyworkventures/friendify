@@ -58,15 +58,15 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Friendfy needs camera access to take photos and send them in chat.</string>
+	<string>Friendify needs access to your camera for video calls.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Friendfy needs photo library access to select and send photos in chat.</string>
+	<string>Friendify needs photo library access to select and send photos in chat.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Friendfy requests microphone permission to record your voice.</string>
+	<string>Friendify needs access to your microphone for voice and video calls.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Friendfy uses speech recognition to convert your voice into text during calls.</string>
+	<string>Friendify uses speech recognition to convert your voice into text during calls.</string>
 	<key>NSUserNotificationsUsageDescription</key>
-	<string>Friendfy would like to send you notifications to remind you about your friends.</string>
+	<string>Friendify would like to send you notifications to remind you about your friends.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

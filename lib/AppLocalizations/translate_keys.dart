@@ -336,6 +336,7 @@ class TranslateKeys {
   static String forceUpdateHint = "force_update_hint";
   static String forceUpdateAction = "force_update_action";
   static String editCharacterTitle = "edit_character_title";
+  static String createCharacterTitle = "create_character_title";
   static String editCharacterNameLabel = "edit_character_name_label";
   static String editCharacterNameHint = "edit_character_name_hint";
   static String editCharacterInterestsTraitsTitle =
@@ -354,4 +355,52 @@ class TranslateKeys {
       "edit_character_select_gender_for_voices";
   static String editCharacterNoVoiceForGender =
       "edit_character_no_voice_for_gender";
+
+  // Notifications extra keys
+  static String notificationsClearAll = "notifications_clear_all";
+  static String notificationsEmptyDescription =
+      "notifications_empty_description";
+
+  // Delete flow keys
+  static String deleteFlowDone = "delete_flow_done";
+  static String deleteFlowPrimaryTitle = "delete_flow_primary_title";
+  static String deleteFlowReason1 = "delete_flow_reason_1";
+  static String deleteFlowReason2 = "delete_flow_reason_2";
+  static String deleteFlowReason3 = "delete_flow_reason_3";
+  static String deleteFlowReason4 = "delete_flow_reason_4";
+  static String deleteFlowReason5 = "delete_flow_reason_5";
+  static String deleteFlowReason6 = "delete_flow_reason_6";
+  static String deleteFlowIntroTitle = "delete_flow_intro_title";
+  static String deleteFlowIntroSubtitle = "delete_flow_intro_subtitle";
+  static String deleteFlowMessageOptional = "delete_flow_message_optional";
+  static String deleteFlowMessageHint = "delete_flow_message_hint";
+  static String deleteFlowOfferTitle = "delete_flow_offer_title";
+  static String deleteFlowOfferSubtitle = "delete_flow_offer_subtitle";
+  static String deleteFlowOfferPlanTitle = "delete_flow_offer_plan_title";
+  static String deleteFlowOfferPlanSubtitle = "delete_flow_offer_plan_subtitle";
+  static String deleteFlowOfferPlanBody = "delete_flow_offer_plan_body";
+  static String deleteFlowOfferCta = "delete_flow_offer_cta";
+  static String deleteFlowSureTitle = "delete_flow_sure_title";
+  static String deleteFlowSureSubtitle = "delete_flow_sure_subtitle";
+  static String deleteFlowSurePlanTitle = "delete_flow_sure_plan_title";
+  static String deleteFlowSurePlanSubtitle = "delete_flow_sure_plan_subtitle";
+  static String deleteFlowSureCta = "delete_flow_sure_cta";
+  static String deleteFlowFinalTitle = "delete_flow_final_title";
+  static String deleteFlowFinalSubtitle = "delete_flow_final_subtitle";
+  static String deleteFlowChangeMindTitle = "delete_flow_change_mind_title";
+  static String deleteFlowChangeMindSubtitle =
+      "delete_flow_change_mind_subtitle";
+  static String deleteFlowReactivateCta = "delete_flow_reactivate_cta";
+  static String deleteFlowWhatKeep = "delete_flow_what_keep";
+  static String deleteFlowLossCharacter = "delete_flow_loss_character";
+  static String deleteFlowLossVideo = "delete_flow_loss_video";
+  static String deleteFlowLossEditing = "delete_flow_loss_editing";
+  static String deleteFlowKeepCharacters = "delete_flow_keep_characters";
+  static String deleteFlowKeepVideo = "delete_flow_keep_video";
+  static String deleteFlowKeepEditing = "delete_flow_keep_editing";
+
+  // Agents screen
+  static String selectCharacter = "select_character";
+  static String agentsMyCreations = "agents_my_creations";
+  static String agentsCharacters = "agents_characters";
 }

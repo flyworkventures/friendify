@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,10 +14,16 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
+import 'package:friendfy/Services/local_service.dart';
+import 'package:friendfy/Widgets/background.dart';
+import 'package:friendfy/Widgets/button.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:heroicons/heroicons.dart';
+import 'package:proximity_sensor/proximity_sensor.dart';
 import 'package:record/record.dart';
 import 'package:rive/rive.dart' hide File;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class VideocallView extends ConsumerStatefulWidget {
   const VideocallView({super.key});
@@ -31,6 +38,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   static const int _frameMs = 20;
   static const int _frameBytes =
       (_sampleRate * _channels * 2 * _frameMs) ~/ 1000; // 640
+  static const int _onboardingGateDurationSeconds = 60;
   static const int _speechMinStartMs = 60;
   static const int _speechSilenceStopMs = 900;
   static const double _minVadThreshold = 120.0;
@@ -43,6 +51,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   static const bool _debugLogs = true;
 
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioPlayer _ringbackPlayer = AudioPlayer();
   final AudioRecorder _recorder = AudioRecorder();
   final ValueNotifier<int> _visemeNotifier = ValueNotifier<int>(0);
   final ValueNotifier<double> _visemeTimeNotifier = ValueNotifier<double>(0);
@@ -55,7 +64,11 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   WebSocket? _socket;
   StreamSubscription? _wsSub;
   StreamSubscription<Uint8List>? _recordSub;
+  StreamSubscription<int>? _proximitySub;
   Timer? _reconnectTimer;
+  bool _ringbackActive = false;
+  bool _proximityScreenOffEnabled = false;
+  bool _isProximityNear = false;
 
   bool _connected = false;
   bool _sessionReady = false;
@@ -89,6 +102,11 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   bool _riveAvatarReady = false;
   CameraController? _frontCameraController;
   bool _isFrontCameraReady = false;
+  Timer? _onboardingSheetTimer;
+  bool _onboardingSheetShown = false;
+  Timer? _onboardingCountdownTimer;
+  int _onboardingCountdownSeconds = _onboardingGateDurationSeconds;
+  bool _shouldShowOnboardingGate = false;
 
   String _nextReq() => "r${++_reqCounter}";
   AgentModel? get _activeAgent =>
@@ -127,10 +145,15 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
 
   Widget _buildPhotoFallback(AgentModel? agent) {
     return agent?.photoURL.isNotEmpty == true
-        ? Image.network(
-            agent!.photoURL,
+        ? CachedNetworkImage(
+            imageUrl: agent!.photoURL,
+            alignment: Alignment(0, -1),
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
+            placeholder: (_, __) => Container(
+              color: Colors.black26,
+              child: const Center(child: CircularProgressIndicator(color: Colors.white70)),
+            ),
+            errorWidget: (_, __, ___) => Container(
               color: Colors.black26,
               child: const Icon(Icons.person, color: Colors.white70, size: 70),
             ),
@@ -159,7 +182,86 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   void _onRiveAvatarReady() {
     if (_riveAvatarReady) return;
     if (!mounted) return;
-    setState(() => _riveAvatarReady = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _riveAvatarReady) return;
+      setState(() => _riveAvatarReady = true);
+      _maybeStopRingbackIfReady();
+    });
+  }
+
+  void _maybeStopRingbackIfReady() {
+    final hasRiveAvatar =
+        _activeAgent?.riveAvatar?.trim().isNotEmpty == true;
+    final isAvatarReady = hasRiveAvatar ? _riveAvatarReady : true;
+    if (_connected && _sessionReady && isAvatarReady) {
+      if (_ringbackActive) _stopRingback();
+      _startChatWhenReady();
+    }
+  }
+
+  bool _chatStarted = false;
+  void _startChatWhenReady() {
+    if (_chatStarted) return;
+    _chatStarted = true;
+    _startOnboardingGateTimerIfNeeded();
+    _startMicStreaming();
+  }
+
+  Future<void> _startRingback() async {
+    try {
+      await _ringbackPlayer.setReleaseMode(ReleaseMode.loop);
+      await _ringbackPlayer.setAudioContext(
+        AudioContextConfig(
+          route: _isSpeakerOn
+              ? AudioContextConfigRoute.speaker
+              : AudioContextConfigRoute.earpiece,
+          focus: AudioContextConfigFocus.gain,
+          respectSilence: false,
+          stayAwake: true,
+        ).build(),
+      );
+      await _ringbackPlayer.play(AssetSource("sounds/ringback.wav"));
+      _ringbackActive = true;
+      _log("Ringback started");
+    } catch (e, st) {
+      _log("Ringback start error: $e\n$st");
+    }
+  }
+
+  Future<void> _stopRingback() async {
+    if (!_ringbackActive) return;
+    _ringbackActive = false;
+    try {
+      await _ringbackPlayer.stop();
+    } catch (e) {
+      _log("Ringback stop error: $e");
+    }
+  }
+
+  Future<void> _initProximitySensor() async {
+    try {
+      _proximitySub = ProximitySensor.events.listen((int event) {
+        final near = event > 0;
+        if (_isProximityNear == near) return;
+        _isProximityNear = near;
+        _log("Proximity changed -> ${near ? "near" : "far"}");
+      });
+      _applyProximityScreenOff();
+    } catch (e, st) {
+      _log("Proximity sensor init error: $e\n$st");
+    }
+  }
+
+  void _applyProximityScreenOff() {
+    final shouldEnable = !_isSpeakerOn;
+    if (shouldEnable == _proximityScreenOffEnabled) return;
+    _proximityScreenOffEnabled = shouldEnable;
+    unawaited(
+      Future(
+        () => ProximitySensor.setProximityScreenOff(shouldEnable),
+      ).catchError((Object _) {}),
+    );
+    _log("Proximity screen-off -> $shouldEnable");
   }
 
   void _log(String message) {
@@ -194,16 +296,28 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   Future<void> _toggleSpeaker() async {
     try {
       _isSpeakerOn = !_isSpeakerOn;
+      final route = _isSpeakerOn
+          ? AudioContextConfigRoute.speaker
+          : AudioContextConfigRoute.earpiece;
       await _audioPlayer.setAudioContext(
         AudioContextConfig(
-          route: _isSpeakerOn
-              ? AudioContextConfigRoute.speaker
-              : AudioContextConfigRoute.earpiece,
+          route: route,
           focus: AudioContextConfigFocus.gain,
           respectSilence: false,
           stayAwake: false,
         ).build(),
       );
+      try {
+        await _ringbackPlayer.setAudioContext(
+          AudioContextConfig(
+            route: route,
+            focus: AudioContextConfigFocus.gain,
+            respectSilence: false,
+            stayAwake: false,
+          ).build(),
+        );
+      } catch (_) {}
+      _applyProximityScreenOff();
       if (!mounted) return;
       setState(() {});
       _log("Speaker toggled -> ${_isSpeakerOn ? "on" : "off"}");
@@ -226,8 +340,460 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
       _log("Audio player complete -> AI speaking false");
     });
     _configureAudioPlayerSession();
+    _initProximitySensor();
+    _startRingback();
     _initFrontCameraPreview();
     _connectVoiceWs();
+    _setupOnboardingGateIfNeeded();
+  }
+
+  Future<bool> _refreshOnboardingGateState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    final isOnboarding = localService.isOnboardingFunnelActive();
+    final isGatePending = localService.isOnboardingVideoGatePending();
+    if (!isOnboarding || !isGatePending) {
+      _shouldShowOnboardingGate = false;
+      _onboardingSheetTimer?.cancel();
+      return false;
+    }
+    _shouldShowOnboardingGate = true;
+    return true;
+  }
+
+  Future<void> _setupOnboardingGateIfNeeded() async {
+    await _refreshOnboardingGateState();
+  }
+
+  void _startOnboardingGateTimerIfNeeded() {
+    _ensureOnboardingGateTimer();
+  }
+
+  Future<void> _ensureOnboardingGateTimer() async {
+    final gateActive = await _refreshOnboardingGateState();
+    if (!gateActive || _onboardingSheetShown) return;
+    _onboardingSheetTimer?.cancel();
+    _startOnboardingCountdown();
+    _onboardingSheetTimer = Timer(
+      const Duration(seconds: _onboardingGateDurationSeconds),
+      () {
+        _popWithOnboardingGateExpired();
+      },
+    );
+  }
+
+  Future<void> _popWithOnboardingGateExpired() async {
+    if (!mounted || _onboardingSheetShown) return;
+    _onboardingSheetShown = true;
+    _onboardingCountdownTimer?.cancel();
+    _onboardingSheetTimer?.cancel();
+    _manualClose = true;
+    _reconnectTimer?.cancel();
+    await _stopMicStreaming();
+    await _audioPlayer.stop();
+    await _wsSub?.cancel();
+    await _socket?.close();
+    if (!mounted) return;
+    Navigator.of(context).pop("onboarding_gate_expired");
+  }
+
+  String get _onboardingTimerText {
+    final mm = (_onboardingCountdownSeconds ~/ 60).toString().padLeft(2, '0');
+    final ss = (_onboardingCountdownSeconds % 60).toString().padLeft(2, '0');
+    return "$mm:$ss";
+  }
+
+  void _startOnboardingCountdown() {
+    _onboardingCountdownTimer?.cancel();
+    _onboardingCountdownSeconds = _onboardingGateDurationSeconds;
+    _onboardingCountdownTimer = Timer.periodic(const Duration(seconds: 1), (
+      timer,
+    ) {
+      if (!mounted) return;
+      if (_onboardingCountdownSeconds <= 0) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _onboardingCountdownSeconds--;
+      });
+    });
+  }
+
+  Widget _buildOnboardingTopTimer() {
+    if (!_shouldShowOnboardingGate || _onboardingSheetShown) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned(
+      top: 12.h,
+      left: 16.w,
+      child: SafeArea(
+        child:         Text(
+                _onboardingTimerText,
+                style: GoogleFonts.quicksand(
+                  color: Colors.white,
+                  fontSize: 20.sp,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+      ),
+    );
+  }
+
+  Future<void> _showOnboardingPremiumSheet() async {
+    if (!mounted || _onboardingSheetShown || !_shouldShowOnboardingGate) return;
+    _onboardingSheetShown = true;
+    _startOnboardingCountdown();
+    await showModalBottomSheet<void>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          // margin: EdgeInsets.all(12.w),
+          // padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 20.h),
+          decoration: BoxDecoration(
+            color: const Color(0xFF181818),
+            borderRadius: BorderRadius.circular(20.r),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(height: 20.h),
+              Center(
+                child: Container(
+                  width: 33.w,
+                  height: 5.h,
+                  decoration: BoxDecoration(
+                    color: Color(0xff313131),
+                    borderRadius: BorderRadius.circular(40).r,
+                  ),
+                ),
+              ),
+              SizedBox(height: 20.h),
+              Container(
+                width: double.infinity,
+                height: 53.h,
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                ),
+                child: Row(
+                  children: [
+                    Text("🔒"),
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: Translate.translate(
+                                "video_gate_limit_prefix",
+                                context,
+                              ),
+                            ),
+                            TextSpan(
+                              text: Translate.translate(
+                                "video_gate_limit_free_messages",
+                                context,
+                              ),
+                              style: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            TextSpan(
+                              text: Translate.translate(
+                                "video_gate_limit_suffix",
+                                context,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: 20.h),
+              Container(
+                height: 26.h,
+                width: 148.w,
+                margin: EdgeInsets.only(left: 15.r),
+
+                decoration: BoxDecoration(
+                  color: Color(0xffFF2B00).withValues(alpha: 0.2),
+                  border: Border.all(color: Color(0xff9D3838)),
+                  borderRadius: BorderRadius.circular(40).r,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    ClipOval(
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        color: Color(0xffF44336),
+                      ),
+                    ),
+                    SizedBox(width: 5.w),
+                    Text(
+                      Translate.translate("video_gate_live_now", context),
+                      style: GoogleFonts.quicksand(
+                        color: Color(0xffF68178),
+                        fontSize: 14.sp,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 20.h),
+
+              Padding(
+                padding: EdgeInsets.only(left: 15.r),
+                child: Text(
+                  Translate.translate("video_gate_waiting_on_call", context),
+                  style: GoogleFonts.quicksand(
+                    color: Colors.white,
+                    fontSize: 20.sp,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              Padding(
+                padding: EdgeInsets.only(left: 15.r, right: 15.r),
+                child: Text(
+                  "${Translate.translate('video_gate_joined_prefix', context)} $_onboardingTimerText ${Translate.translate('video_gate_joined_suffix', context)}",
+                  style: GoogleFonts.quicksand(
+                    color: Colors.white70,
+                    fontSize: 12.sp,
+                  ),
+                ),
+              ),
+              SizedBox(height: 10.h),
+              Padding(
+                padding: EdgeInsets.only(left: 15.r),
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        color: Color(0xffAB10E2),
+                      ),
+                    ),
+                    SizedBox(width: 5.w),
+                    Text(
+                      Translate.translate(
+                        "video_gate_benefit_no_limits_title",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      Translate.translate(
+                        "video_gate_benefit_no_limits_suffix",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Color(0xff777777),
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              Padding(
+                padding: EdgeInsets.only(left: 15.r),
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        color: Color(0xffAB10E2),
+                      ),
+                    ),
+                    SizedBox(width: 5.w),
+                    Text(
+                      Translate.translate(
+                        "video_gate_benefit_video_calls_title",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      Translate.translate(
+                        "video_gate_benefit_video_calls_suffix",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Color(0xff777777),
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              Padding(
+                padding: EdgeInsets.only(left: 15.r),
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        color: Color(0xffAB10E2),
+                      ),
+                    ),
+                    SizedBox(width: 5.w),
+                    Text(
+                      Translate.translate(
+                        "video_gate_benefit_deeper_title",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      Translate.translate(
+                        "video_gate_benefit_deeper_suffix",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Color(0xff777777),
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: 10.h),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    _onboardingTimerText,
+                    style: GoogleFonts.quicksand(
+                      color: Color(0xffF44336),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(width: 5.w),
+                  Text(
+                    Translate.translate(
+                      "video_gate_waiting_counter_label",
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Color(0xff777777),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 24.h),
+              MyGradientButton(
+                margin: EdgeInsets.only(left: 15.r, right: 15.r),
+                onTap: () async =>
+                    _continueToLoginFromGate(action: "go_premium"),
+                radius: BorderRadius.circular(30.r),
+                size: Size(double.infinity, 50.h),
+                child: Center(
+                  child: Row(
+                    children: [
+                      HeroIcon(HeroIcons.sparkles,size: 16.w,color: Colors.white,style: HeroIconStyle.solid,),
+                      SizedBox(width: 10.w),
+                      Text(
+                    Translate.translate(
+                      "video_gate_answer_call_premium",
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16.sp,
+                    ),
+                  ),
+                    ],
+                  )
+                ),
+              ),
+              SizedBox(height: 10.h),
+              Center(
+                child: TextButton(
+                  onPressed: () async =>
+                      _continueToLoginFromGate(action: "continue_normal"),
+                  child: Text(
+                    Translate.translate("video_gate_not_now", context),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white70,
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _continueToLoginFromGate({required String action}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    await localService.setPostAuthAction(action);
+    await localService.setOnboardingVideoGatePending(false);
+    _onboardingSheetTimer?.cancel();
+    _onboardingCountdownTimer?.cancel();
+    _manualClose = true;
+    _reconnectTimer?.cancel();
+    await _stopMicStreaming();
+    await _audioPlayer.stop();
+    await _wsSub?.cancel();
+    await _socket?.close();
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/freeTrialActivated',
+      (route) => false,
+      arguments: {"forceLogoutToLogin": true},
+    );
   }
 
   Future<void> _initFrontCameraPreview() async {
@@ -264,7 +830,9 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
 
   Widget _buildLocalCameraPreview() {
     final controller = _frontCameraController;
-    if (controller == null || !_isFrontCameraReady || !controller.value.isInitialized) {
+    if (controller == null ||
+        !_isFrontCameraReady ||
+        !controller.value.isInitialized) {
       return Container(
         color: Colors.black.withValues(alpha: 0.45),
         child: const Center(
@@ -272,11 +840,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
         ),
       );
     }
-    return Transform(
-      alignment: Alignment.center,
-      transform: Matrix4.rotationY(math.pi),
-      child: CameraPreview(controller),
-    );
+    return CameraPreview(controller);
   }
 
   @override
@@ -360,6 +924,8 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
 
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
+    _onboardingSheetTimer?.cancel();
+    _onboardingCountdownTimer?.cancel();
     const backoffMs = [500, 1000, 2000, 4000, 8000, 10000];
     final delayMs =
         backoffMs[_reconnectAttempts.clamp(0, backoffMs.length - 1)];
@@ -618,7 +1184,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
             _turnState = "listening";
             _status = _t("video_call_status_listening_active");
           });
-          _startMicStreaming();
+          _maybeStopRingbackIfReady();
           break;
         case "turn.state":
           final state = (payload["state"] ?? "").toString();
@@ -958,6 +1524,21 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
 
   Future<void> _endCall() async {
     _log("Ending call");
+    final gateActive = await _refreshOnboardingGateState();
+    if (gateActive && !_onboardingSheetShown) {
+      _log("Onboarding gate active -> returning to chat with gate result");
+      _manualClose = true;
+      _reconnectTimer?.cancel();
+      _onboardingSheetTimer?.cancel();
+      _onboardingCountdownTimer?.cancel();
+      await _stopMicStreaming();
+      await _audioPlayer.stop();
+      await _wsSub?.cancel();
+      await _socket?.close();
+      if (!mounted) return;
+      Navigator.of(context).pop("onboarding_gate_expired");
+      return;
+    }
     _manualClose = true;
     _reconnectTimer?.cancel();
     await _stopMicStreaming();
@@ -972,13 +1553,26 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     _log("VideocallView dispose");
     _manualClose = true;
     _reconnectTimer?.cancel();
+    _onboardingSheetTimer?.cancel();
+    _onboardingCountdownTimer?.cancel();
     _recordSub?.cancel();
     _recorder.dispose();
     _clearAllVisemeTimers();
     _visemeNotifier.dispose();
     _visemeTimeNotifier.dispose();
     _frontCameraController?.dispose();
+    _ringbackActive = false;
+    _proximitySub?.cancel();
+    if (_proximityScreenOffEnabled) {
+      _proximityScreenOffEnabled = false;
+      unawaited(
+        Future(
+          () => ProximitySensor.setProximityScreenOff(false),
+        ).catchError((Object _) {}),
+      );
+    }
     _audioPlayer.dispose();
+    _ringbackPlayer.dispose();
     _wsSub?.cancel();
     _socket?.close();
     super.dispose();
@@ -1022,7 +1616,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
           _buildAgentAvatar(agent),
           if (!showCallingScreen)
             Positioned(
-              top: 96.h,
+              bottom: 106.h,
               right: 16.w,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14.r),
@@ -1033,49 +1627,51 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
                 ),
               ),
             ),
+          if (!showCallingScreen) _buildOnboardingTopTimer(),
           if (showCallingScreen)
             Positioned.fill(
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.72),
-                child: SafeArea(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ClipOval(
-                        child: SizedBox(
-                          width: 110.w,
-                          height: 110.h,
-                          child: _buildPhotoFallback(agent),
+              child: BackgroundWidget(
+                child: SizedBox.expand(
+                  child: SafeArea(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ClipOval(
+                          child: SizedBox(
+                            width: 110.w,
+                            height: 110.h,
+                            child: _buildPhotoFallback(agent),
+                          ),
                         ),
-                      ),
-                      SizedBox(height: 18.h),
-                      Text(
-                        agent?.name ?? '',
-                        style: GoogleFonts.quicksand(
-                          color: Colors.white,
-                          fontSize: 28.sp,
-                          fontWeight: FontWeight.w700,
+                        SizedBox(height: 18.h),
+                        Text(
+                          agent?.name ?? '',
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontSize: 28.sp,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      SizedBox(height: 8.h),
-                      Text(
-                        _t("video_call_status_connecting"),
-                        style: GoogleFonts.quicksand(
-                          color: Colors.white70,
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w600,
+                        SizedBox(height: 8.h),
+                        Text(
+                          _t("video_call_status_connecting"),
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white70,
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      SizedBox(height: 22.h),
-                      SizedBox(
-                        width: 24.w,
-                        height: 24.h,
-                        child: const CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          color: Colors.white,
+                        SizedBox(height: 22.h),
+                        SizedBox(
+                          width: 24.w,
+                          height: 24.h,
+                          child: const CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1087,39 +1683,36 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  GestureDetector(
-                    onTap: _toggleMicrophone,
+       GestureDetector(
+                    onTap: _toggleSpeaker,
                     child: Container(
                       width: 52.w,
                       height: 52.h,
                       decoration: BoxDecoration(
-                        color: _isMicStreaming
-                            ? Colors.black.withValues(alpha: 0.7)
-                            : Colors.black.withValues(alpha: 0.35),
+                        color: Colors.black,
                         borderRadius: BorderRadius.circular(30),
                       ),
                       child: Center(
                         child: SvgPicture.asset(
-                          "assets/icons/mic.svg",
+                          "assets/icons/vieo_call.svg",
                           width: 28.w,
                         ),
                       ),
                     ),
                   ),
-
                   SizedBox(width: 10.w),
                   GestureDetector(
                     onTap: _endCall,
                     child: Container(
                       width: 64.w,
-                      height: 64.h,
+                      height:63.h,
                       decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(30),
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(80),
                       ),
                       child: Center(
                         child: SvgPicture.asset(
-                          "assets/icons/call-slash.svg",
+                          "assets/icons/end_call.svg",
                           width: 34.w,
                           fit: BoxFit.cover,
                         ),
@@ -1127,26 +1720,25 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
                     ),
                   ),
                   SizedBox(width: 10.w),
-
-                  GestureDetector(
-                    onTap: _toggleSpeaker,
+             GestureDetector(
+                    onTap: _toggleMicrophone,
                     child: Container(
                       width: 52.w,
                       height: 52.h,
                       decoration: BoxDecoration(
-                        color: _isSpeakerOn
-                            ? Colors.black.withValues(alpha: 0.7)
-                            : Colors.black.withValues(alpha: 0.35),
+                        color:Colors.black,
                         borderRadius: BorderRadius.circular(30),
                       ),
                       child: Center(
                         child: SvgPicture.asset(
-                          "assets/icons/hoporlor.svg",
+                         _isMicStreaming ? "assets/icons/mic.svg" : "assets/icons/mic-slash.svg",
                           width: 28.w,
                         ),
                       ),
                     ),
                   ),
+
+                
                 ],
               ),
             ),
@@ -1250,7 +1842,7 @@ class _NetworkRiveAvatarState extends State<_NetworkRiveAvatar> {
     _riveController = controller;
     try {
       _viewModel = controller.dataBind(DataBind.auto());
-      _updateRiveProperty("duration", 200.0);
+      _updateRiveProperty("duration", 70.0);
       _updateRiveProperty("visemeNum", 0.0);
       _updateRiveProperty("talk", false);
     } catch (e) {

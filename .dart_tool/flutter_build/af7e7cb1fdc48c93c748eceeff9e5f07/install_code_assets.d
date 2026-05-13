@@ -1,0 +1,1 @@
+ /Users/tahatokmak/Documents/GitHub/friendify/.dart_tool/flutter_build/af7e7cb1fdc48c93c748eceeff9e5f07/native_assets.json: 

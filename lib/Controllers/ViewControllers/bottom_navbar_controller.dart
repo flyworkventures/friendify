@@ -14,7 +14,7 @@ class BottomNavbarController extends StateNotifier<BottomNavbarModel> {
 
   List<Widget> pages = [
     HomeView(),
-    AgentsScreen(),
+    AgentsScreen(embeddedInBottomNav: true),
     MessagesView(),
     ProfileView(),
   ];

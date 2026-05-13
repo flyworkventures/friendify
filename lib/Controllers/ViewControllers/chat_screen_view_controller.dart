@@ -21,6 +21,7 @@ import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:friendfy/Services/premium_service.dart';
@@ -46,21 +47,44 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
     );
 
     if (res.statusCode == 200) {
-      List jsonList = jsonDecode(res.body);
-      List<ConversationModel> messages = jsonList
-          .map(
-            (a) => ConversationModel(
-              chatModel: ChatModel.fromMap(a["conversationData"]),
-              agentModel: AgentModel.fromMap(a["botData"]),
+      try {
+        final decoded = jsonDecode(res.body);
+        if (decoded is! List) {
+          log("getConversations: beklenen liste değil: ${decoded.runtimeType}");
+          return;
+        }
+        final messages = <ConversationModel>[];
+        for (final raw in decoded) {
+          if (raw is! Map) continue;
+          final row = Map<String, dynamic>.from(raw);
+          final convRaw = row["conversationData"];
+          final botRaw = row["botData"];
+          if (convRaw is! Map || botRaw is! Map) {
+            log(
+              "getConversations: atlandı (conversationData veya botData eksik/null)",
+            );
+            continue;
+          }
+          messages.add(
+            ConversationModel(
+              chatModel: ChatModel.fromMap(
+                Map<String, dynamic>.from(convRaw),
+              ),
+              agentModel: AgentModel.fromMap(
+                Map<String, dynamic>.from(botRaw),
+              ),
             ),
-          )
-          .toList();
-      debugPrint(messages.toSet().toString());
-      state = state.copyWith(
-        conversations: messages,
-        filteredConversations: messages,
-        isSearching: false,
-      );
+          );
+        }
+        debugPrint(messages.toSet().toString());
+        state = state.copyWith(
+          conversations: messages,
+          filteredConversations: messages,
+          isSearching: false,
+        );
+      } catch (e, st) {
+        log("getConversations parse hatası: $e\n$st");
+      }
     } else {
       log("Mesajlar getirilirken hata oluştu");
     }
@@ -86,16 +110,36 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
     );
 
     if (res.statusCode == 200) {
-      List jsonList = jsonDecode(res.body);
-      List<ConversationModel> filteredMessages = jsonList
-          .map(
-            (a) => ConversationModel(
-              chatModel: ChatModel.fromMap(a["conversationData"]),
-              agentModel: AgentModel.fromMap(a["botData"]),
+      try {
+        final decoded = jsonDecode(res.body);
+        if (decoded is! List) {
+          log("searchConversations: beklenen liste değil: ${decoded.runtimeType}");
+          state = state.copyWith(filteredConversations: []);
+          return;
+        }
+        final filteredMessages = <ConversationModel>[];
+        for (final raw in decoded) {
+          if (raw is! Map) continue;
+          final row = Map<String, dynamic>.from(raw);
+          final convRaw = row["conversationData"];
+          final botRaw = row["botData"];
+          if (convRaw is! Map || botRaw is! Map) continue;
+          filteredMessages.add(
+            ConversationModel(
+              chatModel: ChatModel.fromMap(
+                Map<String, dynamic>.from(convRaw),
+              ),
+              agentModel: AgentModel.fromMap(
+                Map<String, dynamic>.from(botRaw),
+              ),
             ),
-          )
-          .toList();
-      state = state.copyWith(filteredConversations: filteredMessages);
+          );
+        }
+        state = state.copyWith(filteredConversations: filteredMessages);
+      } catch (e, st) {
+        log("searchConversations parse hatası: $e\n$st");
+        state = state.copyWith(filteredConversations: []);
+      }
     } else {
       log("Arama sırasında hata oluştu");
       state = state.copyWith(filteredConversations: []);
@@ -372,19 +416,24 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
 
       log("📸 [IMAGE] Fotoğraf gönderme başlatılıyor...");
 
+      // UI'da seçili görsel ve metni hemen temizle ki kullanıcı yeni mesaj yazabilsin.
+      // İstek için gerekli değerleri yerelde saklıyoruz.
+      final imageToSend = selectedImage!;
+      final messageToSend = message.isEmpty ? null : message;
+      messageController.clear();
+      selectedImage = null;
+      state = state.copyWith(image: null);
+
       try {
         var res = await httpService.postImageFile(
           path: AppConstants.sendImageMessage,
-          file: File(selectedImage!.path),
+          file: File(imageToSend.path),
           conversation: state.chatModel?.id.toString() ?? "",
-          message: message.isEmpty ? null : message,
+          message: messageToSend,
         );
 
         if (res != null && res.statusCode == 200) {
           log("✅ [IMAGE] Fotoğraf başarıyla gönderildi");
-          messageController.clear();
-          selectedImage = null;
-          state = state.copyWith(image: null);
 
           // Günlük fotoğraf sayısını artır
           final prefs = await SharedPreferences.getInstance();
@@ -644,9 +693,10 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
       "🎤 stopRecordingAndSend çağrıldı. Current state: ${state.recordState}, isRecording: ${recorderController.isRecording}",
     );
 
-    if (state.recordState != RecordState.recording) {
+    if (state.recordState != RecordState.recording &&
+        state.recordState != RecordState.paused) {
       log("⚠️ Kayıt yapılmıyor, state: ${state.recordState}");
-      return; // Kayıt yapılmıyor
+      return;
     }
 
     if (recorderController.isRecording) {
@@ -692,18 +742,43 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
     log("✅ stopRecordingAndSend tamamlandı. Final state: ${state.recordState}");
   }
 
-  /// Instagram tarzı: İptal edildiğinde kayıt durdur (gönderme)
+  /// Kaydı duraklatır
+  Future<void> pauseRecording() async {
+    if (state.recordState != RecordState.recording) return;
+    try {
+      await recorderController.pause();
+      state = state.copyWith(recordState: RecordState.paused);
+      log("🎤 Recording paused");
+    } catch (e) {
+      log("⚠️ Pause error: $e");
+    }
+  }
+
+  /// Duraklatılmış kaydı devam ettirir
+  Future<void> resumeRecording() async {
+    if (state.recordState != RecordState.paused) return;
+    try {
+      await recorderController.record();
+      state = state.copyWith(recordState: RecordState.recording);
+      log("🎤 Recording resumed");
+    } catch (e) {
+      log("⚠️ Resume error: $e");
+    }
+  }
+
+  /// İptal edildiğinde kayıt durdur (göndermeden sil)
   Future<void> cancelRecording() async {
-    if (state.recordState != RecordState.recording) {
-      return; // Kayıt yapılmıyor
+    if (state.recordState != RecordState.recording &&
+        state.recordState != RecordState.paused) {
+      return;
     }
 
-    if (recorderController.isRecording) {
+    try {
       await recorderController.stop();
-      log("🎤 Recording cancelled");
-      state = state.copyWith(recordState: RecordState.none);
-      _recordingStartTime = null; // Temizle
-    }
+    } catch (_) {}
+    log("🎤 Recording cancelled");
+    state = state.copyWith(recordState: RecordState.none);
+    _recordingStartTime = null;
   }
 
   recordAudio() async {
@@ -827,6 +902,68 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
       }
     } catch (e) {
       log("Error picking image: $e");
+    }
+  }
+
+  Future<void> pickAndSendPdf() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final platformFile = result.files.first;
+      final filePath = platformFile.path;
+      if (filePath == null) return;
+
+      final fileName = platformFile.name;
+      final file = File(filePath);
+      final fileBytes = await file.readAsBytes();
+
+      state = state.copyWith(responseWaiting: true);
+
+      final cdnFileName = "${DateTime.now().millisecondsSinceEpoch}_$fileName";
+      final cdnUploadUrl =
+          "https://storage.bunnycdn.com/fakefriendstorage/documents/$cdnFileName";
+      final publicUrl =
+          "https://fakefriend.b-cdn.net/documents/$cdnFileName";
+
+      final httpService = HttpService(ref: ref);
+      final uploadResponse = await httpService.uploadToCDN(
+        url: cdnUploadUrl,
+        fileBytes: fileBytes,
+        contentType: 'application/pdf',
+      );
+
+      if (uploadResponse.statusCode != 200 && uploadResponse.statusCode != 201) {
+        log("❌ [PDF] CDN upload failed: ${uploadResponse.statusCode}");
+        state = state.copyWith(responseWaiting: false);
+        return;
+      }
+
+      log("✅ [PDF] CDN upload success: $publicUrl");
+
+      final conversationId = state.chatModel?.id.toString() ?? "";
+      final res = await httpService.post(
+        path: AppConstants.sendMessage,
+        body: {
+          "message": "[PDF] $fileName\n$publicUrl",
+          "conversationId": conversationId,
+          "messageType": "pdf",
+        },
+      );
+
+      if (res.statusCode == 200) {
+        log("✅ [PDF] PDF message sent to API");
+      } else {
+        log("❌ [PDF] Send failed: ${res.body}");
+      }
+
+      state = state.copyWith(responseWaiting: false);
+    } catch (e) {
+      log("❌ [PDF] Error: $e");
+      state = state.copyWith(responseWaiting: false);
     }
   }
 
@@ -1090,7 +1227,7 @@ class ChatScreenViewModel {
 
 enum ChatState { normal, botWriting, botAudioRecording }
 
-enum RecordState { recording, stopped, none }
+enum RecordState { recording, paused, stopped, none }
 
 class _Sentinel {
   const _Sentinel();

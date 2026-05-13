@@ -52,65 +52,82 @@ class SplashViewController extends StateNotifier<void> {
 
         if (token != null) {
           debugPrint("Token null değil");
-          //token doğrula
-          var response = await httpService.post(
-            path: AppConstants.verifyTokenURL,
-            body: {"token": token, "refreshToken": refreshToken ?? ""},
-            headers: {
-              "x-auth-token": token,
-              "x-refresh-token": refreshToken ?? "",
-              "Content-type": "application/json",
-            },
-          );
-          var json = jsonDecode(response.body);
-          debugPrint("JSON: $json");
-          if (json["code"] == "TOKEN_RENEWED" && json["token"] != null) {
-            token = json["token"].toString();
-            await localService.setAuthTokens(
-              accessToken: token,
-              refreshToken: json["refreshToken"]?.toString(),
+          try {
+            var response = await httpService.post(
+              path: AppConstants.verifyTokenURL,
+              body: {"token": token, "refreshToken": refreshToken ?? ""},
+              headers: {
+                "x-auth-token": token,
+                "x-refresh-token": refreshToken ?? "",
+                "Content-type": "application/json",
+              },
             );
-          }
+            var json = jsonDecode(response.body);
+            debugPrint("JSON: $json");
+            if (json["code"] == "TOKEN_RENEWED" && json["token"] != null) {
+              token = json["token"].toString();
+              await localService.setAuthTokens(
+                accessToken: token,
+                refreshToken: json["refreshToken"]?.toString(),
+              );
+            }
 
-          if (json["msg"] == "Valid Token" || json["code"] == "TOKEN_RENEWED") {
-            UserModel userModel = UserModel.fromMap(json["user"]);
-            if (token.isNotEmpty) {
-              userModel = userModel.copyWith(token: token);
+            if (json["msg"] == "Valid Token" || json["code"] == "TOKEN_RENEWED") {
+              UserModel userModel = UserModel.fromMap(json["user"]);
+              if (token.isNotEmpty) {
+                userModel = userModel.copyWith(token: token);
+              }
+              if ((userModel.refreshToken == null ||
+                      userModel.refreshToken!.isEmpty) &&
+                  refreshToken != null &&
+                  refreshToken.isNotEmpty) {
+                userModel = userModel.copyWith(refreshToken: refreshToken);
+              }
+              if ((refreshToken == null || refreshToken.isEmpty) &&
+                  userModel.refreshToken != null &&
+                  userModel.refreshToken!.isNotEmpty) {
+                await localService.setRefreshToken(userModel.refreshToken!);
+              }
+              ref
+                  .read(AllControllers.userController.notifier)
+                  .updateUserModel(userModel);
+              try {
+                await ref
+                    .read(AllControllers.chatViewController.notifier)
+                    .getConversations();
+                await ref
+                    .read(AllControllers.agentsViewController.notifier)
+                    .getAgents();
+                await ref
+                    .read(AllControllers.agentsViewController.notifier)
+                    .getRecentAgents();
+              } catch (e) {
+                debugPrint("⚠️ Veri çekme hatası (devam ediliyor): $e");
+              }
+              await navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                '/bottomNavbar',
+                (a) => false,
+              );
+            } else {
+              debugPrint("⚠️ Token geçersiz, onboard ekranına yönlendiriliyor");
+              await localService.setAuthTokens(accessToken: "", refreshToken: "");
+              await navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                '/onboard',
+                (a) => false,
+              );
             }
-            if ((userModel.refreshToken == null ||
-                    userModel.refreshToken!.isEmpty) &&
-                refreshToken != null &&
-                refreshToken.isNotEmpty) {
-              userModel = userModel.copyWith(refreshToken: refreshToken);
-            }
-            if ((refreshToken == null || refreshToken.isEmpty) &&
-                userModel.refreshToken != null &&
-                userModel.refreshToken!.isNotEmpty) {
-              await localService.setRefreshToken(userModel.refreshToken!);
-            }
-            ref
-                .read(AllControllers.userController.notifier)
-                .updateUserModel(userModel);
-            await ref
-                .read(AllControllers.chatViewController.notifier)
-                .getConversations();
-            await ref
-                .read(AllControllers.agentsViewController.notifier)
-                .getAgents();
-            await ref
-                .read(AllControllers.agentsViewController.notifier)
-                .getRecentAgents();
+          } catch (e) {
+            debugPrint("⚠️ Token doğrulama hatası: $e");
             await navigatorKey.currentState?.pushNamedAndRemoveUntil(
-              '/bottomNavbar',
+              '/onboard',
               (a) => false,
             );
           }
         } else {
-          // token bilgisi yok
-          Future.delayed(
-            Duration(seconds: 2),
-            () async => await navigatorKey.currentState
-                ?.pushNamedAndRemoveUntil('/onboard', (a) => false),
+          debugPrint("Token bilgisi yok, onboard ekranına yönlendiriliyor");
+          await navigatorKey.currentState?.pushNamedAndRemoveUntil(
+            '/onboard',
+            (a) => false,
           );
         }
       }

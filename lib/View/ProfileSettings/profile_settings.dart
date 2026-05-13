@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
@@ -17,6 +18,8 @@ import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:intl/intl.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_holo_date_picker/widget/date_picker_widget.dart';
 import 'package:flutter_holo_date_picker/date_picker_theme.dart';
@@ -96,6 +99,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                         hintText: Translate.translate("full_name", context),
                         title: Translate.translate("full_name", context),
                         enabled: true,
+                        maxLength: 25,
                         onChanged: (val) => ref
                             .read(
                               AllControllers
@@ -170,17 +174,18 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                       ),
       */
                       SizedBox(height: 10.h),
-                      MyButton(
-                        onTap: () => _showDeleteAccountBottomSheet(context),
-                        radius: BorderRadius.circular(50.r),
-                        margin: EdgeInsets.symmetric(horizontal: 10.r),
-                        size: Size(MediaQuery.sizeOf(context).width, 50.h),
-                        backgroundColor: Colors.transparent,
-                        child: Center(
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: MyButton(
+                          onTap: () => _showDeleteAccountBottomSheet(context),
+                          radius: BorderRadius.circular(50.r),
+                          margin: EdgeInsets.symmetric(horizontal: 10.r),
+                          size: Size(MediaQuery.sizeOf(context).width, 50.h),
+                          backgroundColor: Colors.transparent,
                           child: Padding(
                             padding: EdgeInsets.only(left: 17.r),
                             child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              mainAxisAlignment: MainAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
@@ -191,12 +196,8 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                                     color: Colors.red.withValues(alpha: 0.3),
                                     borderRadius: BorderRadius.circular(10).r,
                                   ),
-                                  child: HeroIcon(
-                                    HeroIcons.trash,
-                                    color: Colors.red,
-                                    style: HeroIconStyle.solid,
-                                    size: 20,
-                                  ),
+                                  child:Center(child: SvgPicture.asset("assets/icons/trash.svg",width: 20.w,height: 20.h,colorFilter: ColorFilter.mode(Colors.red, BlendMode.srcIn),),),
+                                  
                                 ),
                                 SizedBox(width: 10.w),
                                 Text(
@@ -268,7 +269,8 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                                     SizedBox(
                                       height: 20.h,
                                       child: HeroIcon(
-                                        HeroIcons.bookmark,
+                                        HeroIcons.sparkles,
+                                        style: HeroIconStyle.solid,
                                         color: Colors.white,
                                         size: 20,
                                       ),
@@ -279,7 +281,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                                       style: GoogleFonts.quicksand(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w600,
-                                        fontSize: 14.sp,
+                                        fontSize: 20.sp,
                                       ),
                                     ),
                                   ],
@@ -302,6 +304,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
     required String hintText,
     required String title,
     required bool enabled,
+    int? maxLength,
     required Function(String) onChanged,
   }) {
     return Column(
@@ -319,6 +322,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
         MyTextField(
           contentPadding: EdgeInsets.only(left: 15, right: 15),
           controller: controller,
+          maxLength: maxLength,
           height: 40.h,
           border: OutlineInputBorder(
             borderSide: BorderSide.none,
@@ -355,59 +359,63 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
       required bool selected,
       required Widget leading,
     }) {
-      return Expanded(
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              ref
-                  .read(AllControllers.profileSettingsViewController.notifier)
-                  .genderChanged(value);
-            },
-            borderRadius: BorderRadius.circular(12.r),
-            splashColor: Colors.white.withValues(alpha: 0.08),
-            highlightColor: Colors.white.withValues(alpha: 0.04),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 4.w),
-              decoration: BoxDecoration(
-                color: selected ? MyColors.purple : Colors.transparent,
+     return Expanded(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  ref
+                      .read(
+                        AllControllers.profileSettingsViewController.notifier,
+                      )
+                      .genderChanged(value);
+                },
+              
                 borderRadius: BorderRadius.circular(12.r),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  leading,
-                  SizedBox(width: 6.w),
-                  Flexible(
-                    child: Text(
-                      label,
-                      style: GoogleFonts.quicksand(
-                        color: selected ? Colors.white : unselectedTint,
-                        fontSize: 13.sp,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                splashColor: Colors.white.withValues(alpha: 0.08),
+                highlightColor: Colors.white.withValues(alpha: 0.04),
+                child: AnimatedContainer(
+                  height: 34.h,
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  padding: EdgeInsets.symmetric(
+               
+                    horizontal: 4.w,
                   ),
-                ],
+                  decoration: BoxDecoration(
+                    color: selected ? MyColors.purple : Colors.transparent,
+                    borderRadius: BorderRadius.circular(4.r),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      leading,
+                      SizedBox(width: 6.w),
+                       Text(
+                          label,
+                          style: GoogleFonts.quicksand(
+                            color: selected ? Colors.white : unselectedTint,
+                            fontSize: 14.sp,
+                            fontWeight:  FontWeight.w700,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-      );
+          );
     }
 
     return Container(
       padding: EdgeInsets.all(8.w),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16.r),
+        borderRadius: BorderRadius.circular(8.r),
       ),
       child: Row(
         children: [
@@ -417,8 +425,8 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
             selected: selectedGender == 'male',
             leading: SvgPicture.asset(
               'assets/male.svg',
-              width: 18.w,
-              height: 18.w,
+      
+              height: 16.w,
               colorFilter: ColorFilter.mode(
                 selectedGender == 'male' ? Colors.white : unselectedTint,
                 BlendMode.srcIn,
@@ -432,8 +440,8 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
             selected: selectedGender == 'female',
             leading: SvgPicture.asset(
               'assets/female.svg',
-              width: 18.w,
-              height: 18.w,
+  
+              height: 16.w,
               colorFilter: ColorFilter.mode(
                 selectedGender == 'female' ? Colors.white : unselectedTint,
                 BlendMode.srcIn,
@@ -445,10 +453,14 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
             label: Translate.translate(TranslateKeys.genderPrivate, context),
             value: null,
             selected: selectedGender == null,
-            leading: Icon(
-              Icons.block_rounded,
-              size: 18.sp,
-              color: selectedGender == null ? Colors.white : unselectedTint,
+            leading: SvgPicture.asset(
+              'assets/close.svg',
+              width: 16.w,
+              height: 16.w,
+              colorFilter: ColorFilter.mode(
+                selectedGender == null ? Colors.white : unselectedTint,
+                BlendMode.srcIn,
+              ),
             ),
           ),
         ],
@@ -481,16 +493,20 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                         ClipOval(
                           child: Container(
                             width: 100.w,
-                            height: 100.h,
+                            height: 100.w,
                             child: selectedImagePath != null
                                 ? Image.file(
                                     File(selectedImagePath),
+                                    width: 100.w,
+                                    height: 100.w,
                                     fit: BoxFit.cover,
                                   )
                                 : CachedNetworkImage(
+                                    width: 100.w,
+                                    height: 100.w,
                                     imageUrl:
                                         photoURL ??
-                                        "https://fakefriend.b-cdn.net/profile.png",
+                                        "https://fakefriend.b-cdn.net/app/Group%201174.png",
                                     fit: BoxFit.cover,
                                     placeholder: (context, url) =>
                                         Shimmer.fromColors(
@@ -519,23 +535,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                                   )
                                   .pickImage();
                             },
-                            child: Container(
-                              width: 40.w,
-                              height: 40.h,
-                              decoration: BoxDecoration(
-                                color: MyColors.purple,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 3,
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.camera_alt,
-                                color: Colors.white,
-                                size: 20.sp,
-                              ),
-                            ),
+                            child: SvgPicture.asset("assets/pen.svg")
                           ),
                         ),
                       ],
@@ -660,7 +660,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
         ),
         SizedBox(height: 5.h),
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 15.w, vertical: 12.h),
+          padding: EdgeInsets.symmetric(horizontal: 15.w, vertical: 10.h),
           decoration: BoxDecoration(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(12.r),
@@ -803,6 +803,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
             margin: EdgeInsets.zero,
             contentPadding: EdgeInsets.symmetric(horizontal: 15),
             controller: controller,
+            height: 40.h,
             textStyle: GoogleFonts.quicksand(
               color: Colors.black,
               fontWeight: FontWeight.w600,
@@ -984,186 +985,945 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
   }
 
   void _showDeleteAccountBottomSheet(BuildContext context) {
+    int step = -1;
+    int? selectedReason;
+    bool isSubmittingDelete = false;
+    final noteController = TextEditingController();
+    final reasons = <String>[
+      Translate.translate(TranslateKeys.deleteFlowReason1, context),
+      Translate.translate(TranslateKeys.deleteFlowReason2, context),
+      Translate.translate(TranslateKeys.deleteFlowReason3, context),
+      Translate.translate(TranslateKeys.deleteFlowReason4, context),
+      Translate.translate(TranslateKeys.deleteFlowReason5, context),
+      Translate.translate(TranslateKeys.deleteFlowReason6, context),
+    ];
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return SafeArea(
-          top: false,
-          child: Container(
-            margin: EdgeInsets.symmetric(horizontal: 10.w),
-            padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 20.h),
-            decoration: BoxDecoration(
-              color: Colors.black,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final maxHeight = MediaQuery.sizeOf(context).height * 0.76;
+          final profileState = ref.watch(
+            AllControllers.profileSettingsViewController,
+          );
+          final isDeleting =
+              isSubmittingDelete || profileState.isLoading == true;
+
+          Future<void> onNext() async {
+            if (step == 0 && selectedReason == null) return;
+            if (step == 3) {
+              setModalState(() => isSubmittingDelete = true);
+              Navigator.of(sheetContext).pop();
+              await ref
+                  .read(AllControllers.profileSettingsViewController.notifier)
+                  .deleteAccount();
+              return;
+            }
+            setModalState(() => step = step + 1);
+          }
+
+          return SafeArea(
+            top: false,
+            child: ClipRRect(
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(22.r),
                 topRight: Radius.circular(22.r),
               ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 48.w,
-                    height: 5.h,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.30),
-                      borderRadius: BorderRadius.circular(100.r),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 18.h),
-                Text(
-                  "We’re sad to see you go",
-                  style: GoogleFonts.quicksand(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 31.sp,
-                  ),
-                ),
-                SizedBox(height: 10.h),
-                Text(
-                  "Your membership has been cancelled. You can still reactivate before your billing period ends.",
-                  style: GoogleFonts.quicksand(
-                    color: Colors.white.withValues(alpha: 0.65),
-                    fontWeight: FontWeight.w500,
-                    fontSize: 16.sp,
-                    height: 1.4,
-                  ),
-                ),
-                SizedBox(height: 18.h),
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.all(16.w),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(18.r),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.06),
-                    ),
-                  ),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  color: const Color(0xFF050505).withValues(alpha: 0.94),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        children: [
-                          Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                          SizedBox(width: 8.w),
-                          Text(
-                            "Change your mind?",
-                            style: GoogleFonts.quicksand(
-                              color: Colors.white,
-                              fontSize: 20.sp,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 12.h),
-                      Text(
-                        "You can reactivate your membership now to keep your benefits.",
-                        style: GoogleFonts.quicksand(
-                          color: Colors.white.withValues(alpha: 0.70),
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w500,
-                          height: 1.4,
+                      SizedBox(height: 8.h),
+                      Container(
+                        width: 46.w,
+                        height: 4.h,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.26),
+                          borderRadius: BorderRadius.circular(100.r),
                         ),
                       ),
-                      SizedBox(height: 14.h),
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(18.r),
-                          onTap: () {
-                            Navigator.of(sheetContext).pop();
-                          },
-                          child: Container(
-                            width: double.infinity,
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 14.w,
-                              vertical: 12.h,
-                            ),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(18.r),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.45),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.link,
-                                  color: MyColors.purple,
-                                  size: 20.sp,
-                                ),
-                                SizedBox(width: 10.w),
-                                Expanded(
+                      SizedBox(height: 12.h),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: _buildDeleteAccountStepContent(
+                            step: step,
+                            reasons: reasons,
+                            selectedReason: selectedReason,
+                            noteController: noteController,
+                            sheetContext: sheetContext,
+                            onMonthlyPlanTap: () async {
+                              try {
+                                final offerings = await Purchases.getOfferings();
+                                final specialOffer = offerings.getOffering("special_offer");
+                                if (specialOffer != null) {
+                                  final result = await RevenueCatUI.presentPaywall(
+                                    offering: specialOffer,
+                                    displayCloseButton: true,
+                                  );
+                                  if (result == PaywallResult.purchased || result == PaywallResult.restored) {
+                                    Navigator.of(sheetContext).pop();
+                                  }
+                                } else {
+                                  final result = await RevenueCatUI.presentPaywall(
+                                    displayCloseButton: true,
+                                  );
+                                  if (result == PaywallResult.purchased || result == PaywallResult.restored) {
+                                    Navigator.of(sheetContext).pop();
+                                  }
+                                }
+                              } catch (e) {
+                                debugPrint("⚠️ Special offer paywall error: $e");
+                              }
+                            },
+                            onSelectReason: (value) {
+                              setModalState(() => selectedReason = value);
+                            },
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(20, (step == 1 || step == 2) ? 10 : 20, 20, 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 48.h,
+                                child: ElevatedButton(
+                                  onPressed: isDeleting
+                                      ? null
+                                      : () {
+                                          if (step == 3) {
+                                            onNext();
+                                            return;
+                                          }
+                                          if (step == -1) {
+                                            Navigator.of(sheetContext).pop();
+                                            return;
+                                          }
+                                          setModalState(() => step = step - 1);
+                                        },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: (step == 1 || step == 2 || step == 3)
+                                        ? Colors.white.withValues(alpha: 0.5)
+                                        : (step == -1 || step == 0)
+                                            ? const Color(0xFFCE64FF)
+                                            : const Color(0xFF9B9B9B),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        999.r,
+                                      ),
+                                    ),
+                                    elevation: 0,
+                                  ),
                                   child: Text(
-                                    "Wait, I want to reactivate",
+                                    step == 3
+                                        ? Translate.translate(
+                                            TranslateKeys.deleteFlowDone,
+                                            context,
+                                          )
+                                        : (step == -1
+                                              ? Translate.translate(
+                                                  TranslateKeys.cancel,
+                                                  context,
+                                                )
+                                              : Translate.translate(
+                                                  TranslateKeys.back,
+                                                  context,
+                                                )),
                                     style: GoogleFonts.quicksand(
-                                      color: Colors.white,
                                       fontSize: 16.sp,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
-                                Icon(
-                                  Icons.arrow_forward,
-                                  color: Colors.white,
-                                  size: 20.sp,
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
+                            if (step < 3) ...[
+                              SizedBox(width: 10.w),
+                              Expanded(
+                                child: Container(
+                                  height: 48.h,
+                                  decoration: BoxDecoration(
+                                    color: (step == 1 || step == 2)
+                                        ? Colors.white.withValues(alpha: 0.5)
+                                        : const Color(0xFF9B9B9B),
+                                    borderRadius: BorderRadius.circular(999.r),
+                                  ),
+                                  child: ElevatedButton(
+                                    onPressed: ((step == 0 &&
+                                                selectedReason == null) ||
+                                            isDeleting)
+                                        ? null
+                                        : onNext,
+                                    style: ElevatedButton.styleFrom(
+                                      shadowColor: Colors.transparent,
+                                      backgroundColor: Colors.transparent,
+                                      disabledBackgroundColor: (step == 1 || step == 2)
+                                          ? Colors.white.withValues(alpha: 0.5)
+                                          : const Color(0xFF9B9B9B),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(
+                                          999.r,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      step == -1
+                                          ? Translate.translate(
+                                              TranslateKeys.delete,
+                                              context,
+                                            )
+                                          : Translate.translate(
+                                              TranslateKeys.next,
+                                              context,
+                                            ),
+                                      style: GoogleFonts.quicksand(
+                                        fontSize: 16.sp,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                SizedBox(height: 16.h),
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(30.r),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      ref
-                          .read(
-                            AllControllers.profileSettingsViewController.notifier,
-                          )
-                          .deleteAccount();
-                    },
-                    child: Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.symmetric(vertical: 14.h),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.20),
-                        borderRadius: BorderRadius.circular(30.r),
-                        border: Border.all(
-                          color: Colors.red.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          "Delete my account",
-                          style: GoogleFonts.quicksand(
-                            color: Colors.red.shade200,
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.w700,
-                          ),
+              ),
+            ),
+          );
+        },
+      ),
+    ).whenComplete(noteController.dispose);
+  }
+
+  Widget _buildDeleteAccountStepContent({
+    required int step,
+    required List<String> reasons,
+    required int? selectedReason,
+    required TextEditingController noteController,
+    required BuildContext sheetContext,
+    Future<void> Function()? onMonthlyPlanTap,
+    required ValueChanged<int> onSelectReason,
+  }) {
+    switch (step) {
+      case -1:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(height: 12.h),
+            Container(
+              width: 54.w,
+              height: 54.w,
+              decoration: BoxDecoration(
+                color: const Color(0xFF8F2320),
+                borderRadius: BorderRadius.circular(12.r),
+              ),
+              child: Center(
+                child: SvgPicture.asset("assets/icons/trash.svg",width: 24.w,height: 24.h,),
+              )
+            ),
+            SizedBox(height: 18.h),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 18.w),
+              child: Text(
+                Translate.translate(
+                  TranslateKeys.deleteFlowPrimaryTitle,
+                  context,
+                ),
+                textAlign: TextAlign.center,
+                style: GoogleFonts.quicksand(
+                  color: Colors.white,
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                ),
+              ),
+            ),
+            SizedBox(height: 12.h),
+          ],
+        );
+      case 0:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 15, vertical: 13).r,
+              color: Colors.white.withValues(alpha: 0.1),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    Translate.translate(
+                      TranslateKeys.deleteFlowIntroTitle,
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white,
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                    ),
+                  ),
+                  SizedBox(height: 10.h),
+                  Text(
+                    Translate.translate(
+                      TranslateKeys.deleteFlowIntroSubtitle,
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white.withValues(alpha: 0.68),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 14.h),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(14.w),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14.r),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < reasons.length; i++)
+                    InkWell(
+                      onTap: () => onSelectReason(i),
+                      borderRadius: BorderRadius.circular(10.r),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10.h),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.radio_button_checked,
+
+                              color: selectedReason == i
+                                  ? MyColors.purple
+                                  : const Color(0xFFD0D0D4),
+                              size: 22.sp,
+                            ),
+                            SizedBox(width: 12.w),
+                            Expanded(
+                              child: Text(
+                                reasons[i],
+                                style: GoogleFonts.quicksand(
+                                  color: const Color(0xFFE8E8EB),
+                                  fontSize: 15.sp,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
+                  SizedBox(height: 10.h),
+                  Text(
+                    Translate.translate(
+                      TranslateKeys.deleteFlowMessageOptional,
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 8.h),
+                  TextField(
+                    controller: noteController,
+                    style: GoogleFonts.quicksand(color: Colors.white),
+                    minLines: 2,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: Translate.translate(
+                        TranslateKeys.deleteFlowMessageHint,
+                        context,
+                      ),
+                      hintStyle: GoogleFonts.quicksand(
+                        color: Colors.white.withValues(alpha: 0.45),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFF111216),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 14.w,
+                        vertical: 12.h,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide(
+                          color: MyColors.purple,
+                          width: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      case 1:
+        return _buildOfferStep(
+          title: Translate.translate(TranslateKeys.deleteFlowOfferTitle, context),
+          subtitle: Translate.translate(
+            TranslateKeys.deleteFlowOfferSubtitle,
+            context,
+          ),
+          planTitle: Translate.translate(
+            TranslateKeys.deleteFlowOfferPlanTitle,
+            context,
+          ),
+          planSubTitle: Translate.translate(
+            TranslateKeys.deleteFlowOfferPlanSubtitle,
+            context,
+          ),
+          planBody: Translate.translate(
+            TranslateKeys.deleteFlowOfferPlanBody,
+            context,
+          ),
+          ctaText: Translate.translate(TranslateKeys.deleteFlowOfferCta, context),
+          onCtaTap: onMonthlyPlanTap,
+        );
+      case 2:
+        return _buildOfferStep(
+          title: Translate.translate(TranslateKeys.deleteFlowSureTitle, context),
+          subtitle: Translate.translate(
+            TranslateKeys.deleteFlowSureSubtitle,
+            context,
+          ),
+          planTitle: Translate.translate(
+            TranslateKeys.deleteFlowSurePlanTitle,
+            context,
+          ),
+          planSubTitle: Translate.translate(
+            TranslateKeys.deleteFlowSurePlanSubtitle,
+            context,
+          ),
+          planBody: null,
+          ctaText: Translate.translate(TranslateKeys.deleteFlowSureCta, context),
+          isSixtyPercentOffer: true,
+          onCtaTap: () async {
+            try {
+              final offerings = await Purchases.getOfferings();
+              final specialOffer = offerings.getOffering("Special Offer");
+              if (specialOffer != null) {
+                final result = await RevenueCatUI.presentPaywall(
+                  offering: specialOffer,
+                  displayCloseButton: true,
+                );
+                if (result == PaywallResult.purchased || result == PaywallResult.restored) {
+                  Navigator.of(sheetContext).pop();
+                }
+              } else {
+                final result = await RevenueCatUI.presentPaywall(
+                  displayCloseButton: true,
+                );
+                if (result == PaywallResult.purchased || result == PaywallResult.restored) {
+                  Navigator.of(sheetContext).pop();
+                }
+              }
+            } catch (e) {
+              debugPrint("⚠️ Special offer paywall error: $e");
+            }
+          },
+        );
+      default:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 15, vertical: 13).r,
+              color: Colors.white.withValues(alpha: 0.1),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    Translate.translate(
+                      TranslateKeys.deleteFlowFinalTitle,
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white,
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                    ),
+                  ),
+                  SizedBox(height: 10.h),
+                  Text(
+                    Translate.translate(
+                      TranslateKeys.deleteFlowFinalSubtitle,
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white.withValues(alpha: 0.62),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(16.w),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14.r),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.auto_awesome,
+                        color: Colors.white,
+                        size: 20.sp,
+                      ),
+                      SizedBox(width: 8.w),
+                      Text(
+                        Translate.translate(
+                          TranslateKeys.deleteFlowChangeMindTitle,
+                          context,
+                        ),
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 12.h),
+                  Text(
+                    Translate.translate(
+                      TranslateKeys.deleteFlowChangeMindSubtitle,
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white.withValues(alpha: 0.64),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 12.h),
+                  GestureDetector(
+                    onTap: () => Navigator.of(sheetContext).pop(),
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12.w,
+                        vertical: 12.h,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12.r),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          SvgPicture.asset("assets/icons/chain.svg",width: 16.w,height: 16.h,),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: Text(
+                              Translate.translate(
+                                TranslateKeys.deleteFlowReactivateCta,
+                                context,
+                              ),
+                              style: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14.sp,
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward,
+                            color: Colors.white,
+                            size: 18.sp,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+    }
+  }
+
+  Widget _buildOfferStep({
+    required String title,
+    required String subtitle,
+    required String planTitle,
+    required String planSubTitle,
+    required String? planBody,
+    required String ctaText,
+    Future<void> Function()? onCtaTap,
+    bool isSixtyPercentOffer = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(horizontal: 15, vertical: 13).r,
+          color: Colors.white.withValues(alpha: 0.1),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.quicksand(
+                  color: Colors.white,
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.w700,
+                  height: 1.1,
+                ),
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                subtitle,
+                style: GoogleFonts.quicksand(
+                  color: Colors.white.withValues(alpha: 0.62),
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!isSixtyPercentOffer) ...[
+          SizedBox(height: 14.h),
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(14.w),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14.r),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 52.w,
+                      height: 52.w,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Color(0xffD55EFF)),
+                        color: Color(0xFFD55EFF).withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(10.r),
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Center(
+                            child: Image.asset(
+                              "assets/icons/king.png",
+                              width: 30.w,
+                            ),
+                          ),
+                          Positioned(
+                            right: -4.w,
+                            bottom: -4.h,
+                            child: Container(
+                              width: 20.w,
+                              height: 20.w,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFB14CFF),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1.1,
+                                ),
+                              ),
+                              child: SvgPicture.asset("assets/icons/badge.svg")
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: 10.w),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            planTitle,
+                            style: GoogleFonts.quicksand(
+                              color: Colors.white,
+                              fontSize: 15.sp,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: 3.h),
+                          Text(
+                            planSubTitle,
+                            style: GoogleFonts.quicksand(
+                              color: Colors.white.withValues(alpha: 0.62),
+                              fontSize: 12.sp,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (planBody != null) ...[
+                  SizedBox(height: 10.h),
+                  Text(
+                    planBody,
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white.withValues(alpha: 0.86),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          SizedBox(height: 12.h),
+        ] else
+          SizedBox(height: 14.h),
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(14.w),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(14.r),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.auto_awesome, color: Colors.white, size: 20.sp),
+                  SizedBox(width: 8.w),
+                  Text(
+                    Translate.translate(
+                      TranslateKeys.deleteFlowWhatKeep,
+                      context,
+                    ),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white,
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 12.h),
+              if (isSixtyPercentOffer) ...[
+                _buildLossItem(
+                  Translate.translate(
+                    TranslateKeys.deleteFlowLossCharacter,
+                    context,
+                  ),
+                  "assets/icons/group.svg",
+                ),
+                _buildLossItem(
+                  Translate.translate(TranslateKeys.deleteFlowLossVideo, context),
+                  "assets/icons/vieo_call.svg",
+                ),
+                _buildLossItem(
+                  Translate.translate(
+                    TranslateKeys.deleteFlowLossEditing,
+                    context,
+                  ),
+                  "assets/icons/useredit.svg",
+                ),
+              ] else ...[
+                _buildKeepItem(
+                  Translate.translate(
+                    TranslateKeys.deleteFlowKeepCharacters,
+                    context,
+                  ),
+                ),
+                _buildKeepItem(
+                  Translate.translate(TranslateKeys.deleteFlowKeepVideo, context),
+                ),
+                _buildKeepItem(
+                  Translate.translate(
+                    TranslateKeys.deleteFlowKeepEditing,
+                    context,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (isSixtyPercentOffer) ...[
+          SizedBox(height: 12.h),
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 12.h),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14.r),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36.w,
+                  height: 36.w,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.42),
+                    borderRadius: BorderRadius.circular(10.r),
+                  ),
+                  child: Center(child: SvgPicture.asset("assets/icons/offer.svg",width: 16.w,height: 16.h,color: Colors.white.withValues(alpha: 0.95),))
+                ),
+                SizedBox(width: 10.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        planTitle,
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 15.sp,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: 2.h),
+                      Text(
+                        planSubTitle,
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-        );
-      },
+        ],
+        SizedBox(height: 12.h),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: GestureDetector(
+            onTap: onCtaTap,
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(vertical: 14.h),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFCA60FF), Color(0xFF3F46FF)],
+                ),
+                borderRadius: BorderRadius.circular(999.r),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                ctaText,
+                style: GoogleFonts.quicksand(
+                  color: Colors.white,
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLossItem(String text, String icon) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 10.h),
+      child: Row(
+        children: [
+          Container(
+            width: 36.w,
+            height: 36.w,
+            decoration: BoxDecoration(
+              color: const Color(0xFF472220),
+              borderRadius: BorderRadius.circular(10.r),
+            ),
+            child: Center(child: SvgPicture.asset(icon, color: const Color(0xFFFF5C47), width: 18.sp, height: 18,)),
+          ),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.quicksand(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 15.sp,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKeepItem(String text) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 10.h),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            color: Colors.white.withValues(alpha: 0.9),
+            size: 20.sp,
+          ),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.quicksand(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 15.sp,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1239,19 +1999,20 @@ class _ProfileBirthdateSectionState extends State<_ProfileBirthdateSection> {
             valueListenable: _displayedDate,
             builder: (context, date, _) {
               return Container(
+                height: 40.h,
                 width: double.infinity,
-                padding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 16.w),
+                padding: EdgeInsets.symmetric(vertical: 0.h, horizontal: 16.w),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12.r),
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8.r),
                 ),
                 alignment: Alignment.centerLeft,
                 child: Text(
                   DateFormat.yMMMMd(locale).format(date),
                   style: GoogleFonts.quicksand(
-                    color: Colors.white,
+                    color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 16.sp,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               );

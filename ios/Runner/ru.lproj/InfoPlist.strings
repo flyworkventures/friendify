@@ -1,0 +1,5 @@
+"NSUserNotificationsUsageDescription" = "Friendify хочет отправлять вам уведомления, чтобы напоминать о ваших друзьях.";
+"NSMicrophoneUsageDescription" = "Friendify нужен доступ к вашему микрофону для голосовых и видеозвонков.";
+"NSCameraUsageDescription" = "Friendify нужен доступ к вашей камере для видеозвонков.";
+"NSSpeechRecognitionUsageDescription" = "Friendify использует распознавание речи для преобразования вашего голоса в текст во время звонков.";
+"NSPhotoLibraryUsageDescription" = "Friendify нужен доступ к вашей фототеке для выбора и отправки фотографий в чате.";

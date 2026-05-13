@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:math' show Random;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -12,15 +13,20 @@ import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
+import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/Themes/colors.dart';
+import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:heroicons/heroicons.dart';
 import 'package:http/http.dart' as http;
 import 'package:shimmer/shimmer.dart';
 
 class EditAgentView extends ConsumerStatefulWidget {
-  const EditAgentView({super.key});
+  const EditAgentView({super.key, this.createFlow = false});
+
+  final bool createFlow;
 
   @override
   ConsumerState<EditAgentView> createState() => _EditAgentViewState();
@@ -65,23 +71,44 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
   String? selectedVoiceId;
   final AudioPlayer _previewPlayer = AudioPlayer();
   String? _playingVoiceId;
+  bool _isTemplateLoading = false;
+  String? selectedPhotoUrl;
 
   @override
   void initState() {
     super.initState();
     AgentModel? agent = ref.read(AllControllers.agentsProfileViewController).agent;
 
-    nameController = TextEditingController(text: agent?.name ?? '');
-    characterController = TextEditingController(text: agent?.character ?? '');
-    ageController = TextEditingController(text: agent?.age.toString() ?? '');
-
-    final agentInterests = agent != null ? List<String>.from(jsonDecode(agent.interests)) : [];
-    selectedInterests = List.from(agentInterests);
-
-    selectedGender = _normalizeGender(agent?.gender);
-    selectedVoiceId = agent?.voiceId;
+    if (widget.createFlow) {
+      nameController = TextEditingController();
+      characterController = TextEditingController();
+      ageController = TextEditingController(text: '18');
+      selectedInterests = [];
+      selectedGender = 'female';
+      selectedVoiceId = null;
+      _loadRandomSystemTwoAgentTemplate(genderFilter: selectedGender);
+    } else {
+      nameController = TextEditingController(text: agent?.name ?? '');
+      characterController = TextEditingController(text: agent?.character ?? '');
+      ageController = TextEditingController(text: agent?.age.toString() ?? '');
+      selectedInterests = _parseInterests(agent?.interests);
+      selectedGender = _normalizeGender(agent?.gender);
+      selectedVoiceId = agent?.voiceId;
+      selectedPhotoUrl = agent?.photoURL;
+      _loadSavedSelectedPhoto(agent);
+    }
     _loadVoices();
   }
+
+  Future<void> _loadSavedSelectedPhoto(AgentModel? agent) async {
+    if (agent == null) return;
+    final savedPhotoUrl = await LocalService.getSelectedAgentPhoto(agent.id);
+    if (!mounted) return;
+    setState(() {
+      selectedPhotoUrl = savedPhotoUrl ?? agent.photoURL;
+    });
+  }
+
 
   @override
   void dispose() {
@@ -97,220 +124,316 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
   Widget build(BuildContext context) {
     AgentModel? agent = ref.watch(AllControllers.agentsProfileViewController).agent;
     bool isLoading = ref.watch(AllControllers.agentsProfileViewController).loadingScreen;
-    final userId = ref.read(AllControllers.userController)?.id?.toString();
     final topImageUrls = _resolveTopImageUrls(agent);
-    
-    // Kontrol: Kullanıcının kendi karakteri mi?
-    final bool isOwnAgent = agent != null && 
-                           agent.system == 0 && 
-                           agent.creatorId == userId;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF060612),
-      appBar: AppBar(
+    return BackgroundWidget(
+      child: Scaffold(
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          onPressed: () => navigatorKey.currentState?.pop(),
-          icon: Icon(CupertinoIcons.back, color: Colors.white),
-        ),
-        title: Text(
-          Translate.translate(TranslateKeys.editCharacterTitle, context),
-          style: GoogleFonts.quicksand(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 28.sp,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            onPressed: () => navigatorKey.currentState?.pop(),
+            icon: Icon(CupertinoIcons.back, color: Colors.white),
           ),
-        ),
-        centerTitle: true,
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF02040C),
-                    const Color(0xFF110426),
-                    const Color(0xFF2A0A5A).withValues(alpha: 0.75),
-                  ],
-                ),
-              ),
+          title: Text(
+            Translate.translate(
+              widget.createFlow
+                  ? TranslateKeys.createCharacterTitle
+                  : TranslateKeys.editCharacterTitle,
+              context,
+            ),
+            style: GoogleFonts.quicksand(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 20.sp,
             ),
           ),
-          SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(24.w, 8.h, 24.w, 30.h),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: List.generate(
-                    3,
-                    (index) => Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(right: index == 2 ? 0 : 8.w),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(18.r),
-                          child: AspectRatio(
-                            aspectRatio: 0.9,
-                            child: CachedNetworkImage(
-                              fit: BoxFit.cover,
-                              imageUrl: topImageUrls[index],
-                              placeholder: (context, url) => Shimmer.fromColors(
-                                baseColor: Colors.white.withValues(alpha: 0.14),
-                                highlightColor: Colors.white.withValues(alpha: 0.24),
-                                child: Container(color: Colors.white10),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                color: Colors.white10,
-                                child: const Icon(Icons.person, color: Colors.white70, size: 34),
+          centerTitle: true,
+          actions: [
+            if (widget.createFlow)
+              IconButton(
+                onPressed: _isTemplateLoading
+                    ? null
+                    : () => _loadRandomSystemTwoAgentTemplate(
+                        syncFormFields: false,
+                        genderFilter: selectedGender,
+                      ),
+                icon: SvgPicture.asset(
+                  "assets/icons/zar.svg",
+                  width: 24.w,
+                  height: 24.h,
+                  colorFilter: const ColorFilter.mode(
+                    Colors.white,
+                    BlendMode.srcIn,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        body: Stack(
+          children: [
+
+            SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(24.w, 8.h, 24.w, 30.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: List.generate(
+                      3,
+                      (index) {
+                        final imageUrl = topImageUrls[index];
+                        final isSelected = selectedPhotoUrl == imageUrl;
+                        return Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(right: index == 2 ? 0 : 8.w),
+                            child: GestureDetector(
+                              onTap: imageUrl.trim().isEmpty
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        selectedPhotoUrl = imageUrl;
+                                      });
+                                    },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                padding: EdgeInsets.all(isSelected ? 3.r : 0),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20.r),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? const Color(0xFFCE64FF)
+                                        : Colors.transparent,
+                                    width: 2.r,
+                                  ),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(18.r),
+                                  child: AspectRatio(
+                                    aspectRatio: 0.9,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        CachedNetworkImage(
+                                          fit: BoxFit.cover,
+                                          alignment: Alignment(0, -1),
+                                          imageUrl: imageUrl,
+                                          placeholder: (context, url) => Shimmer.fromColors(
+                                            baseColor: Colors.white.withValues(alpha: 0.14),
+                                            highlightColor: Colors.white.withValues(alpha: 0.24),
+                                            child: Container(color: Colors.white10),
+                                          ),
+                                          errorWidget: (context, url, error) => Container(
+                                            color: Colors.white10,
+                                            child: const Icon(Icons.person, color: Colors.white70, size: 34),
+                                          ),
+                                        ),
+                                        if (isSelected)
+                                          Positioned(
+                                            top: 8.r,
+                                            right: 8.r,
+                                            child: Container(
+                                              width: 24.r,
+                                              height: 24.r,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFFCE64FF),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                Icons.check,
+                                                color: Colors.white,
+                                                size: 16.r,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(height: 20.h),
+                  _title(Translate.translate(TranslateKeys.editCharacterNameLabel, context)),
+                  SizedBox(height: 8.h),
+                  _darkField(
+                    controller: nameController,
+                    hint: Translate.translate(TranslateKeys.editCharacterNameHint, context),
+                  ),
+                  SizedBox(height: 16.h),
+                  _title(Translate.translate(TranslateKeys.gender, context)),
+                  SizedBox(height: 8.h),
+                  _buildGenderSegmentedControl(context),
+                  SizedBox(height: 16.h),
+                  _titleWithIcon(
+                    icon: "assets/icons/settings.svg",
+                    title: Translate.translate(TranslateKeys.editCharacterInterestsTraitsTitle, context),
+                  ),
+                  SizedBox(height: 6.h),
+                  Text(
+                    Translate.translate(TranslateKeys.editCharacterInterestsTraitsDesc, context),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w500,
+                      height: 1.25,
+                    ),
+                  ),
+                  SizedBox(height: 10.h),
+                  _darkFieldSecond(
+                    controller: characterController,
+                    hint: Translate.translate(TranslateKeys.editCharacterInterestsTraitsHint, context),
+                    maxLines: 4,
+                  ),
+                  SizedBox(height: 20.h),
+                  _titleWithIcon(
+                    icon: "assets/icons/selectvoice.svg",
+                    title: Translate.translate(TranslateKeys.editCharacterSelectVoice, context),
+                  ),
+                  SizedBox(height: 10.h),
+                  if (_isVoicesLoading)
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 14.h),
+                      child: Center(
+                        child: SizedBox(
+                          width: 28.w,
+                          height: 28.w,
+                          child: const CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         ),
+                      ),
+                    )
+                  else if (_voiceLoadError != null)
+                    _voiceErrorWidget()
+                  else if (_filteredVoices.isEmpty)
+                    _emptyVoiceWidget()
+                  else
+                    ..._buildVoiceCards(),
+                  SizedBox(height: 26.h),
+                  GestureDetector(
+                    onTap: () async {
+                      if (_isTemplateLoading) return;
+                      if (nameController.text.isEmpty || characterController.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(Translate.translate('please_fill_all_fields', context)),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+                      final currentAgent =
+                          ref.read(AllControllers.agentsProfileViewController).agent;
+                      if (currentAgent == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              Translate.translate(TranslateKeys.agentCreateFailed, context),
+                            ),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+      
+                      await ref.read(AllControllers.agentsProfileViewController.notifier).saveEditedAgent(
+                        name: nameController.text,
+                        character: characterController.text,
+                        age: int.tryParse(ageController.text) ?? 18,
+                        gender: selectedGender,
+                        interests: selectedInterests,
+                        voiceId: selectedVoiceId,
+                        selectedPhotoUrl: selectedPhotoUrl,
+                        isCreateFlow: widget.createFlow,
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 58.h,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(30.r),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFC15BFF), Color(0xFF3F3CFF)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          HeroIcon(HeroIcons.sparkles,color: Colors.white,style: HeroIconStyle.solid,),
+                          SizedBox(width: 10.w,),
+                          Center(
+                            child: Text(
+                              Translate.translate(TranslateKeys.save, context),
+                              style: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 20.sp,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
-                SizedBox(height: 20.h),
-                _title(Translate.translate(TranslateKeys.editCharacterNameLabel, context)),
-                SizedBox(height: 8.h),
-                _darkField(
-                  controller: nameController,
-                  hint: Translate.translate(TranslateKeys.editCharacterNameHint, context),
-                ),
-                SizedBox(height: 16.h),
-                _title(Translate.translate(TranslateKeys.gender, context)),
-                SizedBox(height: 8.h),
-                _buildGenderSegmentedControl(context),
-                SizedBox(height: 16.h),
-                _titleWithIcon(
-                  icon: Icons.settings,
-                  title: Translate.translate(TranslateKeys.editCharacterInterestsTraitsTitle, context),
-                ),
-                SizedBox(height: 6.h),
-                Text(
-                  Translate.translate(TranslateKeys.editCharacterInterestsTraitsDesc, context),
-                  style: GoogleFonts.quicksand(
-                    color: Colors.white.withValues(alpha: 0.78),
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w500,
-                    height: 1.25,
+                ],
+              ),
+            ),
+      
+            if (_isTemplateLoading)
+              Container(
+                width: MediaQuery.sizeOf(context).width,
+                height: MediaQuery.sizeOf(context).height,
+                color: Colors.black.withValues(alpha: 0.35),
+                child: Center(
+                  child: SizedBox(
+                    width: 32.w,
+                    height: 32.w,
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-                SizedBox(height: 10.h),
-                _darkField(
-                  controller: characterController,
-                  hint: Translate.translate(TranslateKeys.editCharacterInterestsTraitsHint, context),
-                  maxLines: 4,
-                ),
-                SizedBox(height: 20.h),
-                _titleWithIcon(
-                  icon: Icons.graphic_eq_rounded,
-                  title: Translate.translate(TranslateKeys.editCharacterSelectVoice, context),
-                ),
-                SizedBox(height: 10.h),
-                if (_isVoicesLoading)
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14.h),
+              ),
+      
+            if (isLoading)
+              Container(
+                width: MediaQuery.sizeOf(context).width,
+                height: MediaQuery.sizeOf(context).height,
+                color: Colors.black.withValues(alpha: 0.5),
+                child: Center(
+                  child: Container(
+                    width: 60.w,
+                    height: 60.h,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
                     child: Center(
                       child: SizedBox(
-                        width: 28.w,
-                        height: 28.w,
-                        child: const CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+                        width: 32.w,
+                        height: 32.h,
+                        child: CircularProgressIndicator.adaptive(
+                          backgroundColor: Colors.black,
                         ),
-                      ),
-                    ),
-                  )
-                else if (_voiceLoadError != null)
-                  _voiceErrorWidget()
-                else if (_filteredVoices.isEmpty)
-                  _emptyVoiceWidget()
-                else
-                  ..._buildVoiceCards(),
-                SizedBox(height: 26.h),
-                GestureDetector(
-                  onTap: () async {
-                    if (nameController.text.isEmpty || characterController.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(Translate.translate('please_fill_all_fields', context)),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                      return;
-                    }
-
-                    await ref.read(AllControllers.agentsProfileViewController.notifier).saveEditedAgent(
-                      name: nameController.text,
-                      character: characterController.text,
-                      age: int.tryParse(ageController.text) ?? 18,
-                      gender: selectedGender,
-                      interests: selectedInterests,
-                      voiceId: selectedVoiceId,
-                    );
-                  },
-                  child: Container(
-                    width: double.infinity,
-                    height: 58.h,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30.r),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFC15BFF), Color(0xFF3F3CFF)],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        isOwnAgent
-                            ? Translate.translate(TranslateKeys.editCharacterSaveChanges, context)
-                            : Translate.translate(TranslateKeys.createFriend, context),
-                        style: GoogleFonts.quicksand(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 24.sp,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          if (isLoading)
-            Container(
-              width: MediaQuery.sizeOf(context).width,
-              height: MediaQuery.sizeOf(context).height,
-              color: Colors.black.withValues(alpha: 0.5),
-              child: Center(
-                child: Container(
-                  width: 60.w,
-                  height: 60.h,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(10.r),
-                  ),
-                  child: Center(
-                    child: SizedBox(
-                      width: 32.w,
-                      height: 32.h,
-                      child: CircularProgressIndicator.adaptive(
-                        backgroundColor: Colors.black,
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -339,15 +462,15 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
       style: GoogleFonts.quicksand(
         color: Colors.white,
         fontWeight: FontWeight.w600,
-        fontSize: 17.sp,
+        fontSize: 12.sp,
       ),
     );
   }
 
-  Widget _titleWithIcon({required IconData icon, required String title}) {
+  Widget _titleWithIcon({required String icon, required String title}) {
     return Row(
       children: [
-        Icon(icon, color: Colors.white, size: 20.sp),
+        SvgPicture.asset(icon, width: 20.w, height: 20.h, colorFilter: ColorFilter.mode(Colors.white, BlendMode.srcIn),),
         SizedBox(width: 8.w),
         _title(title),
       ],
@@ -357,10 +480,21 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
   BoxDecoration _sectionDecoration() {
     return BoxDecoration(
       color: Colors.white.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(12.r),
+      borderRadius: BorderRadius.circular(8.r),
       border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
     );
   }
+
+
+  BoxDecoration _sectionDecoration2() {
+    return BoxDecoration(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16.r),
+      border: Border.all(color: Colors.white),
+    );
+  }
+
+
 
   Widget _darkField({
     required TextEditingController controller,
@@ -368,21 +502,23 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
     int maxLines = 1,
   }) {
     return Container(
+      height: 40.h,
       decoration: _sectionDecoration(),
       child: TextField(
         controller: controller,
+      
         maxLines: maxLines,
         style: GoogleFonts.quicksand(
           color: Colors.white,
           fontWeight: FontWeight.w600,
-          fontSize: 18.sp,
+          fontSize: 14.sp,
         ),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: GoogleFonts.quicksand(
             color: Colors.white.withValues(alpha: 0.48),
             fontWeight: FontWeight.w500,
-            fontSize: 18.sp,
+            fontSize: 14.sp,
           ),
           border: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
@@ -390,6 +526,43 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
       ),
     );
   }
+
+
+
+  Widget _darkFieldSecond({
+    required TextEditingController controller,
+    required String hint,
+    int maxLines = 1,
+  }) {
+    return Container(
+      height: 84.h,
+      decoration: _sectionDecoration2(),
+      child: TextField(
+        controller: controller,
+      
+        maxLines: maxLines,
+        style: GoogleFonts.quicksand(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+          fontSize: 14.sp,
+        ),
+        decoration: InputDecoration(
+          fillColor: Colors.transparent,
+          filled: false,
+          hintText: hint,
+          hintStyle: GoogleFonts.quicksand(
+            color: Colors.white.withValues(alpha: 0.48),
+            fontWeight: FontWeight.w500,
+            fontSize: 14.sp,
+          ),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+        ),
+      ),
+    );
+  }
+
+
 
   Widget _buildGenderSegmentedControl(BuildContext context) {
     const unselectedTint = Color(0xFFB8B8C0);
@@ -406,10 +579,17 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
           color: Colors.transparent,
           child: InkWell(
             onTap: () {
+              final previousGender = selectedGender;
               setState(() {
                 selectedGender = value ?? 'private';
                 _applyVoicesForGender();
               });
+              if (widget.createFlow && previousGender != selectedGender) {
+                _loadRandomSystemTwoAgentTemplate(
+                  syncFormFields: false,
+                  genderFilter: selectedGender,
+                );
+              }
             },
             borderRadius: BorderRadius.circular(12.r),
             splashColor: Colors.white.withValues(alpha: 0.08),
@@ -417,10 +597,11 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
-              padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 4.w),
+              padding: EdgeInsets.symmetric( horizontal: 4.w),
+              height: 34.h,
               decoration: BoxDecoration(
                 color: selected ? MyColors.purple : Colors.transparent,
-                borderRadius: BorderRadius.circular(12.r),
+                borderRadius: BorderRadius.circular(4.r),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -452,7 +633,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
       padding: EdgeInsets.all(8.w),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16.r),
+        borderRadius: BorderRadius.circular(8.r),
       ),
       child: Row(
         children: [
@@ -515,7 +696,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
         await _playVoicePreview(voiceId: voiceId, mp3Url: mp3Url);
       },
       child: Container(
-        height: 82.h,
+        height: 63.h,
         padding: EdgeInsets.symmetric(horizontal: 15.w),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14.r),
@@ -545,7 +726,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                     style: GoogleFonts.quicksand(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
-                      fontSize: 24.sp,
+                      fontSize: 16.sp,
                     ),
                   ),
                   SizedBox(height: 2.h),
@@ -554,7 +735,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                     style: GoogleFonts.quicksand(
                       color: Colors.white.withValues(alpha: 0.75),
                       fontWeight: FontWeight.w600,
-                      fontSize: 16.sp,
+                      fontSize: 12.sp,
                     ),
                   ),
                 ],
@@ -583,6 +764,104 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
     }
     if (gender == 'male' || gender == 'erkek' || gender == 'man') return 'male';
     return 'private';
+  }
+
+  List<String> _parseInterests(dynamic rawInterests) {
+    if (rawInterests == null) return [];
+    if (rawInterests is List) {
+      return rawInterests.map((e) => e.toString()).toList();
+    }
+    if (rawInterests is String && rawInterests.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawInterests);
+        if (decoded is List) {
+          return decoded.map((e) => e.toString()).toList();
+        }
+      } catch (_) {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  Future<void> _loadRandomSystemTwoAgentTemplate({
+    String? genderFilter,
+    bool syncFormFields = true,
+  }) async {
+    if (!mounted) return;
+    setState(() => _isTemplateLoading = true);
+    try {
+      final user = ref.read(AllControllers.userController);
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseURL}${AppConstants.systemAgents}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': user?.token ?? '',
+          'x-refresh-token': user?.refreshToken ?? '',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('System agents request failed: ${response.statusCode}');
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) {
+        throw Exception('System agents response is not a list');
+      }
+
+      final allAgents = decoded
+          .whereType<Map>()
+          .map((element) => AgentModel.fromMap(Map<String, dynamic>.from(element)))
+          .toList();
+
+      var systemTwoAgents =
+          allAgents.where((agent) => agent.system == 2).toList();
+      if (genderFilter != null && genderFilter.isNotEmpty) {
+        final normalized = _normalizeGender(genderFilter);
+        if (normalized != 'private') {
+          final filteredByGender = systemTwoAgents
+              .where((agent) =>
+                  _normalizeGender(agent.gender) == normalized)
+              .toList();
+          if (filteredByGender.isNotEmpty) {
+            systemTwoAgents = filteredByGender;
+          }
+        }
+      }
+      if (systemTwoAgents.isEmpty) {
+        throw Exception('No system==2 agents found');
+      }
+
+      final randomAgent =
+          systemTwoAgents[Random().nextInt(systemTwoAgents.length)];
+      ref
+          .read(AllControllers.agentsProfileViewController.notifier)
+          .changeAgentModel(randomAgent);
+
+      if (!mounted) return;
+      setState(() {
+        selectedPhotoUrl = randomAgent.photoURL;
+        if (syncFormFields) {
+          ageController.text = randomAgent.age.toString();
+          selectedInterests = _parseInterests(randomAgent.interests);
+        }
+      });
+    } catch (e) {
+      log('❌ [CREATE AGENT] system==2 template load failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Translate.translate(TranslateKeys.agentCreateFailed, context),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() => _isTemplateLoading = false);
+    }
   }
 
   Future<void> _loadVoices() async {

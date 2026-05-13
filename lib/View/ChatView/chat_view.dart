@@ -15,11 +15,15 @@ import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/ViewControllers/chat_screen_view_controller.dart';
 import 'package:friendfy/Widgets/background.dart';
+import 'package:friendfy/Widgets/button.dart';
+import 'package:friendfy/Services/local_service.dart';
+import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 
@@ -50,11 +54,63 @@ class _ChatViewState extends ConsumerState<ChatView> {
   ChatState? _previousChatState;
   Timer? _recordingUiTimer;
   int _recordingUiSeconds = 0;
+  bool _onboardingFunnelActive = false;
+  bool _showOnboardingVideoCta = false;
+  int? _localPhotoAgentId;
+  String? _localAgentPhotoUrl;
 
   @override
   void initState() {
     super.initState();
+    _loadLocalAgentPhoto();
     getMessages().then((_) => startStream());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadOnboardingFunnelState();
+  }
+
+  Future<void> _loadLocalAgentPhoto() async {
+    final agent = ref.read(AllControllers.chatViewController).agent;
+    if (agent == null) return;
+    await _loadLocalAgentPhotoFor(agent.id);
+  }
+
+  Future<void> _loadLocalAgentPhotoFor(int agentId) async {
+    final savedPhotoUrl = await LocalService.getSelectedAgentPhoto(agentId);
+    if (!mounted) return;
+    setState(() {
+      _localPhotoAgentId = agentId;
+      _localAgentPhotoUrl = savedPhotoUrl;
+    });
+  }
+
+  String _agentPhotoUrl(ChatScreenViewModel controller) {
+    final agent = controller.agent;
+    if (agent == null) return "";
+    if (_localPhotoAgentId == agent.id &&
+        _localAgentPhotoUrl != null &&
+        _localAgentPhotoUrl!.trim().isNotEmpty) {
+      return _localAgentPhotoUrl!;
+    }
+    return agent.photoURL;
+  }
+
+  bool _onboardingStateLoaded = false;
+
+  void _loadOnboardingFunnelState() {
+    if (_onboardingStateLoaded) return;
+    _onboardingStateLoaded = true;
+    final routeArgs = ModalRoute.of(context)?.settings.arguments;
+    final isFromRegister = routeArgs is Map && routeArgs["onboardingFunnel"] == true;
+    setState(() {
+      _onboardingFunnelActive = isFromRegister;
+      if (!isFromRegister) {
+        _showOnboardingVideoCta = false;
+      }
+    });
   }
 
   @override
@@ -79,6 +135,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   Future<void> getMessages() async {
     await ref.read(AllControllers.chatViewController.notifier).getMessages();
+    _evaluateOnboardingVideoCta();
     scrollToBottom();
     // İlk yüklemede mesaj sayısını kaydet
     final messages = ref.read(AllControllers.chatViewController).messages;
@@ -90,6 +147,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final previousCount = _previousMessageCount ?? 0;
     final previousChatState = _previousChatState ?? ChatState.normal;
     await ref.read(AllControllers.chatViewController.notifier).listenMessages();
+    _evaluateOnboardingVideoCta();
 
     // Mesaj sayısını kontrol et
     final messages = ref.read(AllControllers.chatViewController).messages;
@@ -113,9 +171,286 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   Future<void> sendMessage() async {
+    if (_onboardingFunnelActive && _showOnboardingVideoCta) {
+      return;
+    }
     await ref.read(AllControllers.chatViewController.notifier).sendMessage();
+    _evaluateOnboardingVideoCta();
     // Kullanıcı mesaj attığında her zaman aşağı scroll yap
     scrollToBottom();
+  }
+
+  void _evaluateOnboardingVideoCta() {
+    if (PremiumService.isPremiumActive(ref.read(AllControllers.userController))) {
+      if (!_onboardingFunnelActive && !_showOnboardingVideoCta) return;
+      setState(() {
+        _onboardingFunnelActive = false;
+        _showOnboardingVideoCta = false;
+      });
+      return;
+    }
+    if (!_onboardingFunnelActive) return;
+    final messages = ref.read(AllControllers.chatViewController).messages ?? [];
+    final userMessageCount = messages.where((m) => m.sender == "user").length;
+    final shouldShow = userMessageCount >= 4;
+    if (!mounted || shouldShow == _showOnboardingVideoCta) return;
+    setState(() => _showOnboardingVideoCta = shouldShow);
+  }
+
+  Future<void> _showOnboardingGateSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF181818),
+            borderRadius: BorderRadius.circular(20.r),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(height: 20.h),
+              Center(
+                child: Container(
+                  width: 33.w,
+                  height: 5.h,
+                  decoration: BoxDecoration(
+                    color: Color(0xff313131),
+                    borderRadius: BorderRadius.circular(40).r,
+                  ),
+                ),
+              ),
+              SizedBox(height: 20.h),
+              Container(
+                width: double.infinity,
+                height: 53.h,
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                ),
+                child: Row(
+                  children: [
+                    Text("🔒"),
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: Translate.translate(
+                                "video_gate_limit_prefix",
+                                context,
+                              ),
+                            ),
+                            TextSpan(
+                              text: Translate.translate(
+                                "video_gate_limit_free_messages",
+                                context,
+                              ),
+                              style: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            TextSpan(
+                              text: Translate.translate(
+                                "video_gate_limit_suffix",
+                                context,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 20.h),
+              Container(
+                height: 26.h,
+                width: 148.w,
+                margin: EdgeInsets.only(left: 15.r),
+                decoration: BoxDecoration(
+                  color: Color(0xffFF2B00).withValues(alpha: 0.2),
+                  border: Border.all(color: Color(0xff9D3838)),
+                  borderRadius: BorderRadius.circular(40).r,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    ClipOval(
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        color: Color(0xffF44336),
+                      ),
+                    ),
+                    SizedBox(width: 5.w),
+                    Text(
+                      Translate.translate("video_gate_live_now", context),
+                      style: GoogleFonts.quicksand(
+                        color: Color(0xffF68178),
+                        fontSize: 14.sp,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 20.h),
+              Padding(
+                padding: EdgeInsets.only(left: 15.r),
+                child: Text(
+                  Translate.translate("video_gate_waiting_on_call", context),
+                  style: GoogleFonts.quicksand(
+                    color: Colors.white,
+                    fontSize: 20.sp,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              SizedBox(height: 10.h),
+              Padding(
+                padding: EdgeInsets.only(left: 15.r),
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: Container(width: 7, height: 7, color: Color(0xffAB10E2)),
+                    ),
+                    SizedBox(width: 5.w),
+                    Text(
+                      Translate.translate("video_gate_benefit_no_limits_title", context),
+                      style: GoogleFonts.quicksand(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      Translate.translate("video_gate_benefit_no_limits_suffix", context),
+                      style: GoogleFonts.quicksand(color: Color(0xff777777), fontSize: 14.sp, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.only(left: 15.r),
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: Container(width: 7, height: 7, color: Color(0xffAB10E2)),
+                    ),
+                    SizedBox(width: 5.w),
+                    Text(
+                      Translate.translate("video_gate_benefit_video_calls_title", context),
+                      style: GoogleFonts.quicksand(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      Translate.translate("video_gate_benefit_video_calls_suffix", context),
+                      style: GoogleFonts.quicksand(color: Color(0xff777777), fontSize: 14.sp, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.only(left: 15.r),
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: Container(width: 7, height: 7, color: Color(0xffAB10E2)),
+                    ),
+                    SizedBox(width: 5.w),
+                    Text(
+                      Translate.translate("video_gate_benefit_deeper_title", context),
+                      style: GoogleFonts.quicksand(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      Translate.translate("video_gate_benefit_deeper_suffix", context),
+                      style: GoogleFonts.quicksand(color: Color(0xff777777), fontSize: 14.sp, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 24.h),
+              MyGradientButton(
+                margin: EdgeInsets.only(left: 15.r, right: 15.r),
+                onTap: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  final localService = LocalService(prefs: prefs);
+                  final forceLogoutToLogin = true;
+                  await localService.setPostAuthAction("go_premium");
+                  await localService.setOnboardingVideoGatePending(false);
+                  await localService.setOnboardingFunnelActive(false);
+                  if (!mounted) return;
+                  Navigator.of(context).pushNamedAndRemoveUntil(
+                    '/freeTrialActivated',
+                    (route) => false,
+                    arguments: {
+                      "forceLogoutToLogin": forceLogoutToLogin,
+                    },
+                  );
+                },
+                radius: BorderRadius.circular(30.r),
+                size: Size(double.infinity, 50.h),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      HeroIcon(HeroIcons.sparkles, size: 16.w, color: Colors.white, style: HeroIconStyle.solid),
+                      SizedBox(width: 8.w),
+                      Text(
+                        Translate.translate("video_gate_answer_call_premium", context),
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14.sp,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 10.h),
+              Center(
+                child: TextButton(
+                  onPressed: () async {
+                    final prefs = await SharedPreferences.getInstance();
+                    final localService = LocalService(prefs: prefs);
+                    final forceLogoutToLogin = true;
+                    await localService.setPostAuthAction("continue_normal");
+                    await localService.setOnboardingVideoGatePending(false);
+                    await localService.setOnboardingFunnelActive(false);
+                    if (!mounted) return;
+                    Navigator.of(context).pushNamedAndRemoveUntil(
+                      '/freeTrialActivated',
+                      (route) => false,
+                      arguments: {
+                        "forceLogoutToLogin": forceLogoutToLogin,
+                      },
+                    );
+                  },
+                  child: Text(
+                    Translate.translate("video_gate_not_now", context),
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white70,
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: 20.h),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void scrollToBottom() {
@@ -209,7 +544,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       isScrollControlled: true,
       builder: (BuildContext dialogContext) {
         Widget attachmentItem({
-          required IconData icon,
+          required String icon,
           required String label,
           required Color bgColor,
           required VoidCallback onTap,
@@ -222,10 +557,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   width: 50.w,
                   height: 50.h,
                   decoration: BoxDecoration(
-                    color: bgColor,
+                    color: bgColor.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: Colors.white, size: 21.sp),
+                    child: Center(child: SvgPicture.asset(icon,width: 24.w,height: 24.h,)),
+                
                 ),
                 SizedBox(height: 7.h),
                 Text(
@@ -242,12 +578,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
         }
 
         return Container(
-          margin: EdgeInsets.only(bottom: MediaQuery.of(dialogContext).viewInsets.bottom),
+          margin: EdgeInsets.only(
+            bottom: MediaQuery.of(dialogContext).viewInsets.bottom,
+          ),
           padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 14.h),
           decoration: BoxDecoration(
             color: const Color(0xFF050505),
             borderRadius: BorderRadius.vertical(top: Radius.circular(16.r)),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.18), width: 1),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.18),
+              width: 1,
+            ),
           ),
           child: SafeArea(
             top: false,
@@ -258,7 +599,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 Row(
                   children: [
                     Text(
-                      'Attachment',
+                      Translate.translate("chat_attachment_title", context),
                       style: GoogleFonts.quicksand(
                         color: Colors.white,
                         fontSize: 16.sp,
@@ -268,7 +609,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     const Spacer(),
                     GestureDetector(
                       onTap: () => Navigator.of(dialogContext).pop(),
-                      child: Icon(Icons.close, color: Colors.white, size: 20.sp),
+                      child: Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 20.sp,
+                      ),
                     ),
                   ],
                 ),
@@ -277,46 +622,41 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     attachmentItem(
-                      icon: Icons.image_rounded,
+                      icon: "assets/icons/gallery.svg",
                       label: Translate.translate("gallery", context),
                       bgColor: const Color(0xFF0B3B80),
                       onTap: () async {
                         Navigator.of(dialogContext).pop();
-                        await ref.read(AllControllers.chatViewController.notifier).pickImage();
+                        await ref
+                            .read(AllControllers.chatViewController.notifier)
+                            .pickImage();
                       },
                     ),
                     SizedBox(width: 24.w),
                     attachmentItem(
-                      icon: Icons.photo_camera_rounded,
+                      icon: "assets/icons/camera.svg",
                       label: Translate.translate("camera", context),
                       bgColor: const Color(0xFFC89A0A),
                       onTap: () async {
                         Navigator.of(dialogContext).pop();
-                        await ref.read(AllControllers.chatViewController.notifier).pickImageFromCamera();
+                        await ref
+                            .read(AllControllers.chatViewController.notifier)
+                            .pickImageFromCamera();
                       },
                     ),
                     SizedBox(width: 24.w),
                     attachmentItem(
-                      icon: Icons.list_rounded,
-                      label: 'Survey',
-                      bgColor: const Color(0xFFAE4343),
-                      onTap: () {
-                        Navigator.of(dialogContext).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Survey yakinda eklenecek')),
-                        );
-                      },
-                    ),
-                    SizedBox(width: 24.w),
-                    attachmentItem(
-                      icon: Icons.description_rounded,
-                      label: Translate.translate(TranslateKeys.document, context),
+                      icon: "assets/icons/document.svg",
+                      label: Translate.translate(
+                        "document",
+                        context,
+                      ),
                       bgColor: const Color(0xFF6FA31E),
                       onTap: () {
                         Navigator.of(dialogContext).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Document yakinda eklenecek')),
-                        );
+                        ref
+                            .read(AllControllers.chatViewController.notifier)
+                            .pickAndSendPdf();
                       },
                     ),
                   ],
@@ -333,17 +673,29 @@ class _ChatViewState extends ConsumerState<ChatView> {
   Widget build(BuildContext context) {
     final controller = ref.watch(AllControllers.chatViewController);
     final messages = controller.messages ?? [];
+    final agentId = controller.agent?.id;
+    if (agentId != null && _localPhotoAgentId != agentId) {
+      _loadLocalAgentPhotoFor(agentId);
+    }
+    final agentPhotoUrl = _agentPhotoUrl(controller);
 
-    return BackgroundWidget(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        resizeToAvoidBottomInset: true,
-        appBar: AppBar(
+    return PopScope(
+      canPop: !_onboardingFunnelActive,
+      child: BackgroundWidget(
+        child: Scaffold(
           backgroundColor: Colors.transparent,
-          leading: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: Icon(CupertinoIcons.back, color: Colors.white),
-          ),
+          resizeToAvoidBottomInset: true,
+          appBar: AppBar(
+            scrolledUnderElevation: 0,
+            backgroundColor: Colors.transparent,
+          leading: _onboardingFunnelActive
+              ? const SizedBox.shrink()
+              : IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(CupertinoIcons.back, color: Colors.white),
+                ),
+          leadingWidth: _onboardingFunnelActive ? 0 : null,
+          titleSpacing: _onboardingFunnelActive ? 0 : null,
           centerTitle: true,
           title: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -352,28 +704,29 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 onTap: () {
                   _showFullScreenImage(
                     context,
-                    controller.agent?.photoURL ?? "",
+                    agentPhotoUrl,
                   );
                 },
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(40.r),
                   child: CachedNetworkImage(
-                    imageUrl: controller.agent?.photoURL ?? "",
+                    imageUrl: agentPhotoUrl,
                     width: 40.w,
-                    height: 40.h,
+                    height: 40.w,
+                    alignment: Alignment(0, -1),
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Shimmer.fromColors(
                       baseColor: Colors.grey[300]!,
                       highlightColor: Colors.grey[100]!,
                       child: Container(
                         width: 40.w,
-                        height: 40.h,
+                        height: 40.w,
                         color: Colors.white,
                       ),
                     ),
                     errorWidget: (context, url, error) => Container(
                       width: 40.w,
-                      height: 40.h,
+                      height: 40.w,
                       color: Colors.grey[300],
                       child: Icon(Icons.person, size: 25),
                     ),
@@ -422,29 +775,31 @@ class _ChatViewState extends ConsumerState<ChatView> {
               ),
             ],
           ),
-          actions: [
-            IconButton(
-              onPressed: () async {
-                timer?.cancel();
-                await navigatorKey.currentState?.pushNamed("/voiceCallView");
-                if (!mounted) return;
-                startStream();
-              },
-              icon: SvgPicture.asset(
-                "assets/icons/call.svg",
-                color: Colors.white,
-              ),
-            ),
-            IconButton(
-              onPressed: () async {
-                timer?.cancel();
-                await navigatorKey.currentState?.pushNamed("/videoCallView");
-                if (!mounted) return;
-                startStream();
-              },
-              icon: SvgPicture.asset("assets/icons/vieo_call.svg"),
-            ),
-          ],
+          actions: _onboardingFunnelActive
+              ? []
+              : [
+                  IconButton(
+                    onPressed: () async {
+                      timer?.cancel();
+                      await navigatorKey.currentState?.pushNamed("/voiceCallView");
+                      if (!mounted) return;
+                      startStream();
+                    },
+                    icon: SvgPicture.asset(
+                      "assets/icons/call.svg",
+                      color: Colors.white,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () async {
+                      timer?.cancel();
+                      await navigatorKey.currentState?.pushNamed("/videoCallView");
+                      if (!mounted) return;
+                      startStream();
+                    },
+                    icon: SvgPicture.asset("assets/icons/vieo_call.svg"),
+                  ),
+                ],
         ),
 
         // --- BODY ---
@@ -488,10 +843,49 @@ class _ChatViewState extends ConsumerState<ChatView> {
               ),
 
               // Yazı alanı
+              if (_onboardingFunnelActive && _showOnboardingVideoCta)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 8.h),
+                  child: MyGradientButton(
+                    onTap: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      final localService = LocalService(prefs: prefs);
+                      await localService.setOnboardingVideoGatePending(true);
+                      timer?.cancel();
+                      final result = await navigatorKey.currentState?.pushNamed(
+                        "/videoCallView",
+                      );
+                      if (!mounted) return;
+                      if (result == "onboarding_gate_expired") {
+                        _showOnboardingGateSheet();
+                        return;
+                      }
+                      startStream();
+                    },
+                    radius: BorderRadius.circular(40.r),
+                    size: Size(double.infinity, 48.h),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                       SvgPicture.asset("assets/icons/videocallmagic.svg"),
+                        SizedBox(width: 8.w),
+                        Text(
+                          Translate.translate("chat_join_video_call", context),
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 18.sp,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               _messageInput(controller.responseWaiting!),
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -507,7 +901,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
               child: GestureDetector(
                 onLongPressStart: null,
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 12.w,
+                    vertical: 8.h,
+                  ),
                   margin: EdgeInsets.only(
                     top: 8.h,
                     bottom: 8.h,
@@ -518,10 +915,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     border: Border.all(color: const Color(0xffAB10E2)),
                     color: const Color(0xffAB10E2).withValues(alpha: 0.5),
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(30).r,
-                      topRight: const Radius.circular(30).r,
-                      bottomLeft: const Radius.circular(30).r,
-                      bottomRight: const Radius.circular(0),
+                      topLeft: const Radius.circular(16).r,
+                      topRight: const Radius.circular(0).r,
+                      bottomLeft: const Radius.circular(16).r,
+                      bottomRight: const Radius.circular(16),
                     ),
                   ),
                   child: _buildTextWithLinks(message.message, Colors.white),
@@ -537,9 +934,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 right: 50.w,
               ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildBotAvatar(),
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: _buildBotAvatar(),
+                  ),
                   SizedBox(width: 10.w),
                   Expanded(
                     child: GestureDetector(
@@ -557,14 +957,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
                             color: Colors.white.withValues(alpha: 0.3),
                           ),
                           color: Colors.black.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(30).r,
-                            topRight: const Radius.circular(30).r,
-                            bottomLeft: const Radius.circular(0),
-                            bottomRight: const Radius.circular(30).r,
+                           borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(0).r,
+                            topRight: const Radius.circular(16).r,
+                            bottomLeft: const Radius.circular(16).r,
+                            bottomRight: const Radius.circular(16).r,
                           ),
                         ),
-                        child: _buildTextWithLinks(message.message, Colors.white),
+                        child: _buildTextWithLinks(
+                          message.message,
+                          Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -577,9 +980,84 @@ class _ChatViewState extends ConsumerState<ChatView> {
       return voiceBuble(message);
     } else if (message.messageType == "image") {
       return imageBubble(message);
+    } else if (message.messageType == "pdf") {
+      return _pdfBubble(message);
     } else {
       return voiceBuble(message);
     }
+  }
+
+  Widget _pdfBubble(MessageModel message) {
+    final isUser = message.sender == "user";
+    final content = message.message?.toString() ?? "";
+    final lines = content.split('\n');
+    String fileName = "Document.pdf";
+    String? pdfUrl;
+
+    for (final line in lines) {
+      if (line.startsWith("[PDF] ")) {
+        fileName = line.replaceFirst("[PDF] ", "").trim();
+      } else if (line.startsWith("http")) {
+        pdfUrl = line.trim();
+      }
+    }
+
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4.h),
+      child: Row(
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          if (!isUser) _buildBotAvatar(),
+          if (!isUser) SizedBox(width: 8.w),
+          GestureDetector(
+            onTap: () {
+              if (pdfUrl != null) {
+                launchUrl(Uri.parse(pdfUrl));
+              }
+            },
+            child: Container(
+              constraints: BoxConstraints(maxWidth: 260.w),
+              padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+              decoration: BoxDecoration(
+ 
+                borderRadius: BorderRadius.circular(16.r).copyWith(topRight: Radius.circular(0)),
+                  border: Border.all(color: const Color(0xffAB10E2)),
+                    color: const Color(0xffAB10E2).withValues(alpha: 0.5)
+                ),
+              
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                 SvgPicture.asset(
+                        "assets/icons/file.svg",
+                        width: 20.w,
+                        height: 20.h,
+                        colorFilter: const ColorFilter.mode(
+                          Colors.white,
+                          BlendMode.srcIn,
+                        ),
+                      ),
+                  SizedBox(width: 10.w),
+                  Flexible(
+                    child: Text(
+                      fileName,
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 12.sp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showMessageActionMenu({
@@ -631,9 +1109,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
     if (selectedAction == 'copy') {
       await Clipboard.setData(ClipboardData(text: messageText));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mesaj kopyalandi')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Mesaj kopyalandi')));
       return;
     }
 
@@ -679,9 +1157,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       if (response.statusCode != 200) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ses üretilemedi (${response.statusCode})'),
-          ),
+          SnackBar(content: Text('Ses üretilemedi (${response.statusCode})')),
         );
         return;
       }
@@ -689,9 +1165,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
       final Uint8List audioBytes = response.bodyBytes;
       if (audioBytes.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ses verisi bos dondu')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Ses verisi bos dondu')));
         return;
       }
 
@@ -699,9 +1175,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
       await _ttsPlayer.play(ap.BytesSource(audioBytes));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Seslendirme hatasi: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Seslendirme hatasi: $e')));
     }
   }
 
@@ -725,7 +1201,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
         children: [
           // Resim
           ClipRRect(
-            borderRadius: BorderRadius.circular(12.r),
+            borderRadius: BorderRadius.circular(16.r),
             child: CachedNetworkImage(
               imageUrl: imageUrl,
               width: 200.w,
@@ -738,7 +1214,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   height: 200.h,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12.r),
+                    borderRadius: BorderRadius.circular(16.r),
                   ),
                 ),
               ),
@@ -747,7 +1223,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 height: 200.h,
                 decoration: BoxDecoration(
                   color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(12.r),
+                  borderRadius: BorderRadius.circular(16.r),
                 ),
                 child: Center(
                   child: Icon(
@@ -769,7 +1245,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 color: message.sender == "user"
                     ? MyColors.purple
                     : const Color(0xffF4F4F4),
-                borderRadius: BorderRadius.circular(20.r),
+                borderRadius: BorderRadius.circular(16.r),
               ),
               child: Text(
                 userMessage,
@@ -792,7 +1268,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
               decoration: BoxDecoration(
                 color: const Color(0xffF4F4F4),
-                borderRadius: BorderRadius.circular(20.r),
+                borderRadius: BorderRadius.circular(16.r),
               ),
               child: Text(
                 aiExplanation,
@@ -826,16 +1302,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   Widget _buildBotAvatar() {
     final controller = ref.watch(AllControllers.chatViewController);
+    final imageUrl = _agentPhotoUrl(controller);
     return ClipRRect(
       borderRadius: BorderRadius.circular(40.r),
       child: CachedNetworkImage(
-        imageUrl: controller.agent?.photoURL ?? "",
+        imageUrl: imageUrl,
         width: 44.w,
-        height: 44.h,
+        height: 44.w,
+        alignment: Alignment(0, -1),
         fit: BoxFit.cover,
         errorWidget: (context, url, error) => Container(
           width: 44.w,
-          height: 44.h,
+          height: 44.w,
           color: Colors.grey[300],
           child: Icon(Icons.person, size: 24.sp),
         ),
@@ -850,20 +1328,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
     if (message.sender == "user") {
       return Container(
         padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-        margin: EdgeInsets.only(
-          top: 8.h,
-          bottom: 8.h,
-          right: 12.w,
-          left: 70.w,
-        ),
+        margin: EdgeInsets.only(top: 8.h, bottom: 8.h, right: 12.w, left: 70.w),
         decoration: BoxDecoration(
           color: MyColors.purple.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(24).r,
-            topRight: const Radius.circular(24).r,
-            bottomLeft: const Radius.circular(24).r,
-            bottomRight: const Radius.circular(6).r,
-          ),
+                 borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(16).r,
+                            topRight: const Radius.circular(0).r,
+                            bottomLeft: const Radius.circular(16).r,
+                            bottomRight: const Radius.circular(16).r,
+                          ),
           border: Border.all(color: MyColors.purple.withValues(alpha: 0.9)),
         ),
         child: _buildVoicePlayer(
@@ -889,8 +1362,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(16.r),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.30)),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(0).r,
+                            topRight: const Radius.circular(16).r,
+                            bottomLeft: const Radius.circular(16).r,
+                            bottomRight: const Radius.circular(16).r,
+                          ),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.30),
+                  ),
                 ),
                 child: _buildVoicePlayer(
                   message.id,
@@ -1077,6 +1557,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   Widget _buildTypingIndicator(ChatScreenViewModel controller) {
+    final imageUrl = _agentPhotoUrl(controller);
     return Container(
       margin: EdgeInsets.only(left: 12.w, right: 50.w, top: 8.h, bottom: 8.h),
       child: Row(
@@ -1085,13 +1566,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
           ClipRRect(
             borderRadius: BorderRadius.circular(40.r),
             child: CachedNetworkImage(
-              imageUrl: controller.agent?.photoURL ?? "",
+              imageUrl: imageUrl,
               width: 44.w,
-              height: 44.h,
+              height: 44.w,
+              alignment: Alignment(0, -1),
               fit: BoxFit.cover,
               errorWidget: (context, url, error) => Container(
                 width: 44.w,
-                height: 44.h,
+                height: 44.w,
                 color: Colors.grey[300],
                 child: Icon(Icons.person, size: 24.sp),
               ),
@@ -1157,15 +1639,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final chatControllerNotifier = ref.read(
       AllControllers.chatViewController.notifier,
     );
+    final onboardingLocked = _onboardingFunnelActive && _showOnboardingVideoCta;
     _syncRecordingUiState(chatController.recordState);
 
-    // Kayıt yapılıyor
-    if (chatController.recordState == RecordState.recording) {
+    // Kayıt yapılıyor veya duraklatılmış
+    if (chatController.recordState == RecordState.recording ||
+        chatController.recordState == RecordState.paused) {
+      final isPaused = chatController.recordState == RecordState.paused;
       return Container(
         width: MediaQuery.sizeOf(context).width,
         padding: EdgeInsets.symmetric(horizontal: 10.w),
         margin: EdgeInsets.symmetric(horizontal: 15.w),
-        height: 38.h,
+        height: 48.h,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24.r),
           gradient: LinearGradient(
@@ -1177,21 +1662,25 @@ class _ChatViewState extends ConsumerState<ChatView> {
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
           ),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.25),
+            width: 1,
+          ),
         ),
         child: Row(
           children: [
-            Container(
-              width: 18.w,
-              height: 18.h,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
-              ),
-              child: Icon(
-                Icons.play_arrow_rounded,
-                color: Colors.white,
-                size: 12.sp,
+            GestureDetector(
+              onTap: () {
+                if (isPaused) {
+                  chatControllerNotifier.resumeRecording();
+                } else {
+                  chatControllerNotifier.pauseRecording();
+                }
+              },
+              child: SvgPicture.asset(
+                isPaused ? "assets/icons/play.svg" : "assets/icons/stop.svg",
+                width: 18,
+                height: 18,
               ),
             ),
             SizedBox(width: 5.w),
@@ -1209,7 +1698,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 margin: EdgeInsets.zero,
                 padding: EdgeInsets.zero,
                 waveStyle: WaveStyle(
-                  waveColor: Colors.white,
+                  waveColor: isPaused ? Colors.white38 : Colors.white,
                   spacing: 2.6,
                   waveThickness: 2.2,
                   showTop: true,
@@ -1222,14 +1711,25 @@ class _ChatViewState extends ConsumerState<ChatView> {
               ),
             ),
             SizedBox(width: 6.w),
-            GestureDetector(
-              onTap: () => chatControllerNotifier.stopRecordingAndSend(),
-              child: Icon(
-                Icons.send_rounded,
-                size: 16.sp,
-                color: Colors.white,
+            if (isPaused)
+              GestureDetector(
+                onTap: () => chatControllerNotifier.cancelRecording(),
+                child: SvgPicture.asset(
+                  "assets/icons/trash3.svg",
+                  width: 18,
+                  height: 18,
+                ),
+              )
+            else
+              GestureDetector(
+                onTap: () => chatControllerNotifier.stopRecordingAndSend(),
+                child: HeroIcon(
+                  HeroIcons.paperAirplane,
+                  style: HeroIconStyle.solid,
+                  size: 20.sp,
+                  color: Colors.white,
+                ),
               ),
-            ),
           ],
         ),
       );
@@ -1352,7 +1852,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         borderRadius: BorderRadius.circular(50).r,
                       ),
                       child: Center(
-                        child: Icon(Icons.close, color: Colors.red, size: 15.sp),
+                        child: Icon(
+                          Icons.close,
+                          color: Colors.red,
+                          size: 15.sp,
+                        ),
                       ),
                     ),
                   ),
@@ -1365,6 +1869,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
           MyTextField(
             controller: controllerStream,
+            enabled: !onboardingLocked,
             focusNode: _textFieldFocusNode,
             filled: true,
             fillColor: Colors.black.withValues(alpha: 0.4),
@@ -1374,13 +1879,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
               ),
               borderRadius: BorderRadius.circular(40),
             ),
-            hintText: Translate.translate(TranslateKeys.enterMessage, context),
+            hintText: "${Translate.translate(TranslateKeys.enterMessage, context)}...",
             hintStyle: GoogleFonts.quicksand(color: Colors.white),
             prefixIcon: GestureDetector(
-              onTap: () {
-                FocusScope.of(context).unfocus();
-                _showGalleryPopup(context);
-              },
+              onTap: onboardingLocked
+                  ? null
+                  : () {
+                      FocusScope.of(context).unfocus();
+                      _showGalleryPopup(context);
+                    },
               child: HeroIcon(
                 HeroIcons.plus,
                 style: HeroIconStyle.solid,
@@ -1393,13 +1900,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
               fontWeight: FontWeight.w600,
               fontSize: 13.sp,
             ),
-            suffixIcon: AnimatedSwitcher(
-              duration: Duration(milliseconds: 50),
+            suffixIcon: onboardingLocked
+                ? Icon(
+                    Icons.lock_outline_rounded,
+                    color: Colors.white70,
+                    size: 22.sp,
+                  )
+                : AnimatedSwitcher(
+                    duration: Duration(milliseconds: 50),
 
-              transitionBuilder: (child, animation) =>
-                  ScaleTransition(scale: animation, child: child),
-              child: suffixIcon(isLoading),
-            ),
+                    transitionBuilder: (child, animation) =>
+                        ScaleTransition(scale: animation, child: child),
+                    child: suffixIcon(isLoading),
+                  ),
           ),
         ],
       ),
@@ -1409,13 +1922,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _syncRecordingUiState(RecordState state) {
     if (state == RecordState.recording) {
       if (_recordingUiTimer != null) return;
-      _recordingUiSeconds = 0;
       _recordingUiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         setState(() {
           _recordingUiSeconds++;
         });
       });
+      return;
+    }
+    if (state == RecordState.paused) {
+      _recordingUiTimer?.cancel();
+      _recordingUiTimer = null;
       return;
     }
     _recordingUiTimer?.cancel();
@@ -2126,7 +2643,10 @@ class _ControlledWavedAudioPlayerState
 
   double get _progress {
     if (_duration.inMilliseconds <= 0) return 0;
-    return (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0);
+    return (_position.inMilliseconds / _duration.inMilliseconds).clamp(
+      0.0,
+      1.0,
+    );
   }
 
   Widget _buildWaveBars() {
@@ -2134,16 +2654,42 @@ class _ControlledWavedAudioPlayerState
       builder: (context, constraints) {
         // Daha doğal bir waveform görünümü için simetrik desen.
         const pattern = <double>[
-          0.24, 0.34, 0.46, 0.60, 0.78, 0.52, 0.86, 0.66, 0.92, 0.58,
-          0.98, 0.70, 1.00, 0.72, 0.96, 0.62, 0.90, 0.56, 0.82, 0.48,
-          0.70, 0.42, 0.58, 0.36, 0.46, 0.30,
+          0.24,
+          0.34,
+          0.46,
+          0.60,
+          0.78,
+          0.52,
+          0.86,
+          0.66,
+          0.92,
+          0.58,
+          0.98,
+          0.70,
+          1.00,
+          0.72,
+          0.96,
+          0.62,
+          0.90,
+          0.56,
+          0.82,
+          0.48,
+          0.70,
+          0.42,
+          0.58,
+          0.36,
+          0.46,
+          0.30,
         ];
         final barCount = pattern.length;
         const barWidth = 2.0;
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: List.generate(barCount, (index) {
-            final barHeight = (4.8.h + (pattern[index] * 10.8.h)).clamp(5.h, 15.h);
+            final barHeight = (4.8.h + (pattern[index] * 10.8.h)).clamp(
+              5.h,
+              15.h,
+            );
             final isPlayed = _progress >= ((index + 1) / barCount);
             const playedColor = Color(0xFFAB10E2);
             const unplayedColor = Color(0xFFD9D9D9);

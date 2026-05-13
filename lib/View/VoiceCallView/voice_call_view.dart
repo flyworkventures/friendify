@@ -15,6 +15,7 @@ import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:proximity_sensor/proximity_sensor.dart';
 import 'package:record/record.dart';
 
 class VoiceCallView extends ConsumerStatefulWidget {
@@ -24,7 +25,8 @@ class VoiceCallView extends ConsumerStatefulWidget {
   ConsumerState<VoiceCallView> createState() => _VoiceCallViewState();
 }
 
-class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
+class _VoiceCallViewState extends ConsumerState<VoiceCallView>
+    with TickerProviderStateMixin {
   static const int _sampleRate = 16000;
   static const int _channels = 1;
   static const int _frameMs = 20;
@@ -42,6 +44,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
   static const bool _debugLogs = true;
 
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioPlayer _ringbackPlayer = AudioPlayer();
   final AudioRecorder _recorder = AudioRecorder();
   final List<int> _pcmBuffer = [];
   final Map<String, List<int>> _ttsBuffers = {};
@@ -49,7 +52,12 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
   WebSocket? _socket;
   StreamSubscription? _wsSub;
   StreamSubscription<Uint8List>? _recordSub;
+  StreamSubscription<int>? _proximitySub;
   Timer? _reconnectTimer;
+  Timer? _ringbackTimer;
+  bool _ringbackActive = false;
+  bool _proximityScreenOffEnabled = false;
+  bool _isProximityNear = false;
 
   bool _connected = false;
   bool _sessionReady = false;
@@ -62,6 +70,34 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
   String _status = "";
   String _userText = "";
   String _aiText = "";
+
+  late AnimationController _pulseCtrl;
+
+  Color _stateColor() {
+    switch (_turnState) {
+      case "listening":
+        return const Color(0xFF5ED085);
+      case "thinking":
+        return const Color(0xFFF5A623);
+      case "speaking":
+        return const Color(0xFF4A7BFF);
+      default:
+        return const Color(0xFFAB10E2);
+    }
+  }
+
+  String _stateText() {
+    switch (_turnState) {
+      case "listening":
+        return "Seni dinliyorum";
+      case "thinking":
+        return "Düşünüyorum...";
+      case "speaking":
+        return "Konuşuyorum";
+      default:
+        return "";
+    }
+  }
 
   final String _sessionId = "sess-${DateTime.now().millisecondsSinceEpoch}";
   String? _currentUtteranceId;
@@ -120,6 +156,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
         ? Image.network(
             agent!.photoURL,
             fit: BoxFit.cover,
+            alignment: Alignment(0, -1),
             errorBuilder: (_, __, ___) => Container(
               color: Colors.black26,
               child: const Icon(Icons.person, color: Colors.white70, size: 70),
@@ -163,16 +200,28 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
   Future<void> _toggleSpeaker() async {
     try {
       _isSpeakerOn = !_isSpeakerOn;
+      final route = _isSpeakerOn
+          ? AudioContextConfigRoute.speaker
+          : AudioContextConfigRoute.earpiece;
       await _audioPlayer.setAudioContext(
         AudioContextConfig(
-          route: _isSpeakerOn
-              ? AudioContextConfigRoute.speaker
-              : AudioContextConfigRoute.earpiece,
+          route: route,
           focus: AudioContextConfigFocus.gain,
           respectSilence: false,
           stayAwake: false,
         ).build(),
       );
+      try {
+        await _ringbackPlayer.setAudioContext(
+          AudioContextConfig(
+            route: route,
+            focus: AudioContextConfigFocus.gain,
+            respectSilence: false,
+            stayAwake: false,
+          ).build(),
+        );
+      } catch (_) {}
+      _applyProximityScreenOff();
       if (!mounted) return;
       setState(() {});
       _log("Speaker toggled -> ${_isSpeakerOn ? "on" : "off"}");
@@ -181,9 +230,80 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
     }
   }
 
+  Future<void> _startRingback() async {
+    try {
+      await _ringbackPlayer.setReleaseMode(ReleaseMode.loop);
+      await _ringbackPlayer.setAudioContext(
+        AudioContextConfig(
+          route: _isSpeakerOn
+              ? AudioContextConfigRoute.speaker
+              : AudioContextConfigRoute.earpiece,
+          focus: AudioContextConfigFocus.gain,
+          respectSilence: false,
+          stayAwake: true,
+        ).build(),
+      );
+      await _ringbackPlayer.play(AssetSource("sounds/ringback.wav"));
+      _ringbackActive = true;
+      _log("Ringback started");
+    } catch (e, st) {
+      _log("Ringback start error: $e\n$st");
+    }
+  }
+
+  Future<void> _stopRingback() async {
+    if (!_ringbackActive) return;
+    _ringbackActive = false;
+    try {
+      await _ringbackPlayer.stop();
+    } catch (e) {
+      _log("Ringback stop error: $e");
+    }
+  }
+
+  Future<void> _initProximitySensor() async {
+    try {
+      _proximitySub = ProximitySensor.events.listen((int event) {
+        final near = event > 0;
+        if (_isProximityNear == near) return;
+        _isProximityNear = near;
+        _log("Proximity changed -> ${near ? "near" : "far"}");
+      });
+      _applyProximityScreenOff();
+    } catch (e, st) {
+      _log("Proximity sensor init error: $e\n$st");
+    }
+  }
+
+  void _applyProximityScreenOff() {
+    final shouldEnable = !_isSpeakerOn;
+    if (shouldEnable == _proximityScreenOffEnabled) return;
+    _proximityScreenOffEnabled = shouldEnable;
+    unawaited(
+      Future(
+        () => ProximitySensor.setProximityScreenOff(shouldEnable),
+      ).catchError((Object _) {}),
+    );
+    _log("Proximity screen-off -> $shouldEnable");
+  }
+
+  Future<void> _playRingbackThenConnect() async {
+    await _startRingback();
+    _ringbackTimer?.cancel();
+    _ringbackTimer = Timer(const Duration(seconds: 3), () async {
+      await _stopRingback();
+      if (!mounted) return;
+      await _connectVoiceWs();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
     _log("VoiceCallView init");
     _audioPlayer.onPlayerComplete.listen((_) {
       _isAiSpeaking = false;
@@ -193,7 +313,8 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
       _log("Audio player complete -> AI speaking false");
     });
     _configureAudioPlayerSession();
-    _connectVoiceWs();
+    _initProximitySensor();
+    _playRingbackThenConnect();
   }
 
   @override
@@ -388,6 +509,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
           _startSession();
           break;
         case "session.ready":
+          _stopRingback();
           setState(() {
             _sessionReady = true;
             _turnState = "listening";
@@ -701,12 +823,25 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
 
   @override
   void dispose() {
+    _pulseCtrl.dispose();
     _log("VoiceCallView dispose");
     _manualClose = true;
     _reconnectTimer?.cancel();
+    _ringbackTimer?.cancel();
+    _ringbackActive = false;
+    _proximitySub?.cancel();
+    if (_proximityScreenOffEnabled) {
+      _proximityScreenOffEnabled = false;
+      unawaited(
+        Future(
+          () => ProximitySensor.setProximityScreenOff(false),
+        ).catchError((Object _) {}),
+      );
+    }
     _recordSub?.cancel();
     _recorder.dispose();
     _audioPlayer.dispose();
+    _ringbackPlayer.dispose();
     _wsSub?.cancel();
     _socket?.close();
     super.dispose();
@@ -746,27 +881,59 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Container(
-                      width: 220.w,
-                      height: 220.w,
-
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xffAB10E2),
-                          width: 3.w,
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x55000000),
-                            blurRadius: 14,
-                            offset: Offset(0, 6),
+                    AnimatedBuilder(
+                      animation: _pulseCtrl,
+                      builder: (context, _) {
+                        final double t = Curves.easeInOut.transform(
+                          _pulseCtrl.value,
+                        );
+                        final Color color = _stateColor();
+                        return SizedBox(
+                          width: 280.w,
+                          height: 280.w,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Container(
+                                width: 280.w,
+                                height: 280.w,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: color.withOpacity(0.08 + 0.10 * t),
+                                ),
+                              ),
+                              Container(
+                                width: 250.w,
+                                height: 250.w,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: color.withOpacity(0.16 + 0.12 * t),
+                                ),
+                              ),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 280),
+                                curve: Curves.easeOut,
+                                width: 200.w,
+                                height: 200.w,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: color, width: 4),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: color.withOpacity(0.35),
+                                      blurRadius: 24 + 8 * t,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: ClipOval(
+                                  child: _buildPhotoFallback(agent),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: _buildPhotoFallback(agent),
-                      ),
+                        );
+                      },
                     ),
                     SizedBox(height: 20.h),
                     Text(
@@ -777,11 +944,28 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
                         fontSize: 24.sp,
                       ),
                     ),
+                    if (_turnState != "idle") ...[
+                      SizedBox(height: 12.h),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Text(
+                          _stateText(),
+                          key: ValueKey(_turnState),
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white.withOpacity(0.85),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16.sp,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
 
-              Align(
+             Padding(padding: EdgeInsets.only(bottom: 40.h),
+
+              child:  Align(
                 alignment: Alignment.bottomCenter,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -793,13 +977,13 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
                         height: 55.h,
                         decoration: BoxDecoration(
                           color: _isMicStreaming
-                              ? Colors.white.withValues(alpha: 0.8)
+                              ? Colors.white.withValues(alpha: 0.5)
                               : Colors.white.withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(30),
                         ),
                         child: Center(
                           child: SvgPicture.asset(
-                            "assets/icons/mic.svg",
+                          _isMicStreaming ? "assets/icons/mic.svg" : "assets/icons/mic-slash.svg",
                             width: 34.w,
                           ),
                         ),
@@ -812,7 +996,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
                         width: 82.w,
                         height: 55.h,
                         decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.7),
+                          color: Colors.red.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(30),
                         ),
                         child: Center(
@@ -832,60 +1016,107 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView> {
                         height: 55.h,
                         decoration: BoxDecoration(
                           color: _isSpeakerOn
-                              ? Colors.white.withValues(alpha: 0.8)
+                              ? Colors.white.withValues(alpha: 0.5)
                               : Colors.white.withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(30),
                         ),
                         child: Center(
-                          child: SvgPicture.asset("assets/icons/hoporlor.svg"),
+                          child: SvgPicture.asset(_isSpeakerOn ? "assets/icons/hoporlor.svg" : "assets/icons/volume-slash.svg"),
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
+             ),
               if (showCallingScreen)
                 Positioned.fill(
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.72),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ClipOval(
-                          child: SizedBox(
-                            width: 110.w,
-                            height: 110.h,
-                            child: _buildPhotoFallback(agent),
+                  child: BackgroundWidget(
+                    child: SizedBox.expand(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          AnimatedBuilder(
+                            animation: _pulseCtrl,
+                            builder: (context, _) {
+                              final double t = Curves.easeInOut.transform(
+                                _pulseCtrl.value,
+                              );
+                              const Color color = Color(0xFF9AA0A6);
+                              return SizedBox(
+                                width: 180.w,
+                                height: 180.w,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Container(
+                                      width: 180.w,
+                                      height: 180.w,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: color.withOpacity(0.08 + 0.10 * t),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 155.w,
+                                      height: 155.w,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: color.withOpacity(0.16 + 0.12 * t),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 120.w,
+                                      height: 120.w,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: color, width: 3),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: color.withOpacity(0.35),
+                                            blurRadius: 18 + 6 * t,
+                                            spreadRadius: 1,
+                                          ),
+                                        ],
+                                      ),
+                                      child: ClipOval(
+                                        child: _buildPhotoFallback(agent),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
-                        ),
-                        SizedBox(height: 18.h),
-                        Text(
-                          agent?.name ?? _t("voice_call_title_fallback"),
-                          style: GoogleFonts.quicksand(
-                            color: Colors.white,
-                            fontSize: 28.sp,
-                            fontWeight: FontWeight.w700,
+                          SizedBox(height: 18.h),
+                          Text(
+                            agent?.name ?? _t("voice_call_title_fallback"),
+                            style: GoogleFonts.quicksand(
+                              color: Colors.white,
+                              fontSize: 28.sp,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 8.h),
-                        Text(
-                          _t("voice_call_status_connecting"),
-                          style: GoogleFonts.quicksand(
-                            color: Colors.white70,
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.w600,
+                          SizedBox(height: 8.h),
+                          Text(
+                            _t("voice_call_status_connecting"),
+                            style: GoogleFonts.quicksand(
+                              color: Colors.white70,
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 22.h),
-                        SizedBox(
-                          width: 24.w,
-                          height: 24.h,
-                          child: const CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: Colors.white,
+                          SizedBox(height: 22.h),
+                          SizedBox(
+                            width: 24.w,
+                            height: 24.h,
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

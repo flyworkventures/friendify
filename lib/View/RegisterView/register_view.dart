@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +77,7 @@ const List<_RegChoiceOption> _kAiTimingOptions = [
   ),
   _RegChoiceOption(
     slug: 'feeling_down',
-    emoji: '❤️',
+    emoji: '❤️‍🩹',
     labelKey: 'register_time_feeling_down',
   ),
 ];
@@ -149,6 +151,18 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
     }
   }
 
+  TextStyle _interestEmojiStyle() {
+    // iOS'ta Apple emoji fontunu zorlayarak daha doğal görünüm sağla.
+    if (Platform.isIOS) {
+      return TextStyle(
+        fontFamily: '.AppleColorEmoji',
+        fontSize: 18.sp,
+        height: 1,
+      );
+    }
+    return TextStyle(fontSize: 16.sp, height: 1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final reg = ref.watch(AllControllers.registerViewController);
@@ -162,10 +176,15 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
         (stepIndex == 4 &&
             (reg.aiPreferredTime == null || reg.aiPreferredTime!.isEmpty));
 
-    return Scaffold(
-      body: BackgroundWidget(
-        child: SafeArea(
-          child: Column(
+    return WillPopScope(
+      onWillPop: () async {
+        ref.read(AllControllers.registerViewController.notifier).previousPage();
+        return false;
+      },
+      child: Scaffold(
+        body: BackgroundWidget(
+          child: SafeArea(
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
@@ -206,7 +225,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                     ),
                     Expanded(child: asamalar()),
                     Text(
-                      "${stepIndex + 1} / $totalSteps",
+                      "${stepIndex + 1} of $totalSteps",
                       style: GoogleFonts.quicksand(
                         color: Colors.white,
                         fontSize: 14.sp,
@@ -220,7 +239,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
               Expanded(child: bottom()),
               Padding(
                 padding: EdgeInsets.symmetric(
-                  horizontal: 10,
+                  horizontal: 16,
                 ).copyWith(bottom: 10).r,
                 child: Opacity(
                   opacity: nextBlocked ? 0.45 : 1,
@@ -255,9 +274,11 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                             return;
                           }
                           if (!context.mounted) return;
-                          Navigator.of(
-                            context,
-                          ).pushReplacementNamed('/accountCreatedView');
+                          await notifier.saveAnswersToLocal();
+                          if (!context.mounted) return;
+                          Navigator.of(context).pushReplacementNamed(
+                            '/accountCreatedView',
+                          );
                           return;
                         }
 
@@ -301,6 +322,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                 ),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -380,6 +402,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                             MyTextField(
                               filled: true,
                               fillColor: Colors.white.withValues(alpha: 0.2),
+                              maxLength: 25,
                               textStyle: GoogleFonts.quicksand(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -594,8 +617,11 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
       width: MediaQuery.sizeOf(context).width,
       child: SingleChildScrollView(
         child: Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          alignment: WrapAlignment.center,
+          runAlignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12.w,
+          runSpacing: 12.h,
           children: _interestsApi.map((interest) {
             final isSelected = tags.contains(interest.slug);
             return GestureDetector(
@@ -608,40 +634,47 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                   }
                 });
               },
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 9.h),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 12.h),
                 decoration: BoxDecoration(
-                  color: !isSelected
-                      ? Colors.white.withValues(alpha: 0.15)
-                      : Color(0xffDC7AFF).withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(8).r,
+                  color: isSelected
+                      ? const Color(0xFF5C2A79).withValues(alpha: 0.55)
+                      : Colors.white.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16).r,
                   border: Border.all(
-                    color: isSelected ? Color(0xffD55EFF) : Colors.transparent,
-                    width: isSelected ? 1 : 0,
+                    color: isSelected
+                        ? const Color(0xFFD55EFF)
+                        : Colors.transparent,
+                    width: isSelected ? 1.4 : 0,
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.sizeOf(context).width * 0.62,
+                    Text(
+                      interest.label,
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 16.sp,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                       ),
-                      child: Text(
-                        interest.label,
-                        style: GoogleFonts.quicksand(
-                          color: Colors.white,
-                          fontSize: 15.sp,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.w500,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    if (interest.emoji.isNotEmpty) ...[
-                      Text(interest.emoji, style: TextStyle(fontSize: 16.sp)),
+                    if (interest.slug == 'travelAndCulture') ...[
+                      SizedBox(width: 6.w),
+                      Image.asset(
+                        'assets/icons/plane.png',
+                        width: 20.w,
+                        height: 20.w,
+                      ),
+                    ] else if (interest.emoji.isNotEmpty) ...[
+                      SizedBox(width: 6.w),
+                      Text(interest.emoji, style: _interestEmojiStyle()),
                     ],
                   ],
                 ),
@@ -676,6 +709,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
         ),
         child: Text(
           label,
+          textAlign: TextAlign.center,
           style: GoogleFonts.quicksand(
             color: Colors.white,
             fontSize: 15.sp,
@@ -812,31 +846,32 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                       .read(AllControllers.registerViewController.notifier)
                       .updateGender(value);
                 },
+              
                 borderRadius: BorderRadius.circular(12.r),
                 splashColor: Colors.white.withValues(alpha: 0.08),
                 highlightColor: Colors.white.withValues(alpha: 0.04),
                 child: AnimatedContainer(
+                  height: 34.h,
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOutCubic,
                   padding: EdgeInsets.symmetric(
-                    vertical: 12.h,
+               
                     horizontal: 4.w,
                   ),
                   decoration: BoxDecoration(
                     color: selected ? MyColors.purple : Colors.transparent,
-                    borderRadius: BorderRadius.circular(12.r),
+                    borderRadius: BorderRadius.circular(4.r),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       leading,
                       SizedBox(width: 6.w),
-                      Flexible(
-                        child: Text(
+                       Text(
                           label,
                           style: GoogleFonts.quicksand(
                             color: selected ? Colors.white : unselectedTint,
-                            fontSize: 13.sp,
+                            fontSize: 14.sp,
                             fontWeight: selected
                                 ? FontWeight.w600
                                 : FontWeight.w500,
@@ -845,7 +880,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
+                      
                     ],
                   ),
                 ),
@@ -858,7 +893,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
           padding: EdgeInsets.all(8.w),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(16.r),
+            borderRadius: BorderRadius.circular(8.r),
           ),
           child: Row(
             children: [
@@ -932,10 +967,31 @@ class _RegisterBirthdateSection extends StatefulWidget {
 
 class _RegisterBirthdateSectionState extends State<_RegisterBirthdateSection> {
   static final DateTime _minDate = DateTime(1950, 1, 1);
-  static final DateTime _maxDate = DateTime(2017, 12, 31);
+  static final DateTime _maxDate = DateTime(
+    DateTime.now().year - 18,
+    DateTime.now().month,
+    DateTime.now().day,
+  );
 
   late final ValueNotifier<DateTime> _displayedDate;
   late final DateTime _pickerInitial;
+
+  late FixedExtentScrollController _dayController;
+  late FixedExtentScrollController _monthController;
+  late FixedExtentScrollController _yearController;
+
+  int _selectedDay = 1;
+  int _selectedMonth = 1;
+  int _selectedYear = 2001;
+
+  static const List<String> _monthNames = [
+    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+  ];
+
+  int _daysInMonth(int month, int year) {
+    return DateTime(year, month + 1, 0).day;
+  }
 
   DateTime _clamp(DateTime d) {
     if (d.isBefore(_minDate)) return _minDate;
@@ -943,12 +999,28 @@ class _RegisterBirthdateSectionState extends State<_RegisterBirthdateSection> {
     return d;
   }
 
+  void _onPickerChanged() {
+    final maxDay = _daysInMonth(_selectedMonth, _selectedYear);
+    if (_selectedDay > maxDay) _selectedDay = maxDay;
+    final newDate = DateTime(_selectedYear, _selectedMonth, _selectedDay);
+    _displayedDate.value = _clamp(newDate);
+    widget.onDateChanged(_displayedDate.value);
+  }
+
   @override
   void initState() {
     super.initState();
-    final base = widget.existingBirthdate ?? DateTime(2001, 1, 1);
+    final base = widget.existingBirthdate ?? DateTime(1999, 2, 15);
     _pickerInitial = _clamp(base);
+    _selectedDay = _pickerInitial.day;
+    _selectedMonth = _pickerInitial.month;
+    _selectedYear = _pickerInitial.year;
     _displayedDate = ValueNotifier<DateTime>(_pickerInitial);
+
+    _dayController = FixedExtentScrollController(initialItem: _selectedDay - 1);
+    _monthController = FixedExtentScrollController(initialItem: _selectedMonth - 1);
+    _yearController = FixedExtentScrollController(initialItem: _selectedYear - _minDate.year);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onDateChanged(_displayedDate.value);
     });
@@ -956,6 +1028,9 @@ class _RegisterBirthdateSectionState extends State<_RegisterBirthdateSection> {
 
   @override
   void dispose() {
+    _dayController.dispose();
+    _monthController.dispose();
+    _yearController.dispose();
     _displayedDate.dispose();
     super.dispose();
   }
@@ -1004,34 +1079,99 @@ class _RegisterBirthdateSectionState extends State<_RegisterBirthdateSection> {
             },
           ),
         ),
-        SizedBox(height: 8.h),
+       
         SizedBox(
           height: 216.h,
-          child: CupertinoTheme(
-            data: CupertinoThemeData(
-              brightness: Brightness.dark,
-              textTheme: CupertinoTextThemeData(
-                textStyle: GoogleFonts.quicksand(
-                  color: Colors.white,
-                  fontSize: 20.sp,
-                ),
-                dateTimePickerTextStyle: GoogleFonts.quicksand(
-                  color: Colors.white,
-                  fontSize: 22.sp,
-                  fontWeight: FontWeight.w500,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Gün
+              SizedBox(
+                width: 55.w,
+                child: CupertinoPicker(
+                  scrollController: _dayController,
+                  itemExtent: 40.h,
+                  looping: true,
+                  selectionOverlay: const SizedBox.shrink(),
+                  onSelectedItemChanged: (index) {
+                    final days = _daysInMonth(_selectedMonth, _selectedYear);
+                    _selectedDay = (index % days) + 1;
+                    _onPickerChanged();
+                  },
+                  children: List.generate(
+                    _daysInMonth(_selectedMonth, _selectedYear),
+                    (i) => Center(
+                      child: Text(
+                        '${i + 1}',
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 22.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-            child: CupertinoDatePicker(
-              mode: CupertinoDatePickerMode.date,
-              initialDateTime: _pickerInitial,
-              minimumDate: _minDate,
-              maximumDate: _maxDate,
-              onDateTimeChanged: (DateTime d) {
-                _displayedDate.value = d;
-                widget.onDateChanged(d);
-              },
-            ),
+              SizedBox(width: 4.w),
+              // Ay
+              SizedBox(
+                width:100.w,
+                child: CupertinoPicker(
+                  scrollController: _monthController,
+                  itemExtent: 40.h,
+                  looping: true,
+                  selectionOverlay: const SizedBox.shrink(),
+                  onSelectedItemChanged: (index) {
+                    _selectedMonth = (index % 12) + 1;
+                    _onPickerChanged();
+                  },
+                  children: List.generate(
+                    12,
+                    (i) => Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _monthNames[i],
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 22.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+ 
+              SizedBox(
+                width: 50.w,
+                child: CupertinoPicker(
+                  scrollController: _yearController,
+                  itemExtent: 40.h,
+                  looping: true,
+                  selectionOverlay: const SizedBox.shrink(),
+                  onSelectedItemChanged: (index) {
+                    final totalYears = _maxDate.year - _minDate.year + 1;
+                    _selectedYear = _minDate.year + (index % totalYears);
+                    _onPickerChanged();
+                  },
+                  children: List.generate(
+                    _maxDate.year - _minDate.year + 1,
+                    (i) => Center(
+                      child: Text(
+                        '${_minDate.year + i}',
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 22.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],

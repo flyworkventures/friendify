@@ -152,6 +152,7 @@
   "force_update_hint": "업데이트하려면 아래 버튼을 누르세요.",
   "force_update_action": "업데이트",
   "edit_character_title": "캐릭터 편집",
+  "create_character_title": "캐릭터 만들기",
   "edit_character_name_label": "캐릭터 이름",
   "edit_character_name_hint": "캐릭터 이름을 입력하세요",
   "edit_character_interests_traits_title": "관심사 및 특성",
@@ -164,5 +165,12 @@
   "edit_character_voices_load_failed": "음성을 불러오지 못했습니다",
   "edit_character_select_gender_for_voices": "음성을 보려면 먼저 여성 또는 남성을 선택하세요",
   "edit_character_no_voice_for_gender": "해당 성별에 맞는 음성이 없습니다",
-  "language": "언어"
+  "language": "언어",
+  "notification_permission_title": "알림 권한",
+  "notification_permission_message": "새 메시지와 중요한 업데이트에 대한 알림을 받으려면 알림 권한을 허용해 주세요.",
+  "enable_notifications": "허용",
+  "not_now": "나중에",
+  "select_character": "캐릭터 선택",
+  "agents_my_creations": "내가 만든 캐릭터",
+  "agents_characters": "캐릭터"
 }

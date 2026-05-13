@@ -1,0 +1,5 @@
+"NSUserNotificationsUsageDescription" = "Friendify가 친구에 대해 알려드리기 위해 알림을 보내고자 합니다.";
+"NSMicrophoneUsageDescription" = "Friendify는 음성 및 영상 통화를 위해 마이크 접근 권한이 필요합니다.";
+"NSCameraUsageDescription" = "Friendify는 영상 통화를 위해 카메라 접근 권한이 필요합니다.";
+"NSSpeechRecognitionUsageDescription" = "Friendify는 통화 중 음성을 텍스트로 변환하기 위해 음성 인식을 사용합니다.";
+"NSPhotoLibraryUsageDescription" = "Friendify는 채팅에서 사진을 선택하고 보내기 위해 사진 라이브러리 접근 권한이 필요합니다.";

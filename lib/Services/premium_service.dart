@@ -4,7 +4,7 @@ import 'package:friendfy/Models/user_model.dart';
 
 class PremiumService {
   // ⏱️ Bedava premium süresi (gün cinsinden)
-  static const int freeTrialDays = 2;
+  static const int freeTrialDays = 3;
   
   // 👤 Misafir kullanıcı limitleri
   static const int guestDailyMessageLimit = 10;

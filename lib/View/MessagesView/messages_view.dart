@@ -52,6 +52,7 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+      
               children: [
                 Text(
                   Translate.translate("messages_quick_message_title", context),
@@ -136,27 +137,32 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
                 ],
 
                 if (!isSearching && displayConversations.isEmpty) ...[
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SvgPicture.asset("assets/icons/message-search.svg"),
-                          SizedBox(height: 10.h),
-                          Text(
-                            Translate.translate(
-                              "messages_empty_history_title",
-                              context,
+                  SizedBox(
+                    width: double.infinity,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20,vertical: 70).r,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            SvgPicture.asset("assets/icons/message-search.svg"),
+                            SizedBox(height: 10.h),
+                            Text(
+                              Translate.translate(
+                                "messages_empty_history_title",
+                                context,
+                              ),
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.quicksand(
+                                color: Colors.white,
+                                fontSize: 20.sp,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.quicksand(
-                              color: Colors.white,
-                              fontSize: 20.sp,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -292,6 +298,7 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
             imageUrl: conversation.agentModel?.photoURL ?? "",
             width: 47.w,
             height: 47.h,
+            alignment: Alignment(0, -1),
             fit: BoxFit.cover,
             placeholder: (context, url) => Shimmer.fromColors(
               baseColor: Colors.grey[300]!,
@@ -306,13 +313,20 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
             ),
           ),
         ),
-        trailing: Text(
-          "11 AM",
-          style: GoogleFonts.quicksand(color: Colors.white),
-        ),
-        title: Text(
-          conversation.agentModel?.name ?? "",
-          style: GoogleFonts.quicksand(color: Colors.white),
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                conversation.agentModel?.name ?? "",
+                style: GoogleFonts.quicksand(color: Colors.white),
+              ),
+            ),
+            Text(
+              "11 AM",
+              style: GoogleFonts.quicksand(color: Colors.white,fontSize: 10.sp),
+            ),
+          ],
         ),
         subtitle: Text(
           lastMessageConverter(conversation.chatModel?.lastMessage),

@@ -160,20 +160,23 @@ class RevenueCatService {
       if (hasActivePremium && newPremium != null) {
         debugPrint("✅ Premium tanımlanıyor...");
 
-        // Premium'u backend'e gönder
+        await _clearOnboardingGateFlags();
+
+        // Premium'u backend'e gönder ve user model'i güncelle
         await updatePremiumOnBackend(user, newPremium, container, customerInfo);
 
-        // Local state'i güncelle
-        await refreshUserFromBackend(container);
-        await container
-            .read(AllControllers.chatViewController.notifier)
-            .getConversations();
-        await container
-            .read(AllControllers.agentsViewController.notifier)
-            .getAgents();
-        await container
-            .read(AllControllers.agentsViewController.notifier)
-            .getRecentAgents();
+        // Veri yenileme işlemlerini paralel çalıştır (UI titremesini önlemek için)
+        await Future.wait<void>([
+          container
+              .read(AllControllers.chatViewController.notifier)
+              .getConversations(),
+          container
+              .read(AllControllers.agentsViewController.notifier)
+              .getAgents(),
+          container
+              .read(AllControllers.agentsViewController.notifier)
+              .getRecentAgents(),
+        ]);
       } else {
         debugPrint("ℹ️ Aktif premium bulunamadı");
         debugPrint(
@@ -199,36 +202,33 @@ class RevenueCatService {
     ProviderContainer container,
     CustomerInfo customerInfo,
   ) async {
-    try {
-      debugPrint("🌐 Backend'e premium bilgisi gönderiliyor...");
-      debugPrint(
-        "📦 Yeni premium: ${newPremium.productId}, Start: ${newPremium.startDate}, End: ${newPremium.endDate}",
-      );
+    debugPrint("🌐 Backend'e premium bilgisi gönderiliyor...");
+    debugPrint(
+      "📦 Yeni premium: ${newPremium.productId}, Start: ${newPremium.startDate}, End: ${newPremium.endDate}",
+    );
 
-      // Yeni premium'u ekle
-      final updatedMemberships = PremiumService.addPremiumToMemberships(
-        user,
-        newPremium,
-      );
-      // Backend basarisiz olsa bile uygulama tarafinda premium durumu kaybolmasin.
+    // Yeni premium'u ekle
+    final updatedMemberships = PremiumService.addPremiumToMemberships(
+      user,
+      newPremium,
+    );
+
+    debugPrint("📦 Updated memberships count: ${updatedMemberships.length}");
+
+    // User ID kontrolü
+    if (user.id == null) {
+      debugPrint("❌ User ID null, premium güncellenemiyor");
       final optimisticUser = user.copyWith(memberships: updatedMemberships);
       container
           .read(AllControllers.userController.notifier)
           .updateUserModel(optimisticUser);
+      return;
+    }
 
-      debugPrint("📦 Updated memberships count: ${updatedMemberships.length}");
-
-      // RevenueCat kaynak gercek olarak kabul edilir, yine de memberships gecmisi backend'e yazilir.
+    try {
       final membershipsPayload = updatedMemberships.map((m) => m.toMap()).toList();
       debugPrint("📦 Memberships payload: ${jsonEncode(membershipsPayload)}");
 
-      // User ID kontrolü
-      if (user.id == null) {
-        debugPrint("❌ User ID null, premium güncellenemiyor");
-        return;
-      }
-
-      // Backend'e gönder - direkt http.post kullan (WidgetRef sorunu için)
       final userToken = user.token ?? "";
       final userRefreshToken = user.refreshToken ?? "";
       final headers = {
@@ -269,14 +269,11 @@ class RevenueCatService {
       );
 
       debugPrint("📡 Backend response status: ${response.statusCode}");
-      debugPrint("📡 Backend response body: ${response.body}");
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         debugPrint("✅ Premium backend'de güncellendi: ${json['msg']}");
-        debugPrint("✅ Success: ${json['success']}");
 
-        // Backend'den güncellenmiş user bilgisini al ve güncelle
         if (json['user'] != null) {
           try {
             final updatedUser = UserModel.fromMap(json['user']);
@@ -284,19 +281,25 @@ class RevenueCatService {
                 .read(AllControllers.userController.notifier)
                 .updateUserModel(updatedUser);
             debugPrint("✅ User model güncellendi (backend response'dan)");
+            return;
           } catch (e) {
-            debugPrint("⚠️ User model güncellenirken hata: $e");
+            debugPrint("⚠️ User model parse hatası: $e");
           }
         }
       } else {
         debugPrint(
           "❌ Premium backend'de güncellenemedi: ${response.statusCode}",
         );
-        debugPrint("Response: ${response.body}");
       }
     } catch (e) {
       debugPrint("❌ Backend'e premium gönderilirken hata: $e");
     }
+
+    // Backend başarısız veya user parse edilemezse optimistik güncelleme
+    final optimisticUser = user.copyWith(memberships: updatedMemberships);
+    container
+        .read(AllControllers.userController.notifier)
+        .updateUserModel(optimisticUser);
   }
 
   /// Backend'den güncel kullanıcı bilgisini çeker (premium bilgisi dahil)
@@ -366,6 +369,19 @@ class RevenueCatService {
       await handlePurchaseUpdate(customerInfo, container);
     } catch (e) {
       debugPrint("❌ CustomerInfo senkronize edilirken hata: $e");
+    }
+  }
+
+  static Future<void> _clearOnboardingGateFlags() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final localService = LocalService(prefs: prefs);
+      await localService.setOnboardingFunnelActive(false);
+      await localService.setOnboardingVideoGatePending(false);
+      await localService.clearPostAuthAction();
+      debugPrint("✅ Onboarding gate flags premium sonrası temizlendi");
+    } catch (e) {
+      debugPrint("⚠️ Onboarding gate flag temizleme hatası: $e");
     }
   }
 }

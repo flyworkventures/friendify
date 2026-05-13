@@ -152,6 +152,7 @@
   "force_update_hint": "点击下方按钮进行更新。",
   "force_update_action": "更新",
   "edit_character_title": "编辑角色",
+  "create_character_title": "创建角色",
   "edit_character_name_label": "角色名称",
   "edit_character_name_hint": "请输入角色名称",
   "edit_character_interests_traits_title": "兴趣与特征",
@@ -164,5 +165,12 @@
   "edit_character_voices_load_failed": "无法加载声音列表",
   "edit_character_select_gender_for_voices": "请先选择女性或男性以查看声音",
   "edit_character_no_voice_for_gender": "未找到该性别对应的声音",
-  "language": "语言"
+  "language": "语言",
+  "notification_permission_title": "通知权限",
+  "notification_permission_message": "请启用通知权限，以便接收新消息和重要更新的提醒。",
+  "enable_notifications": "启用",
+  "not_now": "暂时不要",
+  "select_character": "选择角色",
+  "agents_my_creations": "我的创作",
+  "agents_characters": "角色"
 }
