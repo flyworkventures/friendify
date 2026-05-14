@@ -253,37 +253,70 @@ class _NotificationsViewState extends ConsumerState<NotificationsView> {
   }
 
   Widget _buildLeadingAvatar(NotificationModel notification) {
-    if (notification.type == NotificationType.trialStarted) {
-      return Container(
-        width: 42.w,
-        height: 42.h,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: const Color(0xFFB355FF), width: 1.8),
+    switch (notification.type) {
+      case NotificationType.trialStarted:
+        return _notificationTypeCircle(
+          icon: Icons.workspace_premium_rounded,
+          borderColor: const Color(0xFFB355FF),
           gradient: const LinearGradient(
             colors: [Color(0xFF2B0E4B), Color(0xFF522E8C)],
           ),
-        ),
-        child: Icon(
-          Icons.workspace_premium_rounded,
-          color: Colors.white,
-          size: 20.sp,
-        ),
-      );
+        );
+      case NotificationType.trialEnded:
+        return _notificationTypeCircle(
+          icon: Icons.hourglass_bottom_rounded,
+          borderColor: const Color(0xFFFFB74D),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF3E2723), Color(0xFF5D4037)],
+          ),
+        );
+      case NotificationType.welcome:
+        return _notificationTypeCircle(
+          icon: Icons.waving_hand_rounded,
+          borderColor: const Color(0xFF81C784),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1B5E20), Color(0xFF2E7D32)],
+          ),
+        );
+      case NotificationType.reminder:
+        return _notificationTypeCircle(
+          icon: Icons.alarm_rounded,
+          borderColor: const Color(0xFF64B5F6),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF0D47A1), Color(0xFF1565C0)],
+          ),
+        );
+      case NotificationType.system:
+        return _notificationTypeCircle(
+          icon: Icons.info_rounded,
+          borderColor: Colors.white.withValues(alpha: 0.35),
+          gradient: LinearGradient(
+            colors: [
+              Colors.white.withValues(alpha: 0.12),
+              Colors.white.withValues(alpha: 0.06),
+            ],
+          ),
+        );
     }
+  }
 
+  Widget _notificationTypeCircle({
+    required IconData icon,
+    required Color borderColor,
+    required Gradient gradient,
+  }) {
     return Container(
       width: 42.w,
       height: 42.h,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1),
+        border: Border.all(color: borderColor, width: 1.8),
+        gradient: gradient,
       ),
-      child: ClipOval(
-        child: Image.asset(
-          "assets/logo.png",
-          fit: BoxFit.cover,
-        ),
+      child: Icon(
+        icon,
+        color: Colors.white,
+        size: 20.sp,
       ),
     );
   }

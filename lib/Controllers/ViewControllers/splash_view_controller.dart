@@ -23,7 +23,20 @@ class SplashViewController extends StateNotifier<void> {
 
   SplashViewController(this.ref) : super(null);
 
+  /// Splash ekranının en az [minVisible] süre görünmesini sağlar.
+  Future<void> _ensureMinimumSplashVisible(
+    DateTime startedAt, {
+    Duration minVisible = const Duration(seconds: 3),
+  }) async {
+    final elapsed = DateTime.now().difference(startedAt);
+    if (elapsed < minVisible) {
+      await Future<void>.delayed(minVisible - elapsed);
+    }
+  }
+
   init() async {
+    final splashStartedAt = DateTime.now();
+
     // Önce versiyon kontrolü yap
     final needsUpdate = await checkAppVersion();
     if (needsUpdate) {
@@ -37,6 +50,7 @@ class SplashViewController extends StateNotifier<void> {
       bool? firstOpen = await getFirstOpen();
       if (firstOpen == true || firstOpen == null) {
         changeFirstOpen();
+        await _ensureMinimumSplashVisible(splashStartedAt);
         navigatorKey.currentState?.pushNamedAndRemoveUntil(
           '/onboard',
           (a) => false,
@@ -104,6 +118,7 @@ class SplashViewController extends StateNotifier<void> {
               } catch (e) {
                 debugPrint("⚠️ Veri çekme hatası (devam ediliyor): $e");
               }
+              await _ensureMinimumSplashVisible(splashStartedAt);
               await navigatorKey.currentState?.pushNamedAndRemoveUntil(
                 '/bottomNavbar',
                 (a) => false,
@@ -111,6 +126,7 @@ class SplashViewController extends StateNotifier<void> {
             } else {
               debugPrint("⚠️ Token geçersiz, onboard ekranına yönlendiriliyor");
               await localService.setAuthTokens(accessToken: "", refreshToken: "");
+              await _ensureMinimumSplashVisible(splashStartedAt);
               await navigatorKey.currentState?.pushNamedAndRemoveUntil(
                 '/onboard',
                 (a) => false,
@@ -118,6 +134,7 @@ class SplashViewController extends StateNotifier<void> {
             }
           } catch (e) {
             debugPrint("⚠️ Token doğrulama hatası: $e");
+            await _ensureMinimumSplashVisible(splashStartedAt);
             await navigatorKey.currentState?.pushNamedAndRemoveUntil(
               '/onboard',
               (a) => false,
@@ -125,6 +142,7 @@ class SplashViewController extends StateNotifier<void> {
           }
         } else {
           debugPrint("Token bilgisi yok, onboard ekranına yönlendiriliyor");
+          await _ensureMinimumSplashVisible(splashStartedAt);
           await navigatorKey.currentState?.pushNamedAndRemoveUntil(
             '/onboard',
             (a) => false,
@@ -133,6 +151,7 @@ class SplashViewController extends StateNotifier<void> {
       }
     } else if (appState == AppConfigState.maintenance) {
     } else {
+      await _ensureMinimumSplashVisible(splashStartedAt);
       navigatorKey.currentState?.pushNamed('/serverError');
     }
   }

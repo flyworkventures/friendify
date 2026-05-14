@@ -42,6 +42,8 @@ class AppConstants {
       "/purchases/verify-receipt"; // Apple Receipt Validation
   static const String syncMembershipsURL =
       "/purchases/sync-memberships"; // RevenueCat memberships sync
+  /// Sunucu cihaz başına bir kez 3 günlük deneme kaydı (fingerprint hash).
+  static const String claimFreeTrialURL = "/purchases/claim-free-trial";
   static const String updatePremiumURL =
       "/auth/update-premium"; // Premium güncelleme
 

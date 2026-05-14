@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:friendfy/Services/device_trial_eligibility_service.dart';
 import 'package:friendfy/Services/notification_service.dart';
 import 'package:friendfy/Services/revenuecat_service.dart';
 import 'package:friendfy/View/SplashView/splash_view.dart';
@@ -17,7 +18,9 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint("ELEVENLABS_API_KEY: ${AppConstants.baseURL}");
-  
+
+  await DeviceTrialEligibilityService.applyStoredTrialLockToPremiumService();
+
   // Initialize notification service
   await NotificationService.initialize();
   await initializeRevenueCat();

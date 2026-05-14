@@ -9,6 +9,7 @@ import 'package:friendfy/Http/http_service.dart';
 
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Models/chat_model.dart';
+import 'package:friendfy/Models/user_model.dart';
 import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
@@ -19,12 +20,61 @@ import 'package:flutter/material.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 
+/// Backend `ownerId` doğrulaması genelde JWT içindeki kullanıcı id ile yapılır;
+/// [UserModel.id] token yenileme / cache sonrası güncel olmayabiliyor.
+Map<String, dynamic>? _decodeJwtPayload(String? token) {
+  if (token == null || token.isEmpty) return null;
+  final parts = token.split('.');
+  if (parts.length < 2) return null;
+  try {
+    var segment = parts[1];
+    final rem = segment.length % 4;
+    if (rem == 2) {
+      segment += '==';
+    } else if (rem == 3) {
+      segment += '=';
+    } else if (rem == 1) {
+      return null;
+    }
+    final decoded = utf8.decode(base64Url.decode(segment));
+    final map = jsonDecode(decoded);
+    return map is Map<String, dynamic> ? map : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// update-agent / create-custom-agent gövdesi için ownerId (veya eşdeğer) değeri.
+Object? _ownerIdForAuthenticatedRequests(UserModel? user) {
+  final claims = _decodeJwtPayload(user?.token);
+  if (claims != null) {
+    for (final key in const ['userId', 'user_id', 'id']) {
+      final v = claims[key];
+      if (v == null) continue;
+      if (v is int) return v;
+      if (v is String && v.isNotEmpty) {
+        final n = int.tryParse(v);
+        if (n != null) return n;
+      }
+    }
+    final sub = claims['sub'];
+    if (sub is int) return sub;
+    if (sub is String && sub.isNotEmpty) {
+      final n = int.tryParse(sub);
+      if (n != null) return n;
+    }
+  }
+  final id = user?.id;
+  if (id != null) return id;
+  return null;
+}
+
 class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
   Ref? ref;
   AgentProfileViewController(this.ref) : super(AgentProfileViewModel());
 
   changeAgentModel(AgentModel agent) {
-    debugPrint("Model: ${agent.toMap().toString()}");
+    debugPrint("Model: ${agent.riveAvatar}");
     state = state.copyWith(agent: agent);
   }
 
@@ -101,6 +151,32 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
     return null;
   }
 
+  AgentModel? _findAgentById(List<AgentModel>? list, int id) {
+    if (list == null) return null;
+    for (final a in list) {
+      if (a.id == id) return a;
+    }
+    return null;
+  }
+
+  /// Sistem/katalog karakterinde düzenleme kaydı [get-user-agents] yerine
+  /// aynı id ile [get-system-agents] listesinde güncellenmiş halde kalır.
+  void _syncDisplayedAgentAfterListRefresh({
+    required AgentModel original,
+    required bool isOwnAgent,
+    required bool isCatalogSystemEdit,
+  }) {
+    final avc = ref?.read(AllControllers.agentsViewController);
+    if (avc == null) return;
+    if (isCatalogSystemEdit) {
+      final m = _findAgentById(avc.agents, original.id);
+      if (m != null) changeAgentModel(m);
+    } else if (isOwnAgent) {
+      final m = _findAgentById(avc.userAgents, original.id);
+      if (m != null) changeAgentModel(m);
+    }
+  }
+
   _printConversationState(String msg) {
     debugPrint(msg);
     if (msg == "Conversation Created") {
@@ -121,10 +197,12 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
     bool isCreateFlow = false,
   }) async {
     final user = ref?.read(AllControllers.userController);
-    final userId = user?.id?.toString();
+    final int? authUserId = user?.id;
+    final String? userIdStr = authUserId?.toString();
+    final Object? ownerBody = _ownerIdForAuthenticatedRequests(user);
 
     log("🔍 [AGENT EDIT] Karakter düzenleme başladı");
-    log("👤 [AGENT EDIT] User ID: $userId");
+    log("👤 [AGENT EDIT] UserModel.id: $authUserId | ownerId (JWT öncelikli): $ownerBody");
 
     state = state.copyWith(loadingScreen: true);
 
@@ -137,37 +215,69 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
         return;
       }
 
+      if (ownerBody == null) {
+        log("❌ [AGENT EDIT] ownerId çözülemedi (JWT / kullanıcı id yok)");
+        state = state.copyWith(loadingScreen: false);
+        return;
+      }
+
       // Kontrol: Kullanıcının kendi karakteri mi? (system == 0 ve creatorId eşleşiyor mu?)
-      final bool isOwnAgent =
-          originalAgent.system == 0 && originalAgent.creatorId == userId;
+      final bool isOwnAgent = originalAgent.system == 0 &&
+          (originalAgent.creatorId == userIdStr ||
+              originalAgent.creatorId == ownerBody.toString());
+      // Katalog (system != 0) düzenlemesi: yeni "kullanıcı karakteri" oluşturma,
+      // aynı bot id ile yerinde güncelleme — sadece Arkadaş oluştur akışında create kullanılır.
+      final bool isCatalogSystemEdit = !isCreateFlow &&
+          !isOwnAgent &&
+          originalAgent.system != 0;
       final hasSelectedPhoto =
           selectedPhotoUrl != null && selectedPhotoUrl.trim().isNotEmpty;
-      final resolvedPhotoUrl =
-          hasSelectedPhoto ? selectedPhotoUrl.trim() : originalAgent.photoURL;
+      String resolvedPhotoUrl =
+          hasSelectedPhoto ? selectedPhotoUrl!.trim() : originalAgent.photoURL;
+      if (resolvedPhotoUrl.trim().isEmpty) {
+        for (final u in originalAgent.photoURLs) {
+          final t = u.trim();
+          if (t.isNotEmpty) {
+            resolvedPhotoUrl = t;
+            break;
+          }
+        }
+      }
 
       log("🔍 [AGENT EDIT] Agent ID: ${originalAgent.id}");
       log("🔍 [AGENT EDIT] Agent Creator ID: ${originalAgent.creatorId}");
       log("🔍 [AGENT EDIT] Agent System: ${originalAgent.system}");
       log("🔍 [AGENT EDIT] Is Own Agent: $isOwnAgent");
+      log("🔍 [AGENT EDIT] Catalog in-place edit: $isCatalogSystemEdit");
 
-      // Prepare the edited agent data
+      final String interestsJson = jsonEncode(interests);
+      final String countryRaw = originalAgent.country.trim();
+      final String resolvedCountry =
+          countryRaw.isEmpty ? 'TR' : countryRaw;
+      final String? resolvedVoiceId = (voiceId != null && voiceId.isNotEmpty)
+          ? voiceId
+          : originalAgent.voiceId;
+      final String resolvedSpeaking =
+          (originalAgent.speakingStyle ?? '').toString().trim();
+
       Map<String, dynamic> editedAgentData = {
         'name': name,
         'character': character,
         'age': age,
         'gender': gender,
-        'interests': jsonEncode(interests),
-        'interestsType':
-            originalAgent.interestsType, // Keep original interest types
+        'interests': interestsJson,
+        'interestsType': interestsJson,
         'photoURL': resolvedPhotoUrl,
         'characterTags': originalAgent.characterTags,
-        'speakingStyle': originalAgent.speakingStyle,
-        'voiceId': (voiceId != null && voiceId.isNotEmpty)
-            ? voiceId
-            : originalAgent.voiceId,
-        'country': originalAgent.country,
-        'ownerId': userId,
+        'speakingStyle': resolvedSpeaking,
+        'voiceId': resolvedVoiceId,
+        'country': resolvedCountry,
+        'ownerId': ownerBody,
       };
+      final riveUrl = originalAgent.riveAvatar?.trim();
+      if (riveUrl != null && riveUrl.isNotEmpty) {
+        editedAgentData['rive_avatar'] = riveUrl;
+      }
 
       Response response;
 
@@ -187,65 +297,82 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
           log("❌ [AGENT EDIT] Failed to update agent: ${response.body}");
         }
       } else {
-        // Sistem karakteri veya başkasının karakteri → CREATE (yeni karakter oluştur)
-        log("✅ [AGENT EDIT] Sistem karakteri - YENİ karakter oluşturuluyor");
+        // Ücretli abonelik veya deneme: katalog düzenleme ve yeni karakter oluşturma
+        final canCreate = PremiumService.hasUnlockedPremiumFeatures(user);
+        log("💎 [PREMIUM CHECK] Karakter düzenleme/oluşturma izni: $canCreate");
 
-        // Premium kontrolü (sadece yeni karakter oluştururken)
-        final isPremium = PremiumService.isPremiumActive(user);
-        log("💎 [PREMIUM CHECK] Premium aktif mi: $isPremium");
+        if (!canCreate) {
+          log(
+            "❌ [PREMIUM CHECK] Karakter düzenleme için abonelik veya aktif deneme gerekli",
+          );
 
-        if (!isPremium) {
-          // Free trial kullanıcıları da karakter düzenleyemez (paywall tetiklenmeli)
-          final canEdit = PremiumService.canEditCharacter(user, 0);
+          state = state.copyWith(loadingScreen: false);
 
-          if (!canEdit) {
-            log(
-              "❌ [PREMIUM CHECK] Karakter düzenleme/oluşturma için Premium gerekli",
-            );
-
-            state = state.copyWith(loadingScreen: false);
-
-            // Premium ekranına yönlendir
-            try {
-              log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
-              await RevenueCatUI.presentPaywall();
-              log("✅ [PREMIUM CHECK] Premium ekranı açıldı");
-            } catch (e) {
-              log("⚠️ [PREMIUM CHECK] Premium ekranı açılamadı: $e");
-            }
-
-            // Show error message
-            if (navigatorKey.currentContext != null) {
-              ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    Translate.translate(
-                      'character_edit_requires_premium',
-                      navigatorKey.currentContext!,
-                    ),
-                  ),
-                  backgroundColor: Colors.red,
-                  duration: Duration(seconds: 3),
-                ),
-              );
-            }
-
-            return;
+          try {
+            log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
+            await RevenueCatUI.presentPaywall();
+            log("✅ [PREMIUM CHECK] Premium ekranı açıldı");
+          } catch (e) {
+            log("⚠️ [PREMIUM CHECK] Premium ekranı açılamadı: $e");
           }
+
+          if (navigatorKey.currentContext != null) {
+            ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
+              SnackBar(
+                content: Text(
+                  Translate.translate(
+                    'character_edit_requires_premium',
+                    navigatorKey.currentContext!,
+                  ),
+                ),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+
+          return;
         }
 
-        response = await httpService.post(
-          path: AppConstants.createCustomAgent,
-          body: editedAgentData,
-        );
-
-        if (response.statusCode == 200) {
-          log("✅ [AGENT EDIT] Agent created successfully");
-
-          // Premium kullanıcılar için sayacı artırmaya gerek yok (sınırsız)
-          // Free trial ve normal kullanıcılar zaten paywall ile engellendi
+        if (isCatalogSystemEdit) {
+          log("✅ [AGENT EDIT] Katalog karakteri — yerinde UPDATE (Oluşturduklarım'a eklenmez)");
+          editedAgentData['agentId'] = originalAgent.id.toString();
+          editedAgentData['userId'] = ownerBody;
+          response = await httpService.post(
+            path: AppConstants.updateAgent,
+            body: editedAgentData,
+          );
+          if (response.statusCode == 200) {
+            log("✅ [AGENT EDIT] Katalog karakteri güncellendi");
+          } else {
+            log("❌ [AGENT EDIT] Katalog güncelleme başarısız: ${response.body}");
+          }
         } else {
-          log("❌ [AGENT EDIT] Failed to create custom agent: ${response.body}");
+          log("✅ [AGENT EDIT] Yeni özel karakter oluşturuluyor (Arkadaş oluştur / kopya)");
+          final createBody = Map<String, dynamic>.from(editedAgentData);
+          createBody['userId'] = ownerBody;
+          // editedAgentData içinde interests + interestsType zaten aynı JSON string (interestsJson).
+          // Dizi gönderimi bazı Node/Prisma şemalarında CREATE_AGENT_FAILED üretebiliyor.
+          final ct = createBody['characterTags'];
+          if (ct != null && ct is! String) {
+            try {
+              createBody['characterTags'] = jsonEncode(ct);
+            } catch (_) {
+              createBody['characterTags'] = '';
+            }
+          }
+          response = await httpService.post(
+            path: AppConstants.createCustomAgent,
+            body: createBody,
+          );
+          if (response.statusCode == 200) {
+            log("✅ [AGENT EDIT] Agent created successfully");
+          } else {
+            log(
+              "❌ [AGENT EDIT] Failed to create custom agent: ${response.body} "
+              "(voiceId=${createBody['voiceId']}, interestsCount=${interests.length})",
+            );
+          }
         }
       }
 
@@ -261,11 +388,20 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
           );
         }
 
-        // Kullanıcının botlarını yeniden çek
+        // Listeleri yenile (katalog güncellemesi get-system-agents'ta görünür)
+        await ref
+            ?.read(AllControllers.agentsViewController.notifier)
+            .getAgents();
         await ref
             ?.read(AllControllers.agentsViewController.notifier)
             .getUserAgents();
-        debugPrint("✅ User agents refreshed");
+        debugPrint("✅ Agents + user agents refreshed");
+
+        _syncDisplayedAgentAfterListRefresh(
+          original: originalAgent,
+          isOwnAgent: isOwnAgent,
+          isCatalogSystemEdit: isCatalogSystemEdit,
+        );
 
         state = state.copyWith(loadingScreen: false);
 
@@ -283,7 +419,7 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
             SnackBar(
               content: Text(
                 Translate.translate(
-                  isOwnAgent
+                  (isOwnAgent || isCatalogSystemEdit)
                       ? TranslateKeys.agentUpdateFailed
                       : TranslateKeys.agentCreateFailed,
                   navigatorKey.currentContext!,
@@ -303,15 +439,18 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
 
   Future<void> deleteAgent() async {
     final user = ref?.read(AllControllers.userController);
-    final userId = user?.id?.toString();
+    final int? authUserId = user?.id;
     final agent = state.agent;
+    final Object? ownerBody = _ownerIdForAuthenticatedRequests(user);
 
-    if (agent == null || userId == null) {
+    if (agent == null || ownerBody == null) {
       return;
     }
 
     // Kontrol: Kullanıcının kendi karakteri mi?
-    final bool isOwnAgent = agent.system == 0 && agent.creatorId == userId;
+    final bool isOwnAgent = agent.system == 0 &&
+        (agent.creatorId == authUserId?.toString() ||
+            agent.creatorId == ownerBody.toString());
 
     if (!isOwnAgent) {
       log("❌ [AGENT DELETE] Cannot delete - not user's agent");
@@ -325,7 +464,7 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
 
       var response = await httpService.post(
         path: AppConstants.deleteAgent,
-        body: {'agentId': agent.id.toString(), 'ownerId': userId},
+        body: {'agentId': agent.id.toString(), 'ownerId': ownerBody},
       );
 
       if (response.statusCode == 200) {

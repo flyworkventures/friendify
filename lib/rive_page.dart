@@ -70,7 +70,7 @@ class _AvatarDataBindingPageState extends State<AvatarDataBindingPage> {
     super.initState();
     _initTts();
     _fileLoader = FileLoader.fromAsset(
-      "assets/new.riv",
+      "assets/female_char_3.riv",
       riveFactory: Factory.rive,
     );
   }

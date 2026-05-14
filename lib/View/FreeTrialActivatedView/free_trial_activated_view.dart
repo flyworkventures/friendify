@@ -11,6 +11,40 @@ import 'package:shared_preferences/shared_preferences.dart';
 class FreeTrialActivatedView extends ConsumerStatefulWidget {
   const FreeTrialActivatedView({super.key});
 
+  /// Ekranı göstermeden, video/sohbet kapısı sonrası ile aynı yönlendirme (login veya ana sekmeler).
+  static Future<void> applyPostOnboardingTrialRouting({
+    required WidgetRef ref,
+    required BuildContext context,
+    required bool forceLogoutToLogin,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    final isOnboardingGuestSession = localService.isOnboardingGuestSession();
+    final shouldGoToLogin = forceLogoutToLogin || isOnboardingGuestSession;
+
+    if (shouldGoToLogin) {
+      await Future.wait([
+        LocalService.deleteData(LocalDbKeys.authToken),
+        LocalService.deleteData(LocalDbKeys.refreshToken),
+        LocalService.deleteData(LocalDbKeys.currentUser),
+        LocalService.deleteData(LocalDbKeys.onboardingPendingAuth),
+        LocalService.deleteData(LocalDbKeys.onboardingGuestSession),
+        LocalService.deleteData(LocalDbKeys.onboardingVideoGatePending),
+        LocalService.deleteData(LocalDbKeys.onboardingFunnelActive),
+      ]);
+      ref.read(AllControllers.userController.notifier).updateUserModel(null);
+    }
+
+    if (!context.mounted) return;
+    if (shouldGoToLogin) {
+      Navigator.of(context)
+          .pushNamedAndRemoveUntil('/login', (route) => false);
+    } else {
+      Navigator.of(context)
+          .pushNamedAndRemoveUntil('/bottomNavbar', (route) => false);
+    }
+  }
+
   @override
   ConsumerState<FreeTrialActivatedView> createState() => _FreeTrialActivatedViewState();
 }
@@ -19,24 +53,10 @@ class _FreeTrialActivatedViewState extends ConsumerState<FreeTrialActivatedView>
   bool _switchOn = false;
   bool _didComplete = false;
 
-  Future<void> _clearSessionBeforeLogin() async {
-    await Future.wait([
-      LocalService.deleteData(LocalDbKeys.authToken),
-      LocalService.deleteData(LocalDbKeys.refreshToken),
-      LocalService.deleteData(LocalDbKeys.currentUser),
-      LocalService.deleteData(LocalDbKeys.postAuthAction),
-      LocalService.deleteData(LocalDbKeys.onboardingPendingAuth),
-      LocalService.deleteData(LocalDbKeys.onboardingGuestSession),
-      LocalService.deleteData(LocalDbKeys.onboardingVideoGatePending),
-      LocalService.deleteData(LocalDbKeys.onboardingFunnelActive),
-    ]);
-    ref.read(AllControllers.userController.notifier).updateUserModel(null);
-  }
-
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(const Duration(seconds: 2), () {
+    Future<void>.delayed(const Duration(seconds: 1), () {
       if (!mounted) return;
       setState(() => _switchOn = true);
       _continueFlow();
@@ -46,25 +66,18 @@ class _FreeTrialActivatedViewState extends ConsumerState<FreeTrialActivatedView>
   Future<void> _continueFlow() async {
     if (_didComplete) return;
     _didComplete = true;
-    await Future<void>.delayed(const Duration(seconds: 3));
+    await Future<void>.delayed(const Duration(seconds: 1));
     if (!mounted) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final localService = LocalService(prefs: prefs);
-    final isOnboardingGuestSession = localService.isOnboardingGuestSession();
     final routeArgs = ModalRoute.of(context)?.settings.arguments;
     final forceLogoutToLogin =
         routeArgs is Map && routeArgs["forceLogoutToLogin"] == true;
-    final shouldGoToLogin = forceLogoutToLogin || isOnboardingGuestSession;
 
-    if (shouldGoToLogin) {
-      await _clearSessionBeforeLogin();
-      Navigator.of(context)
-          .pushNamedAndRemoveUntil('/login', (route) => false);
-    } else {
-      Navigator.of(context)
-          .pushNamedAndRemoveUntil('/bottomNavbar', (route) => false);
-    }
+    await FreeTrialActivatedView.applyPostOnboardingTrialRouting(
+      ref: ref,
+      context: context,
+      forceLogoutToLogin: forceLogoutToLogin,
+    );
   }
 
   @override

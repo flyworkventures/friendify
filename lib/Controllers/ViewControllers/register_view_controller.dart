@@ -9,9 +9,11 @@ import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Http/http_service.dart';
 
+import 'package:friendfy/Models/premium_model.dart';
 import 'package:friendfy/Models/user_model.dart';
 import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/Services/notification_service.dart';
+import 'package:friendfy/Services/device_trial_eligibility_service.dart';
 import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
@@ -45,6 +47,22 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
     "assets/register3.png",
     "assets/register4.png",
   ];
+
+  /// Provider ömür boyu yaşadığı için; hesap silme / tekrar register’ta bellekte kalan adım ve PageController sıfırlanır.
+  void resetRegistrationFlow() {
+    pageController.dispose();
+    pageController = PageController(initialPage: 0);
+    usernameController.clear();
+    gender = null;
+    hobbies = [];
+    user = null;
+    birthdate = null;
+    aiPartnerExpectation = null;
+    aiPreferredTime = null;
+    appleUserIdentifier = null;
+    appleToken = null;
+    state = RegisterModel();
+  }
 
   updateBirthdate(DateTime newBirthdate) {
     birthdate = newBirthdate;
@@ -119,6 +137,7 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
     required String credential,
     String? fallbackUsername,
   }) async {
+    resetRegistrationFlow();
     updateEmail(email);
     updateCredential(credential);
     final prefs = await SharedPreferences.getInstance();
@@ -431,7 +450,7 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
     }
   }
 
-  /// Yeni kullanıcı için 2 günlük free trial oluştur
+  /// Yeni kullanıcı için free trial oluştur (süre: `PremiumService.freeTrialDays` gün).
   Future<void> _createFreeTrialForNewUser(UserModel user, Ref? ref) async {
     try {
       debugPrint(
@@ -439,13 +458,125 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
       );
       debugPrint("🎁 [FREE TRIAL] User ID: ${user.id}");
 
+      await DeviceTrialEligibilityService.applyStoredTrialLockToPremiumService();
+      if (PremiumService.freeTrialConsumedOnThisDevice) {
+        debugPrint(
+          "🎁 [FREE TRIAL] Skipped: this device already used the app trial",
+        );
+        return;
+      }
+
       // User ID kontrolü
       if (user.id == null) {
         debugPrint("❌ [FREE TRIAL] User ID is null, cannot create free trial");
         return;
       }
 
-      // Free trial oluştur
+      final userToken = user.token?.trim() ?? '';
+      final deviceFp =
+          await DeviceTrialEligibilityService.deviceTrialFingerprint();
+      final fpTrim = deviceFp?.trim() ?? '';
+
+      // Yerel deneme + update-premium: token/fp yetersiz | claim 503 (migration) | ağ/parse hatası
+      var useLegacyLocalTrial =
+          userToken.isEmpty || fpTrim.length < 8;
+
+      if (!useLegacyLocalTrial) {
+        try {
+          final claimResp = await httpService.post(
+            path: AppConstants.claimFreeTrialURL,
+            body: {
+              'userId': user.id!,
+              'deviceTrialFingerprint': fpTrim,
+            },
+            headers: {
+              'x-auth-token': userToken,
+              'Content-Type': 'application/json',
+            },
+          );
+
+          if (claimResp.statusCode == 409) {
+            await DeviceTrialEligibilityService.markTrialClaimedForThisDevice();
+            debugPrint(
+              '🎁 [FREE TRIAL] Skipped: server says device trial not allowed',
+            );
+            return;
+          }
+
+          if (claimResp.statusCode == 200) {
+            Map<String, dynamic>? data;
+            try {
+              final decoded = json.decode(claimResp.body);
+              if (decoded is Map<String, dynamic>) {
+                data = decoded;
+              } else if (decoded is Map) {
+                data = Map<String, dynamic>.from(decoded);
+              }
+            } catch (e) {
+              debugPrint(
+                '⚠️ [FREE TRIAL] claim 200 gövdesi parse edilemedi: $e',
+              );
+              return;
+            }
+            final rawUser = data?['user'];
+            if (rawUser is Map) {
+              final userMap = Map<String, dynamic>.from(rawUser);
+              dynamic membershipsRaw = userMap['memberships'];
+              if (membershipsRaw is String) {
+                try {
+                  membershipsRaw = json.decode(membershipsRaw);
+                } catch (_) {}
+              }
+              final mergedUser = user.copyWith(memberships: membershipsRaw);
+              ref?.read(AllControllers.userController.notifier).updateUserModel(
+                    mergedUser,
+                  );
+
+              final list = PremiumService.parseMemberships(membershipsRaw);
+              PremiumModel? trial;
+              for (final p in list) {
+                if (p.type == PremiumType.freeTrial && p.isActive) {
+                  trial = p;
+                  break;
+                }
+              }
+              if (trial != null) {
+                debugPrint(
+                  '⏰ [FREE TRIAL] Scheduling trial ended notification (server claim)...',
+                );
+                await _scheduleTrialEndedNotification(mergedUser, trial);
+              }
+
+              await DeviceTrialEligibilityService.markTrialClaimedForThisDevice();
+              debugPrint('✅ [FREE TRIAL] Server claim path completed');
+              return;
+            }
+            debugPrint(
+              '⚠️ [FREE TRIAL] claim 200 ama gövdede user yok; yerel deneme verilmiyor',
+            );
+            return;
+          }
+
+          if (claimResp.statusCode == 503) {
+            debugPrint(
+              '⚠️ [FREE TRIAL] claim-free-trial 503 (migration), yerel deneme yolu',
+            );
+            useLegacyLocalTrial = true;
+          } else {
+            debugPrint(
+              '🎁 [FREE TRIAL] claim-free-trial ${claimResp.statusCode}; yerel fallback yok',
+            );
+            return;
+          }
+        } catch (e) {
+          debugPrint(
+            '⚠️ [FREE TRIAL] claim-free-trial ağ/hata, yerel deneme yolu: $e',
+          );
+          useLegacyLocalTrial = true;
+        }
+      }
+
+      // Free trial oluştur (sunucu claim yok / 503 veya ağ — geriye dönük)
       final freeTrial = PremiumService.createFreeTrial(user);
       debugPrint(
         "✅ [FREE TRIAL] Free trial created: ${freeTrial.startDate} - ${freeTrial.endDate}",
@@ -461,6 +592,12 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
       debugPrint(
         "✅ [FREE TRIAL] Updated memberships count: ${updatedMemberships.length}",
       );
+
+      // Yerel kullanıcıyı her durumda güncelle (PremiumService parse + karakter oluşturma)
+      final userWithTrial = user.copyWith(memberships: updatedMemberships);
+      ref?.read(AllControllers.userController.notifier).updateUserModel(
+            userWithTrial,
+          );
 
       // Backend'e gönder (opsiyonel - hata olsa bile bildirim gönderilecek)
       try {
@@ -480,20 +617,21 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
           );
           debugPrint("📤 [FREE TRIAL] Sending to backend...");
 
+          final deviceFp =
+              await DeviceTrialEligibilityService.deviceTrialFingerprint();
           final response = await httpService.post(
             path: AppConstants.updatePremiumURL,
-            body: {"userId": user.id!, "memberships": membershipsJson},
+            body: {
+              "userId": user.id!,
+              "memberships": membershipsJson,
+              if (deviceFp != null && deviceFp.isNotEmpty)
+                "deviceTrialFingerprint": deviceFp,
+            },
             headers: headers,
           );
 
           if (response.statusCode == 200) {
             debugPrint("✅ [FREE TRIAL] Free trial saved to backend");
-
-            // User'ı güncelle
-            final updatedUser = user.copyWith(memberships: updatedMemberships);
-            ref
-                ?.read(AllControllers.userController.notifier)
-                .updateUserModel(updatedUser);
           } else {
             debugPrint(
               "❌ [FREE TRIAL] Failed to save free trial to backend: ${response.statusCode}",
@@ -509,6 +647,8 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
 
       debugPrint("⏰ [FREE TRIAL] Scheduling trial ended notification...");
       await _scheduleTrialEndedNotification(user, freeTrial);
+
+      await DeviceTrialEligibilityService.markTrialClaimedForThisDevice();
 
       debugPrint("✅ [FREE TRIAL] Free trial process completed");
     } catch (e, stackTrace) {
@@ -535,22 +675,23 @@ class RegisterViewController extends StateNotifier<RegisterModel> {
       final prefs = await SharedPreferences.getInstance();
       final langCode = prefs.getString('current_locale') ?? 'tr';
 
+      final d = PremiumService.freeTrialDays;
       String title, body;
       switch (langCode) {
         case 'en':
           title = 'Free Trial Ended ⏰';
           body =
-              'Your 2-day free trial has ended. Upgrade to Premium to continue enjoying unlimited features!';
+              'Your $d-day free trial has ended. Upgrade to Premium to continue enjoying unlimited features!';
           break;
         case 'de':
           title = 'Kostenlose Testversion beendet ⏰';
           body =
-              'Ihre 2-tägige kostenlose Testversion ist abgelaufen. Upgraden Sie auf Premium, um weiterhin unbegrenzte Funktionen zu genießen!';
+              'Ihre $d-tägige kostenlose Testversion ist abgelaufen. Upgraden Sie auf Premium, um weiterhin unbegrenzte Funktionen zu genießen!';
           break;
         default: // tr
           title = 'Ücretsiz Deneme Bitti ⏰';
           body =
-              '2 günlük ücretsiz denemeniz sona erdi. Sınırsız özelliklerden yararlanmaya devam etmek için Premium\'a yükseltin!';
+              '$d günlük ücretsiz denemeniz sona erdi. Sınırsız özelliklerden yararlanmaya devam etmek için Premium\'a yükseltin!';
       }
 
       // Trial bitiş zamanında bildirim gönder

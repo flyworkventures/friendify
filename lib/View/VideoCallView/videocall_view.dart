@@ -15,6 +15,8 @@ import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Services/local_service.dart';
+import 'package:friendfy/Services/premium_service.dart';
+import 'package:friendfy/View/FreeTrialActivatedView/free_trial_activated_view.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
 import 'package:friendfy/utils/app_constants.dart';
@@ -789,6 +791,18 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     await _wsSub?.cancel();
     await _socket?.close();
     if (!mounted) return;
+
+    const forceLogoutToLogin = true;
+    final u = ref.read(AllControllers.userController);
+    if (!PremiumService.hasActiveFreeTrialMembership(u)) {
+      await FreeTrialActivatedView.applyPostOnboardingTrialRouting(
+        ref: ref,
+        context: context,
+        forceLogoutToLogin: forceLogoutToLogin,
+      );
+      return;
+    }
+
     Navigator.of(context).pushNamedAndRemoveUntil(
       '/freeTrialActivated',
       (route) => false,
@@ -1686,16 +1700,16 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
        GestureDetector(
                     onTap: _toggleSpeaker,
                     child: Container(
-                      width: 52.w,
-                      height: 52.h,
-                      decoration: BoxDecoration(
+                      width: 52.r,
+                      height: 52.r,
+                      decoration: const BoxDecoration(
                         color: Colors.black,
-                        borderRadius: BorderRadius.circular(30),
+                        shape: BoxShape.circle,
                       ),
                       child: Center(
                         child: SvgPicture.asset(
                           "assets/icons/vieo_call.svg",
-                          width: 28.w,
+                          width: 28.r,
                         ),
                       ),
                     ),
@@ -1704,17 +1718,17 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
                   GestureDetector(
                     onTap: _endCall,
                     child: Container(
-                      width: 64.w,
-                      height:63.h,
-                      decoration: BoxDecoration(
+                      width: 64.r,
+                      height: 64.r,
+                      decoration: const BoxDecoration(
                         color: Colors.red,
-                        borderRadius: BorderRadius.circular(80),
+                        shape: BoxShape.circle,
                       ),
                       child: Center(
                         child: SvgPicture.asset(
                           "assets/icons/end_call.svg",
-                          width: 34.w,
-                          fit: BoxFit.cover,
+                          width: 34.r,
+                          fit: BoxFit.scaleDown,
                         ),
                       ),
                     ),
@@ -1723,16 +1737,16 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
              GestureDetector(
                     onTap: _toggleMicrophone,
                     child: Container(
-                      width: 52.w,
-                      height: 52.h,
-                      decoration: BoxDecoration(
-                        color:Colors.black,
-                        borderRadius: BorderRadius.circular(30),
+                      width: 52.r,
+                      height: 52.r,
+                      decoration: const BoxDecoration(
+                        color: Colors.black,
+                        shape: BoxShape.circle,
                       ),
                       child: Center(
                         child: SvgPicture.asset(
                          _isMicStreaming ? "assets/icons/mic.svg" : "assets/icons/mic-slash.svg",
-                          width: 28.w,
+                          width: 28.r,
                         ),
                       ),
                     ),
@@ -1842,7 +1856,7 @@ class _NetworkRiveAvatarState extends State<_NetworkRiveAvatar> {
     _riveController = controller;
     try {
       _viewModel = controller.dataBind(DataBind.auto());
-      _updateRiveProperty("duration", 70.0);
+      _updateRiveProperty("duration", 65.0);
       _updateRiveProperty("visemeNum", 0.0);
       _updateRiveProperty("talk", false);
     } catch (e) {

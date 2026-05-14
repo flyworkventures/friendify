@@ -194,12 +194,16 @@ class AgentModel {
   }
 
   static String? _parseRiveAvatar(Map<String, dynamic> map) {
+    // Backend bazı uçlarda Rive dosyasını `avatarUrl` / `avatar_url` ile döndürüyor.
     final dynamic raw = map['rive_avatar'] ??
         map['riveAvatar'] ??
         map['rive_avatar_url'] ??
         map['riveAvatarUrl'] ??
         map['avatar_rive'] ??
-        map['avatarRive'];
+        map['avatarRive'] ??
+        map['avatarUrl'] ??
+        map['avatar_url'] ??
+        map['avatarurl'];
     if (raw == null) return null;
     if (raw is String) {
       final trimmed = raw.trim();

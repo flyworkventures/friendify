@@ -124,7 +124,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(AllControllers.userController);
-    final isPremiumUser = PremiumService.isPremiumActive(user);
+    final showPremiumPlanCta = !PremiumService.isPremiumActive(user);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -133,7 +133,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
         child: Column(
           children: [
             top(),
-            if (!isPremiumUser) buildPremiumWidget(),
+            if (showPremiumPlanCta) buildPremiumWidget(),
             SizedBox(height: 20.h),
             listTile(
               icon: SvgPicture.asset("assets/icons/user-edit.svg",width: 24,),
@@ -485,39 +485,52 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
       );
     }
 
-    return Container(
-      width: isPaidPremium ? 113.w : 140,
-      height: 30.h,
-      padding: EdgeInsets.symmetric(horizontal: 10.w),
-      decoration: BoxDecoration(
-        color: isPaidPremium ? Color(0xffFFA500) : Colors.grey,
-        borderRadius: BorderRadius.circular(20.r),
-        gradient: isPaidPremium ? LinearGradient(colors: [Color(0xffE1A903),Color(0xffC67A00)]) : null,
-      ),
-      child: isPaidPremium ? Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset("assets/icons/king.png",width: 22.w,),
-            SizedBox(width: 4.w,),
-            Text(
-              subscriptionText,
-              style: GoogleFonts.quicksand(
-                color: textColor,
-                fontWeight: FontWeight.w700,
-                fontSize: 15.sp,
-              ),
-            ),
-          ],
+    return Center(
+      child: Container(
+        constraints: BoxConstraints(minHeight: 30.h),
+        padding: EdgeInsets.symmetric(
+          horizontal: isPaidPremium ? 10.w : 14.w,
+          vertical: 6.h,
         ),
-      ) : Center(child: Text(
-              subscriptionText,
-              style: GoogleFonts.quicksand(
-                color: textColor,
-                fontWeight: FontWeight.w500,
-                fontSize: 15.sp,
+        decoration: BoxDecoration(
+          color: isPaidPremium ? Color(0xffFFA500) : Colors.grey,
+          borderRadius: BorderRadius.circular(20.r),
+          gradient: isPaidPremium
+              ? LinearGradient(
+                  colors: [Color(0xffE1A903), Color(0xffC67A00)],
+                )
+              : null,
+        ),
+        child: isPaidPremium
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Image.asset("assets/icons/king.png", width: 22.w),
+                  SizedBox(width: 4.w),
+                  Text(
+                    subscriptionText,
+                    style: GoogleFonts.quicksand(
+                      color: textColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15.sp,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
+              )
+            : Text(
+                subscriptionText,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.quicksand(
+                  color: textColor,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 15.sp,
+                  height: 1.1,
+                ),
               ),
-            ),),
+      ),
     );
   }
 

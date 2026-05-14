@@ -5,6 +5,8 @@ import 'package:friendfy/Models/user_model.dart';
 class PremiumService {
   // ⏱️ Bedava premium süresi (gün cinsinden)
   static const int freeTrialDays = 3;
+  /// Backend `DEVICE_TRIAL_MEMBERSHIP_PRODUCT_ID` ile aynı olmalı (claim-free-trial).
+  static const String deviceFreeTrialProductId = 'friendify_device_free_trial_v1';
   
   // 👤 Misafir kullanıcı limitleri
   static const int guestDailyMessageLimit = 10;
@@ -47,8 +49,16 @@ class PremiumService {
       if (memberships is List) {
         return memberships
             .map((item) {
+              if (item is PremiumModel) {
+                return item;
+              }
               if (item is Map<String, dynamic>) {
                 return PremiumModel.fromMap(item);
+              }
+              if (item is Map) {
+                return PremiumModel.fromMap(
+                  Map<String, dynamic>.from(item),
+                );
               }
               if (item is String) {
                 return PremiumModel.fromMap(json.decode(item) as Map<String, dynamic>);
@@ -107,6 +117,25 @@ class PremiumService {
     return activePremium;
   }
 
+  /// Aktif ücretsiz deneme (`memberships`) var mı — yoksa trial “aktive” ekranı atlanır.
+  static bool hasActiveFreeTrialMembership(UserModel? user) {
+    final p = getActivePremium(user);
+    return p != null && p.type == PremiumType.freeTrial;
+  }
+
+  /// Ücretli abonelik veya süresi dolmamış uygulama içi ücretsiz deneme (`memberships`).
+  /// Karakter oluşturma gibi özelliklerde deneme süresi boyunca paid ile aynı erişim.
+  /// `canUseFreeTrial`: üyelik kaydı sonrası trial henüz API şeklinde yokken bile
+  /// günlük limitlerle aynı "deneme hakkı" penceresi (mesaj/ses ile tutarlı).
+  static bool hasUnlockedPremiumFeatures(UserModel? user) {
+    if (canUseFreeTrial(user)) return true;
+    final p = getActivePremium(user);
+    if (p == null) return false;
+    return p.type == PremiumType.paid ||
+        p.type == PremiumType.freeTrial ||
+        p.type == PremiumType.trial;
+  }
+
   /// Kullanıcı premium mu kontrol eder (sadece paid premium, free trial değil)
   static bool isPremiumActive(UserModel? user) {
     final activePremium = getActivePremium(user);
@@ -114,11 +143,23 @@ class PremiumService {
     return activePremium != null && activePremium.type == PremiumType.paid;
   }
 
+  /// Bu cihazda daha önce 3 günlük deneme tüketildiyse (yerel işaret); backend ile birleştirilmeli.
+  static bool _freeTrialConsumedOnThisDevice = false;
+
+  static void setFreeTrialConsumedOnThisDevice(bool value) {
+    _freeTrialConsumedOnThisDevice = value;
+  }
+
+  static bool get freeTrialConsumedOnThisDevice => _freeTrialConsumedOnThisDevice;
+
   /// Bedava premium kullanılabilir mi kontrol eder
-  /// - Üye olduğu tarihten itibaren 7 gün içindeyse
+  /// - Üye olduğu tarihten itibaren [freeTrialDays] gün içindeyse
   /// - Daha önce bedava premium kullanmamışsa
+  /// - Bu cihazda deneme daha önce tüketilmemişse
   static bool canUseFreeTrial(UserModel? user) {
     if (user == null) return false;
+
+    if (_freeTrialConsumedOnThisDevice) return false;
     
     // Zaten aktif premium'u varsa bedava premium kullanamaz
     if (isPremiumActive(user)) return false;
@@ -126,10 +167,9 @@ class PremiumService {
     final now = DateTime.now();
     final accountCreatedDate = user.accountCreatedDate;
     
-    // 7 günlük süre kontrolü
     final daysSinceAccountCreated = now.difference(accountCreatedDate).inDays;
     if (daysSinceAccountCreated > freeTrialDays) {
-      return false; // 7 gün geçmiş
+      return false;
     }
     
     // Daha önce bedava premium kullanmış mı kontrol et
@@ -175,23 +215,10 @@ class PremiumService {
   }
 
   /// Botları düzenleyebilir mi kontrol eder
-  /// Premium üyeler botları düzenleyebilir
-  /// Free trial kullanıcılar düzenleyemez (paywall tetiklenmeli)
+  /// Ücretli premium veya aktif ücretsiz deneme süresince düzenlenebilir
   static bool canEditAgents(UserModel? user) {
     if (user == null) return false;
-    
-    // Premium kullanıcı düzenleyebilir
-    if (isPremiumActive(user)) {
-      return true;
-    }
-    
-    // Free trial kullanıcı düzenleyemez (paywall tetiklenmeli)
-    if (canUseFreeTrial(user)) {
-      return false;
-    }
-    
-    // Misafir ve normal kullanıcı düzenleyemez
-    return false;
+    return hasUnlockedPremiumFeatures(user);
   }
 
   /// Günlük fotoğraf gönderme limitini döndürür
@@ -283,46 +310,28 @@ class PremiumService {
   }
 
   /// Karakter düzenleme limitini döndürür
-  /// Premium ise null (sınırsız)
-  /// Free trial ve diğerleri için 0 (düzenleyemez, paywall tetiklenmeli)
+  /// Ücretli premium veya aktif deneme: null (sınırsız)
+  /// Diğerleri: 0 (paywall)
   static int? getCharacterEditLimit(UserModel? user) {
     if (user == null) return 0;
     
-    // Premium kullanıcı sınırsız
-    if (isPremiumActive(user)) {
+    if (hasUnlockedPremiumFeatures(user)) {
       return null;
     }
     
-    // Free trial ve diğerleri düzenleyemez
     return 0;
   }
 
   /// Karakter düzenleyebilir mi kontrol eder
-  /// Premium ise true, diğerleri false (paywall tetiklenmeli)
-  static bool canEditCharacter(UserModel? user, int currentEditedCount) {
+  static bool canEditCharacter(UserModel? user) {
     if (user == null) return false;
-    
-    // Premium kullanıcı sınırsız
-    if (isPremiumActive(user)) {
-      return true;
-    }
-    
-    // Free trial ve diğerleri düzenleyemez
-    return false;
+    return hasUnlockedPremiumFeatures(user);
   }
   
   /// Karakter oluşturabilir mi kontrol eder
-  /// Premium ise true, diğerleri false (paywall tetiklenmeli)
   static bool canCreateCharacter(UserModel? user) {
     if (user == null) return false;
-    
-    // Premium kullanıcı oluşturabilir
-    if (isPremiumActive(user)) {
-      return true;
-    }
-    
-    // Free trial ve diğerleri oluşturamaz
-    return false;
+    return hasUnlockedPremiumFeatures(user);
   }
 
   /// Günlük mesaj sayısını kontrol eder (limit aşılmış mı?)
@@ -337,7 +346,7 @@ class PremiumService {
     return todayMessageCount >= limit;
   }
 
-  /// Bedava premium oluşturur (7 günlük)
+  /// Bedava premium oluşturur ([freeTrialDays] günlük)
   static PremiumModel createFreeTrial(UserModel user) {
     final now = DateTime.now();
     final endDate = now.add(Duration(days: freeTrialDays));
@@ -345,7 +354,7 @@ class PremiumService {
     return PremiumModel(
       startDate: now,
       endDate: endDate,
-      productId: 'free_trial_${user.id}',
+      productId: deviceFreeTrialProductId,
       type: PremiumType.freeTrial,
       isActive: true,
       purchasedAt: null,

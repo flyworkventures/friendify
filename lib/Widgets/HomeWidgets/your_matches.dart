@@ -48,109 +48,129 @@ class _YourMatchesState extends ConsumerState<YourMatches> {
         height: 197.h,
         width: 143.w,
         margin: EdgeInsets.only(right: 10).r,
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(20).r),
-        child: Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20).r,
-              child: CachedNetworkImage(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20).r,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20).r,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CachedNetworkImage(
                 imageUrl: agent.photoURL,
-                height: 240.h,
-                width: 152.w,
-                alignment: Alignment(0, -1),
+                alignment: Alignment.topCenter,
                 fit: BoxFit.cover,
                 placeholder: (context, url) => Shimmer(
                   gradient: LinearGradient(colors: [Colors.white, Colors.grey]),
                   child: Container(
-                    height: 240.h,
-                    width: 152.w,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20).r,
-                    ),
+                    width: double.infinity,
+                    height: double.infinity,
+                    color: Colors.grey.shade300,
                   ),
                 ),
               ),
-            ),
 
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20).r,
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 13,
-                    ).r,
-                    width: MediaQuery.sizeOf(context).width,
-                    height: 69.h,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withValues(alpha: 0.6),
-                          Colors.transparent,
-                        ],
-                        end: Alignment.topCenter,
-                        begin: Alignment.bottomCenter,
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(18.r),
+                  ),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 13,
+                      ).r,
+                      width: double.infinity,
+                      height: 69.h,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(18.r),
+                        ),
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.black.withValues(alpha: 0.6),
+                            Colors.transparent,
+                          ],
+                          end: Alignment.topCenter,
+                          begin: Alignment.bottomCenter,
+                        ),
                       ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "${agent.name}, ${agent.age}",
-                              style: GoogleFonts.quicksand(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14.sp,
-                              ),
-                            ),
-                            FittedBox(
-                              child: Text(
-                                agent.getJobByLang(
-                                      app.currentLang?.languageCode ?? "en",
-                                    ) ??
-                                    Translate.translate(
-                                      "home_job_fallback",
-                                      context,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "${agent.name}, ${agent.age}",
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.quicksand(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14.sp,
+                                  ),
+                                ),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    agent.getJobByLang(
+                                          app.currentLang?.languageCode ??
+                                              "en",
+                                        ) ??
+                                        Translate.translate(
+                                          "home_job_fallback",
+                                          context,
+                                        ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.quicksand(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w400,
+                                      fontSize: 12.sp,
                                     ),
-                                style: GoogleFonts.quicksand(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w400,
-                                  fontSize: 12.sp,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withValues(alpha: 0.3),
+                              ),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: SvgPicture.asset(
+                                    "assets/icons/messages-2.svg",
+                                    width: 16,
+                                    height: 16,
+                                    fit: BoxFit.contain,
+                                  ),
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                        Flexible(
-                          child: Container(
-                            width: 24.w,
-                            height: 24.h,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(40).r,
-                              color: Colors.white.withValues(alpha: 0.3),
-                            ),
-                            child: Center(
-                              child: SvgPicture.asset(
-                                "assets/icons/messages-2.svg",
-                                width: 13.w,
-                              ),
-                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -17,7 +17,6 @@ import 'package:friendfy/Controllers/ViewControllers/chat_screen_view_controller
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
 import 'package:friendfy/Services/local_service.dart';
-import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -29,6 +28,8 @@ import 'package:intl/intl.dart';
 
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/message_model.dart';
+import 'package:friendfy/Services/premium_service.dart';
+import 'package:friendfy/View/FreeTrialActivatedView/free_trial_activated_view.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/Widgets/textfield.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
@@ -104,13 +105,61 @@ class _ChatViewState extends ConsumerState<ChatView> {
     if (_onboardingStateLoaded) return;
     _onboardingStateLoaded = true;
     final routeArgs = ModalRoute.of(context)?.settings.arguments;
-    final isFromRegister = routeArgs is Map && routeArgs["onboardingFunnel"] == true;
-    setState(() {
-      _onboardingFunnelActive = isFromRegister;
-      if (!isFromRegister) {
-        _showOnboardingVideoCta = false;
-      }
-    });
+    var funnel = routeArgs is Map && routeArgs["onboardingFunnel"] == true;
+
+    void applyFunnel(bool active) {
+      if (!mounted) return;
+      setState(() {
+        _onboardingFunnelActive = active;
+        if (!active) {
+          _showOnboardingVideoCta = false;
+        }
+      });
+    }
+
+    applyFunnel(funnel);
+
+    // OnboardingDemoChatView önce prefs yazar; rota argümanı kaçarsa yedek.
+    if (!funnel) {
+      SharedPreferences.getInstance().then((prefs) {
+        if (!mounted) return;
+        final fromPrefs = LocalService(prefs: prefs).isOnboardingFunnelActive();
+        if (fromPrefs) {
+          setState(() => _onboardingFunnelActive = true);
+        }
+      });
+    }
+  }
+
+  /// Onboarding video kapısı: deneme yoksa [FreeTrialActivated] atlanır, doğrudan login/sonraki adım.
+  Future<void> _completeOnboardingVideoGateAndNavigate({
+    required String postAuthAction,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    const forceLogoutToLogin = true;
+    await localService.setPostAuthAction(postAuthAction);
+    await localService.setOnboardingVideoGatePending(false);
+    await localService.setOnboardingFunnelActive(false);
+    if (!mounted) return;
+
+    final u = ref.read(AllControllers.userController);
+    if (!PremiumService.hasActiveFreeTrialMembership(u)) {
+      await FreeTrialActivatedView.applyPostOnboardingTrialRouting(
+        ref: ref,
+        context: context,
+        forceLogoutToLogin: forceLogoutToLogin,
+      );
+      return;
+    }
+
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/freeTrialActivated',
+      (route) => false,
+      arguments: {
+        "forceLogoutToLogin": forceLogoutToLogin,
+      },
+    );
   }
 
   @override
@@ -181,19 +230,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   void _evaluateOnboardingVideoCta() {
-    if (PremiumService.isPremiumActive(ref.read(AllControllers.userController))) {
-      if (!_onboardingFunnelActive && !_showOnboardingVideoCta) return;
-      setState(() {
-        _onboardingFunnelActive = false;
-        _showOnboardingVideoCta = false;
-      });
-      return;
-    }
     if (!_onboardingFunnelActive) return;
     final messages = ref.read(AllControllers.chatViewController).messages ?? [];
     final userMessageCount = messages.where((m) => m.sender == "user").length;
     final shouldShow = userMessageCount >= 4;
     if (!mounted || shouldShow == _showOnboardingVideoCta) return;
+    // Deneme/premium olsa da 4. kullanıcı mesajından sonra aynı onboarding
+    // adımı (video CTA); AppBar yalnızca _onboardingFunnelActive ile gizli kalır.
     setState(() => _showOnboardingVideoCta = shouldShow);
   }
 
@@ -381,19 +424,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
               MyGradientButton(
                 margin: EdgeInsets.only(left: 15.r, right: 15.r),
                 onTap: () async {
-                  final prefs = await SharedPreferences.getInstance();
-                  final localService = LocalService(prefs: prefs);
-                  final forceLogoutToLogin = true;
-                  await localService.setPostAuthAction("go_premium");
-                  await localService.setOnboardingVideoGatePending(false);
-                  await localService.setOnboardingFunnelActive(false);
-                  if (!mounted) return;
-                  Navigator.of(context).pushNamedAndRemoveUntil(
-                    '/freeTrialActivated',
-                    (route) => false,
-                    arguments: {
-                      "forceLogoutToLogin": forceLogoutToLogin,
-                    },
+                  await _completeOnboardingVideoGateAndNavigate(
+                    postAuthAction: 'go_premium',
                   );
                 },
                 radius: BorderRadius.circular(30.r),
@@ -420,19 +452,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
               Center(
                 child: TextButton(
                   onPressed: () async {
-                    final prefs = await SharedPreferences.getInstance();
-                    final localService = LocalService(prefs: prefs);
-                    final forceLogoutToLogin = true;
-                    await localService.setPostAuthAction("continue_normal");
-                    await localService.setOnboardingVideoGatePending(false);
-                    await localService.setOnboardingFunnelActive(false);
-                    if (!mounted) return;
-                    Navigator.of(context).pushNamedAndRemoveUntil(
-                      '/freeTrialActivated',
-                      (route) => false,
-                      arguments: {
-                        "forceLogoutToLogin": forceLogoutToLogin,
-                      },
+                    await _completeOnboardingVideoGateAndNavigate(
+                      postAuthAction: 'continue_normal',
                     );
                   },
                   child: Text(

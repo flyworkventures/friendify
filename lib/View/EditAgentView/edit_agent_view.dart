@@ -330,6 +330,36 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                         );
                         return;
                       }
+                      if (widget.createFlow) {
+                        if (selectedVoiceId == null || selectedVoiceId!.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                Translate.translate(
+                                  TranslateKeys.editCharacterSelectVoice,
+                                  context,
+                                ),
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+                        if (selectedInterests.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                Translate.translate(
+                                  TranslateKeys.editCharacterInterestsTraitsHint,
+                                  context,
+                                ),
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+                      }
                       final currentAgent =
                           ref.read(AllControllers.agentsProfileViewController).agent;
                       if (currentAgent == null) {

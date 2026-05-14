@@ -93,21 +93,13 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
         .read(AllControllers.agentsViewController.notifier)
         .getRecentAgents();
 
-    final chatState = ref.read(AllControllers.chatViewController);
-    final hasExistingConversations =
-        chatState.conversations != null && chatState.conversations!.isNotEmpty;
-
-    final onboardingAlreadyDone = localService.isOnboardingFunnelActive();
-
-    if (hasExistingConversations || onboardingAlreadyDone) {
-      debugPrint("✅ [RegisterFlow] Mevcut sohbet veya tamamlanmış onboarding – ana sayfaya yönlendiriliyor");
-      await _handlePostAuthActionOrHome();
-    } else {
-      await navigatorKey.currentState?.pushNamedAndRemoveUntil(
-        '/onboardingDemoChatView',
-        (route) => false,
-      );
-    }
+    // Giriş ekranından Google/Facebook/Apple ile yapılan ilk kayıt: kullanıcı
+    // onboarding cevaplarını zaten verdi; demo sohbet yerine doğrudan ana sayfa.
+    // (Register UI → AccountCreated → /onboardingDemoChatView ayrı akıştır.)
+    debugPrint(
+      "✅ [RegisterFlow] Sosyal ile createUser tamamlandı – ana sayfaya yönlendiriliyor",
+    );
+    await _handlePostAuthActionOrHome();
   }
 
   googleAuth() async {

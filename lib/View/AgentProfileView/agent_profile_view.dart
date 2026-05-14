@@ -483,12 +483,12 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
             .startVoiceCall(agent);
       },
       child: Container(
-        width: 48.w,
-        height: 48.h,
+        width: 48.r,
+        height: 48.r,
         decoration: BoxDecoration(
+          shape: BoxShape.circle,
           border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
           color: Colors.black.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(30),
         ),
         child: Center(child: SvgPicture.asset("assets/icons/call.svg")),
       ),
@@ -508,10 +508,10 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
             .startChat(agent);
       },
       child: Container(
-        width: 48.w,
-        height: 48.h,
+        width: 48.r,
+        height: 48.r,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(30),
+          shape: BoxShape.circle,
           border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
           color: Colors.black.withValues(alpha: 0.2),
         ),

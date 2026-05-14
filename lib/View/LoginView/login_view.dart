@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
+import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
+import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/View/AgentsScreen/agents_screen.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
@@ -86,6 +88,42 @@ class LoginViewState extends ConsumerState<LoginView>
     emailController.dispose();
     passwordController.dispose();
     super.dispose();
+  }
+
+  /// Kayıt soruları cihazda kayıtlıysa (akış tamamlanmış misafir), tekrar register
+  /// yerine misafir oturumu açılır.
+  Future<void> _continueAsGuest() async {
+    debugPrint("👤 Guest button clicked");
+    if (!mounted || loading) return;
+    final prefs = await SharedPreferences.getInstance();
+    final localService = LocalService(prefs: prefs);
+    final answers = localService.getOnboardingAnswers();
+    final alreadyCompletedRegister =
+        answers != null && answers.isNotEmpty;
+
+    if (!alreadyCompletedRegister) {
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/register',
+        (route) => false,
+      );
+      return;
+    }
+
+    setState(() => loading = true);
+    final ok = await ref
+        .read(AllControllers.onboardViewController.notifier)
+        .guestLogin(navigateToHome: true);
+    if (!mounted) return;
+    setState(() => loading = false);
+    if (ok) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          Translate.translate(TranslateKeys.registerGenericError, context),
+        ),
+      ),
+    );
   }
 
   @override
@@ -237,12 +275,8 @@ class LoginViewState extends ConsumerState<LoginView>
                 // Misafir giriş butonu
                 MyButton(
                   onTap: () async {
-                    debugPrint("👤 Guest button clicked");
                     if (!mounted) return;
-                    Navigator.of(context).pushNamedAndRemoveUntil(
-                      '/register',
-                      (route) => false,
-                    );
+                    await _continueAsGuest();
                   },
                   margin: EdgeInsets.symmetric(
                     horizontal: 20,
@@ -297,12 +331,8 @@ class LoginViewState extends ConsumerState<LoginView>
 
                 MyButton(
                   onTap: () async {
-                    debugPrint("👤 Guest button clicked");
                     if (!mounted) return;
-                    Navigator.of(context).pushNamedAndRemoveUntil(
-                      '/register',
-                      (route) => false,
-                    );
+                    await _continueAsGuest();
                   },
                   margin: EdgeInsets.symmetric(
                     horizontal: 20,

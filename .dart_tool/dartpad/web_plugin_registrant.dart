@@ -9,6 +9,7 @@
 import 'package:audio_session/audio_session_web.dart';
 import 'package:audioplayers_web/audioplayers_web.dart';
 import 'package:camera_web/camera_web.dart';
+import 'package:device_info_plus/src/device_info_plus_web.dart';
 import 'package:devicelocale/devicelocale_web.dart';
 import 'package:file_picker/_internal/file_picker_web.dart';
 import 'package:flutter_facebook_auth_web/flutter_facebook_auth_web.dart';
@@ -32,6 +33,7 @@ void registerPlugins([final Registrar? pluginRegistrar]) {
   AudioSessionWeb.registerWith(registrar);
   AudioplayersPlugin.registerWith(registrar);
   CameraPlugin.registerWith(registrar);
+  DeviceInfoPlusWebPlugin.registerWith(registrar);
   DevicelocaleWeb.registerWith(registrar);
   FilePickerWeb.registerWith(registrar);
   FlutterFacebookAuthPlugin.registerWith(registrar);

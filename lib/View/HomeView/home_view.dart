@@ -105,11 +105,15 @@ class _HomeViewState extends ConsumerState<HomeView> {
         return;
       }
 
-      // Abonelik aktifse paywall acma.
+      // Ücretli (backend) veya mağaza aboneliği varsa paywall açma; uygulama içi deneme
+      // sürerken kart görünür ve kullanıcı tam aboneliğe yönlendirilebilir.
       final hasActiveRevenueCatPremium =
           await RevenueCatService.hasActiveEntitlement();
-      if (hasActiveRevenueCatPremium || PremiumService.isPremiumActive(user)) {
-        debugPrint("✅ Kullanici zaten abone, paywall acilmadi");
+      if (hasActiveRevenueCatPremium ||
+          PremiumService.isPremiumActive(user)) {
+        debugPrint(
+          "✅ Ücretli abonelik / mağaza entitlement var, paywall açılmadı",
+        );
         return;
       }
 
@@ -166,7 +170,8 @@ class _HomeViewState extends ConsumerState<HomeView> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(AllControllers.userController);
-    final isPremiumUser = PremiumService.isPremiumActive(user);
+    final isPremiumUser = PremiumService.hasUnlockedPremiumFeatures(user);
+    final showPremiumPlanCta = !PremiumService.isPremiumActive(user);
     List<ConversationModel> conversations =
         ref.watch(AllControllers.chatViewController).conversations ?? [];
     return Scaffold(
@@ -217,7 +222,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                       chatWithCyra(conversations),
                       
           
-                      if (!isPremiumUser) ...[
+                      if (showPremiumPlanCta) ...[
                         premiumCard(),
                       ],
           
@@ -836,22 +841,27 @@ class _HomeViewState extends ConsumerState<HomeView> {
                 }
 
                 if (photoURL.isEmpty) {
-                  return SizedBox(width: 109.w, height: 109.h);
+                  return SizedBox(width: 86.r, height: 86.r);
                 }
 
-                return Container(
-                  width: 86.w,
-                  height: 86.h,
-                  decoration: BoxDecoration(
-                    border: Border.all(width: 2, color: MyColors.purple),
-                    borderRadius: BorderRadius.circular(100),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(100),
+                final double d = 86.r;
+                return SizedBox(
+                  width: d,
+                  height: d,
+                  child: Material(
+                    color: Colors.transparent,
+                    clipBehavior: Clip.antiAlias,
+                    shape: CircleBorder(
+                      side: BorderSide(
+                        color: MyColors.purple,
+                        width: 2,
+                      ),
+                    ),
                     child: CachedNetworkImage(
                       imageUrl: photoURL,
-                      alignment: Alignment(0, -1),
+                      alignment: Alignment.topCenter,
                       fit: BoxFit.cover,
+                      filterQuality: FilterQuality.medium,
                       placeholder: (context, url) => Shimmer.fromColors(
                         baseColor: Colors.grey[300]!,
                         highlightColor: Colors.grey[100]!,
@@ -1196,25 +1206,23 @@ class _HomeViewState extends ConsumerState<HomeView> {
                           .startChat(agent),
                       child: SizedBox(
                         height: 120.h,
-                        width: 66.w,
+                        width: 66.r,
                         child: Column(
                           children: [
                             SizedBox(
-                              height: 66.h,
-                              width: 66.w,
+                              height: 66.r,
+                              width: 66.r,
                               child: Stack(
                                 children: [
                                   Center(
                                     child: Container(
-                                      width: 66.w,
-                                      height: 66.h,
+                                      width: 66.r,
+                                      height: 66.r,
                                       decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
                                         border: Border.all(
                                           width: 2,
                                           color: MyColors.purple,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          50.r,
                                         ),
                                       ),
                                       child: ClipOval(
@@ -1248,13 +1256,11 @@ class _HomeViewState extends ConsumerState<HomeView> {
                                   Align(
                                     alignment: Alignment.topRight,
                                     child: Container(
-                                      width: 18.w,
-                                      height: 18.h,
+                                      width: 28.r,
+                                      height: 28.r,
                                       padding: EdgeInsets.all(3),
                                       decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(
-                                          40,
-                                        ),
+                                        shape: BoxShape.circle,
                                         gradient: LinearGradient(
                                           colors: [
                                             Color(0xffAB10E2),
@@ -1266,13 +1272,20 @@ class _HomeViewState extends ConsumerState<HomeView> {
                                       ),
                                       child: Center(
                                         child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.center,
                                           child: Text(
                                             Translate.translate(
                                               "new",
                                               context,
                                             ).toLowerCase(),
+                                            textAlign: TextAlign.center,
+                                            maxLines: 1,
                                             style: GoogleFonts.quicksand(
                                               color: Colors.white,
+                                              fontSize: 11.sp,
+                                              fontWeight: FontWeight.w600,
+                                              height: 1.0,
                                             ),
                                           ),
                                         ),

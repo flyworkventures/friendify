@@ -381,8 +381,8 @@ Future<void> pickImage() async {
             log("⚠️ State update error (controller may be disposed): $e");
           }
           
-          await _clearSessionAndNavigateToOnboard();
-          
+          await _clearSessionAndNavigateToOnboard(nextRoute: '/onboard');
+
           log("✅ Account deleted and redirected to onboard");
         } else {
           debugPrint("❌ Server returned success=false: ${responseData['msg']}");
@@ -411,7 +411,8 @@ Future<void> pickImage() async {
     }
   }
 
-  Future<void> _clearSessionAndNavigateToOnboard() async {
+  /// Oturumu temizler; [nextRoute] ile yönlendir (logout: `/login`, hesap silme: `/onboard`).
+  Future<void> _clearSessionAndNavigateToOnboard({String nextRoute = '/login'}) async {
     // Kullanıcı state'i null olmadan önce kullanıcıya ait bildirimleri temizle.
     await ref
         ?.read(AllControllers.notificationsViewController.notifier)
@@ -440,9 +441,10 @@ Future<void> pickImage() async {
     // User state'ini temizle.
     ref?.read(AllControllers.userController.notifier).state = null;
 
-    // Login'e dön.
+    ref?.read(AllControllers.registerViewController.notifier).resetRegistrationFlow();
+
     navigatorKey.currentState?.pushNamedAndRemoveUntil(
-      '/login',
+      nextRoute,
       (route) => false,
     );
   }

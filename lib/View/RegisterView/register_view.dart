@@ -8,6 +8,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
+import 'package:friendfy/Controllers/ViewControllers/register_view_controller.dart';
 import 'package:friendfy/Models/interest_option.dart';
 import 'package:friendfy/Services/interest_service.dart';
 import 'package:friendfy/Themes/colors.dart';
@@ -99,6 +100,21 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
   String? _interestsError;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(AllControllers.registerViewController.notifier).resetRegistrationFlow();
+      if (!mounted) return;
+      setState(() {
+        tags = List<String>.from(
+          ref.read(AllControllers.registerViewController).selectedTags,
+        );
+      });
+    });
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_interestsLoadScheduled) {
@@ -169,7 +185,23 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
     final stepIndex = reg.currentIndex;
     const totalSteps = 5;
 
+    ref.listen<RegisterModel>(
+      AllControllers.registerViewController,
+      (RegisterModel? previous, RegisterModel next) {
+        if (next.currentIndex == 2 &&
+            (previous == null || previous.currentIndex != 2)) {
+          if (!mounted) return;
+          setState(() {
+            tags = List<String>.from(next.selectedTags);
+          });
+        }
+      },
+    );
+
     final nextBlocked =
+        (stepIndex == 2 &&
+            tags.isEmpty &&
+            reg.selectedTags.isEmpty) ||
         (stepIndex == 3 &&
             (reg.aiPartnerExpectation == null ||
                 reg.aiPartnerExpectation!.isEmpty)) ||
