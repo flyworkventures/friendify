@@ -109,15 +109,23 @@ class SplashViewController extends StateNotifier<void> {
                 await ref
                     .read(AllControllers.chatViewController.notifier)
                     .getConversations();
-                await ref
-                    .read(AllControllers.agentsViewController.notifier)
-                    .getAgents();
-                await ref
-                    .read(AllControllers.agentsViewController.notifier)
-                    .getRecentAgents();
               } catch (e) {
-                debugPrint("⚠️ Veri çekme hatası (devam ediliyor): $e");
+                debugPrint("⚠️ Konuşma listesi hatası (devam ediliyor): $e");
               }
+
+              // Karakter listeleri splash'i bloklamasın (arka planda yüklensin).
+              final agentsNotifier =
+                  ref.read(AllControllers.agentsViewController.notifier);
+              unawaited(
+                agentsNotifier.getAgents().catchError((Object e) {
+                  debugPrint("⚠️ getAgents arka plan hatası: $e");
+                }),
+              );
+              unawaited(
+                agentsNotifier.getRecentAgents().catchError((Object e) {
+                  debugPrint("⚠️ getRecentAgents arka plan hatası: $e");
+                }),
+              );
               await _ensureMinimumSplashVisible(splashStartedAt);
               await navigatorKey.currentState?.pushNamedAndRemoveUntil(
                 '/bottomNavbar',

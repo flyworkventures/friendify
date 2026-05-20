@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:friendfy/AppLocalizations/app_localizations.dart';
 import 'package:friendfy/View/AccountCreatedView/account_created_view.dart';
 import 'package:friendfy/View/AccountDeletedView/account_deleted_view.dart';
 import 'package:friendfy/View/AgentProfileView/agent_profile_view.dart';
@@ -7,27 +9,25 @@ import 'package:friendfy/View/BottomNavBarView/bottom_navbar_view.dart';
 import 'package:friendfy/View/ChatView/chat_view.dart';
 import 'package:friendfy/View/EditAgentView/edit_agent_view.dart';
 import 'package:friendfy/View/FaqView/faq_view.dart';
+import 'package:friendfy/View/FreeTrialActivatedView/free_trial_activated_view.dart';
 import 'package:friendfy/View/LanguageView/language_view.dart';
 import 'package:friendfy/View/LoginView/login_view.dart';
 import 'package:friendfy/View/NotificationsView/notifications_view.dart';
+import 'package:friendfy/View/OnboardView/onboard_view.dart';
 import 'package:friendfy/View/OnboardingDemoView/onboarding_demo_chat_view.dart';
 import 'package:friendfy/View/OnboardingDemoView/onboarding_demo_video_call_view.dart';
-import 'package:friendfy/View/OnboardView/onboard_view.dart';
 import 'package:friendfy/View/ProfileSettings/profile_settings.dart';
 import 'package:friendfy/View/RegisterView/register_view.dart';
 import 'package:friendfy/View/ServerErrorPage/server_error_view.dart';
 import 'package:friendfy/View/StartView/start_view.dart';
-import 'package:friendfy/View/VoiceCallView/voice_call_view.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:friendfy/AppLocalizations/app_localizations.dart';
 import 'package:friendfy/View/VideoCallView/videocall_view.dart';
-import 'package:friendfy/View/FreeTrialActivatedView/free_trial_activated_view.dart';
+import 'package:friendfy/View/VoiceCallView/voice_call_view.dart';
 
 class AppConstants {
   static const String appName = "friendfy";
   // 10.0.2.2:
 
-  static const String baseURL = "https://friendfy.fly-work.com";
+  static const String baseURL = "http://localhost:3000";
   // "http://localhost:3000";
   // "https://friendfy.fly-work.com"
   static const String configURL = "/server/config";
@@ -71,7 +71,8 @@ class AppConstants {
   static const String interestsListLocalized = "/interests/list-localized";
 
   /// ElevenLabs TTS ayarlari (dogrudan string olarak gir)
-  static const String elevenLabsApiKey = "sk_b13afa6a80b9ff28788cd259e6d75005cdd74059e84f4913";
+  static const String elevenLabsApiKey =
+      "sk_b13afa6a80b9ff28788cd259e6d75005cdd74059e84f4913";
   static const String elevenLabsVoiceId = "21m00Tcm4TlvDq8ikWAM";
 
   /// Voice WS URL (duz sabit URL kullanimi).
@@ -84,6 +85,13 @@ class AppConstants {
   /// Gercek cihaz: ws://<LAN_IP>:3000/ws/video
   /// Prod: wss://friendfy.fly-work.com/ws/video
   static const String videoWsUrl = "ws://friendfy.fly-work.com/ws/video";
+
+  /// Realtime V2 WS endpoint (/realtime).
+  static String get realtimeWsUrl {
+    final apiUri = Uri.parse(baseURL);
+    final wsScheme = apiUri.scheme == "https" ? "wss" : "ws";
+    return apiUri.replace(scheme: wsScheme, path: "/realtime").toString();
+  }
 
   static List<Locale> supportedLocales = const [
     Locale('en', 'US'),
@@ -127,8 +135,7 @@ class AppConstants {
     '/videoCallView': (_) => VideocallView(),
     '/voiceCallView': (_) => const VoiceCallView(),
     '/onboardingDemoChatView': (_) => const OnboardingDemoChatView(),
-    '/onboardingDemoVideoCallView': (_) =>
-        const OnboardingDemoVideoCallView(),
+    '/onboardingDemoVideoCallView': (_) => const OnboardingDemoVideoCallView(),
     '/freeTrialActivated': (_) => const FreeTrialActivatedView(),
   };
 }

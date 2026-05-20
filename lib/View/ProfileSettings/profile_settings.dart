@@ -13,6 +13,7 @@ import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
+import 'package:friendfy/Widgets/future_progress_dialog.dart';
 import 'package:friendfy/Widgets/textfield.dart';
 import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -99,7 +100,7 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                         hintText: Translate.translate("full_name", context),
                         title: Translate.translate("full_name", context),
                         enabled: true,
-                        maxLength: 25,
+                        maxLength: 20,
                         onChanged: (val) => ref
                             .read(
                               AllControllers
@@ -586,9 +587,11 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
             TextButton(
               onPressed: () {
                 Navigator.of(dialogContext).pop();
-                ref
-                    .read(AllControllers.profileSettingsViewController.notifier)
-                    .logout();
+                context.runWithProgressDialog(
+                  () => ref
+                      .read(AllControllers.profileSettingsViewController.notifier)
+                      .logout(),
+                );
               },
               child: Text(
                 Translate.translate("sign_out", context),
@@ -1016,9 +1019,11 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
             if (step == 3) {
               setModalState(() => isSubmittingDelete = true);
               Navigator.of(sheetContext).pop();
-              await ref
-                  .read(AllControllers.profileSettingsViewController.notifier)
-                  .deleteAccount();
+              await context.runWithProgressDialog(
+                () => ref
+                    .read(AllControllers.profileSettingsViewController.notifier)
+                    .deleteAccount(),
+              );
               return;
             }
             setModalState(() => step = step + 1);
@@ -1950,6 +1955,12 @@ class _ProfileBirthdateSectionState extends State<_ProfileBirthdateSection> {
 
   late final ValueNotifier<DateTime> _displayedDate;
   late final DateTime _pickerInitial;
+  late int _selectedDay;
+  late int _selectedMonth;
+  late int _selectedYear;
+  late final FixedExtentScrollController _dayController;
+  late final FixedExtentScrollController _monthController;
+  late final FixedExtentScrollController _yearController;
 
   DateTime _clamp(DateTime d) {
     if (d.isBefore(_minDate)) return _minDate;
@@ -1963,20 +1974,50 @@ class _ProfileBirthdateSectionState extends State<_ProfileBirthdateSection> {
     final base = widget.existingBirthdate ?? DateTime(2001, 1, 1);
     _pickerInitial = _clamp(base);
     _displayedDate = ValueNotifier<DateTime>(_pickerInitial);
+    _selectedDay = _pickerInitial.day;
+    _selectedMonth = _pickerInitial.month;
+    _selectedYear = _pickerInitial.year;
+    _dayController = FixedExtentScrollController(initialItem: _selectedDay - 1);
+    _monthController = FixedExtentScrollController(
+      initialItem: _selectedMonth - 1,
+    );
+    _yearController = FixedExtentScrollController(
+      initialItem: _selectedYear - _minDate.year,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onDateChanged(_displayedDate.value);
     });
   }
 
+  int _daysInMonth(int month, int year) => DateTime(year, month + 1, 0).day;
+
+  void _onPickerChanged() {
+    final maxDay = _daysInMonth(_selectedMonth, _selectedYear);
+    if (_selectedDay > maxDay) {
+      _selectedDay = maxDay;
+      _dayController.jumpToItem(_selectedDay - 1);
+    }
+    final next = _clamp(DateTime(_selectedYear, _selectedMonth, _selectedDay));
+    _displayedDate.value = next;
+    widget.onDateChanged(next);
+  }
+
   @override
   void dispose() {
     _displayedDate.dispose();
+    _dayController.dispose();
+    _monthController.dispose();
+    _yearController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context).toString();
+    final monthNames = List<String>.generate(
+      12,
+      (i) => DateFormat.MMMM(locale).format(DateTime(2024, i + 1, 1)),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2009,6 +2050,7 @@ class _ProfileBirthdateSectionState extends State<_ProfileBirthdateSection> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   DateFormat.yMMMMd(locale).format(date),
+                  textAlign: TextAlign.left,
                   style: GoogleFonts.quicksand(
                     color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 16.sp,
@@ -2024,16 +2066,97 @@ class _ProfileBirthdateSectionState extends State<_ProfileBirthdateSection> {
           height: 190.h,
           child: CupertinoTheme(
             data: const CupertinoThemeData(brightness: Brightness.dark),
-            child: CupertinoDatePicker(
-              mode: CupertinoDatePickerMode.date,
-              initialDateTime: _pickerInitial,
-              minimumDate: _minDate,
-              maximumDate: _maxDate,
-              onDateTimeChanged: (d) {
-                final v = _clamp(d);
-                _displayedDate.value = v;
-                widget.onDateChanged(v);
-              },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 54.w,
+                  child: CupertinoPicker(
+                    scrollController: _dayController,
+                    itemExtent: 38.h,
+                    selectionOverlay: const SizedBox.shrink(),
+                    onSelectedItemChanged: (index) {
+                      _selectedDay = (index % 31) + 1;
+                      _onPickerChanged();
+                    },
+                    children: List.generate(
+                      31,
+                      (i) => Center(
+                        child: Text(
+                          '${i + 1}',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontSize: 24.sp,
+                            fontWeight: FontWeight.w500,
+                            height: 1.0,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 6.w),
+                SizedBox(
+                  width: 110.w,
+                  child: CupertinoPicker(
+                    scrollController: _monthController,
+                    itemExtent: 38.h,
+                    selectionOverlay: const SizedBox.shrink(),
+                    onSelectedItemChanged: (index) {
+                      _selectedMonth = (index % 12) + 1;
+                      _onPickerChanged();
+                    },
+                    children: List.generate(
+                      12,
+                      (i) => Center(
+                        child: Text(
+                          monthNames[i],
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontSize: 24.sp,
+                            fontWeight: FontWeight.w500,
+                            height: 1.0,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 6.w),
+                SizedBox(
+                  width: 68.w,
+                  child: CupertinoPicker(
+                    scrollController: _yearController,
+                    itemExtent: 38.h,
+                    selectionOverlay: const SizedBox.shrink(),
+                    onSelectedItemChanged: (index) {
+                      final totalYears = _maxDate.year - _minDate.year + 1;
+                      _selectedYear = _minDate.year + (index % totalYears);
+                      _onPickerChanged();
+                    },
+                    children: List.generate(
+                      _maxDate.year - _minDate.year + 1,
+                      (i) => Center(
+                        child: Text(
+                          '${_minDate.year + i}',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.quicksand(
+                            color: Colors.white,
+                            fontSize: 24.sp,
+                            fontWeight: FontWeight.w500,
+                            height: 1.0,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

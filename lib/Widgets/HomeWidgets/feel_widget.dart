@@ -12,13 +12,10 @@ class FeelWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final home = ref.watch(AllControllers.homeViewController);
-    return Padding(
-      padding: const EdgeInsets.only(right: 20),
-      child: Row(
-        children: home.moods
-            .map((e) => tile(e, home.selectedMood, ref, context))
-            .toList(),
-      ),
+    return Row(
+      children: home.moods
+          .map((e) => tile(e, home.selectedMood, ref, context))
+          .toList(),
     );
   }
 

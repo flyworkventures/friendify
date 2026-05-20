@@ -35,9 +35,15 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
 
   @override
   Widget build(BuildContext context) {
-    List<ConversationModel> displayConversations =
+    final conversations =
         ref.watch(AllControllers.chatViewController).filteredConversations ??
         [];
+    final List<ConversationModel> displayConversations = conversations.where((
+      conversation,
+    ) {
+      final lastMessage = conversation.chatModel?.lastMessage?.trim();
+      return lastMessage != null && lastMessage.isNotEmpty;
+    }).toList();
     bool isSearching = ref.watch(AllControllers.chatViewController).isSearching;
 
     return Scaffold(
@@ -46,9 +52,11 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
       body: SingleChildScrollView(
         child: SafeArea(
           child: Padding(
-            padding: EdgeInsets.only(
-              bottom: displayConversations.length >= 9 ? 100.h : 0,
-              left: 10,
+            padding: EdgeInsets.fromLTRB(
+              10.w,
+              0,
+              10.w,
+              displayConversations.length >= 9 ? 100.h : 0,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,20 +90,17 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
                 ],
 
                 if (displayConversations.isNotEmpty) ...[
-                  SizedBox(
-                    width: MediaQuery.sizeOf(context).width,
-                    height: MediaQuery.sizeOf(context).height,
-                    child: ListView.builder(
-                      physics: NeverScrollableScrollPhysics(),
-                      itemCount: displayConversations.length,
-                      itemBuilder: (context, index) {
-                        final conversation = displayConversations[index];
-                        return _buildSwipeableConversationTile(
-                          conversation,
-                          context,
-                        );
-                      },
-                    ),
+                  ListView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    itemCount: displayConversations.length,
+                    itemBuilder: (context, index) {
+                      final conversation = displayConversations[index];
+                      return _buildSwipeableConversationTile(
+                        conversation,
+                        context,
+                      );
+                    },
                   ),
                 ] else if (isSearching && displayConversations.isEmpty) ...[
                   SizedBox(
@@ -183,6 +188,17 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
     } else {
       return value;
     }
+  }
+
+  String _conversationTimeLabel(ConversationModel conversation) {
+    final raw =
+        conversation.chatModel?.lastMessageAt ?? conversation.chatModel?.startedAt;
+    if (raw == null) return "";
+    final parsed = DateTime.tryParse(raw.toString());
+    if (parsed == null) return "";
+    final localTime = parsed.toLocal();
+    final tod = TimeOfDay.fromDateTime(localTime);
+    return MaterialLocalizations.of(context).formatTimeOfDay(tod);
   }
 
   Widget _buildSwipeableConversationTile(
@@ -284,6 +300,7 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
         return false; // İptal edildi, widget'ı geri getir
       },
       child: ListTile(
+        contentPadding: EdgeInsets.symmetric(vertical: 6.h),
         onTap: () {
           ref
               .read(AllControllers.chatViewController.notifier)
@@ -323,7 +340,7 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
               ),
             ),
             Text(
-              "11 AM",
+              _conversationTimeLabel(conversation),
               style: GoogleFonts.quicksand(color: Colors.white,fontSize: 10.sp),
             ),
           ],

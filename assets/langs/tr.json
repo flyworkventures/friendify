@@ -23,7 +23,6 @@
     "others": "Diğerleri",
     "voice_message": "Sesli Mesaj",
     "say_hi": "Merhaba De!",
-
     "sign_out": "Çıkış Yap",
     "delete_account": "Hesabı Sil",
     "basic_details": "Temel Detaylar",
@@ -142,7 +141,6 @@
     "delete_conversation_message": "Bu sohbeti silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
     "conversation_deleted_success": "Sohbet başarıyla silindi",
     "conversation_deleted_error": "Sohbet silinemedi",
-
     "faq_1_question": "Friendify nedir?",
     "faq_2_question": "Uygulamayı kullanmak ücretli mi?",
     "faq_3_question": "Kayıt olurken hangi bilgileri vermem gerekiyor?",
@@ -154,7 +152,6 @@
     "faq_9_question": "Yapay zeka bana gerçek insanlarla da eşleşme önerisi yapar mı?",
     "faq_10_question": "Yapay zeka ile sohbetlerim başkaları tarafından görülebilir mi?",
     "faq_11_question": "Hesabımı nasıl silebilirim?",
-
     "faq_1_answer": "Friendify, yapay zeka destekli bir arkadaşlık uygulamasıdır. Kullanıcıların yeni insanlarla tanışmasını kolaylaştırırken aynı zamanda sohbet etme, tavsiye alma veya yalnız hissettiklerinde konuşabilecekleri bir yapay zeka arkadaşı sunar.",
     "faq_2_answer": "Uygulamayı temel özellikleriyle ücretsiz kullanabilirsiniz. Premium üyelikle ek sohbet özellikleri, sınırsız mesaj hakkı ve gelişmiş yapay zeka kişiliklerine erişim gibi avantajlar elde edebilirsiniz.",
     "faq_3_answer": "E-posta adresiniz, kullanıcı adınız ve doğum tarihiniz temel olarak gereklidir. Profilinizi daha iyi kişiselleştirmek için isterseniz ilgi alanlarınızı ve kısa bir biyografi ekleyebilirsiniz.",
@@ -166,7 +163,6 @@
     "faq_9_answer": "Evet. İlgi alanlarınız ve sohbet tarzınıza göre size uygun kullanıcı profillerini önerebilir.",
     "faq_10_answer": "Hayır. Yapay zeka sohbetleri tamamen gizlidir ve başka kullanıcılarla paylaşılmaz.",
     "faq_11_answer": "Profil → Hesap Ayarları → 'Hesabımı Sil' seçeneğinde",
-
     "enter_your_fullname": "Ad Soyadınızı Girin",
     "account_has_been_created": "Hesabınız Oluşturuldu",
     "account_created_subtext": "Hesabınız başarıyla oluşturuldu. Uygulamanın keyfini çıkarın!",
@@ -183,7 +179,6 @@
     "account_deleted_message": "Hesabınızı sildiğiniz için üzgünüz. Sizi tekrar görmeyi umuyoruz...",
     "back_to_welcome": "Karşılamaya Dön",
     "delete": "Sil",
-
     "travel": "Seyahat",
     "gaming": "Oyun",
     "cooking": "Yemek Pişirme",
@@ -325,6 +320,7 @@
     "video_call_turn_thinking": "Düşünüyor",
     "video_call_turn_speaking": "Konuşuyor",
     "video_call_status_connecting": "Bağlanıyor...",
+    "video_call_status_loading_avatar": "Karakter yükleniyor...",
     "video_call_status_listening_active": "Dinleme aktif",
     "video_call_status_token_not_found": "Token bulunamadı",
     "video_call_status_connected_session_starting": "Bağlandı, oturum başlatılıyor...",
@@ -468,5 +464,8 @@
     "video_gate_not_now": "Şimdi değil, belki sonra",
     "onboarding_demo_premium_desc": "Aramayı yanıtlamak ve görüntülü aramaları açmak için premiuma geç.",
     "onboarding_demo_connecting": "Görüntülü arama bağlanıyor...",
-    "language": "Dil"
+    "language": "Dil",
+    "please_wait": "Lütfen bekleyin...",
+    "username_max_length": "Kullanıcı adı en fazla 20 karakter olabilir",
+    "splash_tagline": "Her zaman yanınızda."
 }

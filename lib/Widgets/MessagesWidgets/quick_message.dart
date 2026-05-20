@@ -23,12 +23,29 @@ class _QuickMessageState extends ConsumerState<QuickMessage> {
     List<AgentModel>? agents = ref
         .read(AllControllers.agentsViewController)
         .agents;
+    final inset = 10.w;
     return SizedBox(
       height: 240.h,
-      child: ListView(
-        shrinkWrap: true,
-        scrollDirection: Axis.horizontal,
-        children: agents!.map((e) => agentWidget(e)).toList(),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Transform.translate(
+          offset: Offset(-inset, 0),
+          child: OverflowBox(
+            alignment: Alignment.centerLeft,
+            minWidth: constraints.maxWidth + inset * 2,
+            maxWidth: constraints.maxWidth + inset * 2,
+            child: SizedBox(
+              width: constraints.maxWidth + inset * 2,
+              child: ListView.separated(
+                padding: EdgeInsets.symmetric(horizontal: inset),
+                shrinkWrap: true,
+                scrollDirection: Axis.horizontal,
+                itemCount: agents!.length,
+                separatorBuilder: (_, __) => SizedBox(width: 10.w),
+                itemBuilder: (context, index) => agentWidget(agents[index]),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -43,7 +60,6 @@ class _QuickMessageState extends ConsumerState<QuickMessage> {
       child: Container(
         height: 240.h,
         width: 152.w,
-        margin: EdgeInsets.only(right: 10).r,
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(20).r),
         child: Stack(
           children: [

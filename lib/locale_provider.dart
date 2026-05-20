@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:devicelocale/devicelocale.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:friendfy/Services/agent_character_translation_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppProvider extends ChangeNotifier {
@@ -22,8 +23,9 @@ class AppProvider extends ChangeNotifier {
 
   Locale? currentLang;
 
-  changeLang(Locale lang) async {
+  Future<void> changeLang(Locale lang) async {
     currentLang = lang;
+    AgentCharacterTranslationService.instance.clear();
     debugPrint("AppProvider lang : $currentLang");
 
     // Save to SharedPreferences for notification service
@@ -37,21 +39,40 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  initLang() async {
-    Locale? devicelocale = await Devicelocale.currentAsLocale;
-    for (var element in langs) {
-      if (devicelocale?.languageCode == element.languageCode) {
-        currentLang = element;
-        debugPrint("Current Locale $currentLang");
-
-        // Save to SharedPreferences for notification service
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('current_locale', element.languageCode);
-        } catch (e) {
-          debugPrint("Error saving locale: $e");
+  Future<void> initLang() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedCode = prefs.getString('current_locale');
+      if (savedCode != null && savedCode.isNotEmpty) {
+        final saved = langs
+            .where((l) => l.languageCode == savedCode)
+            .cast<Locale?>()
+            .firstWhere(
+              (l) => l != null,
+              orElse: () => null,
+            );
+        if (saved != null) {
+          currentLang = saved;
+          notifyListeners();
+          return;
         }
       }
+
+      final deviceLocale = await Devicelocale.currentAsLocale;
+      final matched = langs
+          .where((l) => l.languageCode == deviceLocale?.languageCode)
+          .cast<Locale?>()
+          .firstWhere(
+            (l) => l != null,
+            orElse: () => langs.first,
+          );
+
+      currentLang = matched ?? langs.first;
+      await prefs.setString('current_locale', currentLang!.languageCode);
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error initializing locale: $e");
+      currentLang ??= langs.first;
       notifyListeners();
     }
   }

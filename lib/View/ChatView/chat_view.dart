@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:io';
+
 import 'package:audio_waveforms/audio_waveforms.dart';
+import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -14,26 +15,23 @@ import 'package:flutter_svg/svg.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/ViewControllers/chat_screen_view_controller.dart';
+import 'package:friendfy/Controllers/all_controllers.dart';
+import 'package:friendfy/Models/message_model.dart';
+import 'package:friendfy/Services/local_service.dart';
+import 'package:friendfy/Services/premium_service.dart';
+import 'package:friendfy/Themes/colors.dart';
+import 'package:friendfy/View/FreeTrialActivatedView/free_trial_activated_view.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
-import 'package:friendfy/Services/local_service.dart';
+import 'package:friendfy/Widgets/textfield.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:intl/intl.dart';
-
-import 'package:friendfy/Controllers/all_controllers.dart';
-import 'package:friendfy/Models/message_model.dart';
-import 'package:friendfy/Services/premium_service.dart';
-import 'package:friendfy/View/FreeTrialActivatedView/free_trial_activated_view.dart';
-import 'package:friendfy/Themes/colors.dart';
-import 'package:friendfy/Widgets/textfield.dart';
-import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ChatView extends ConsumerStatefulWidget {
   const ChatView({super.key});
@@ -59,11 +57,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
   bool _showOnboardingVideoCta = false;
   int? _localPhotoAgentId;
   String? _localAgentPhotoUrl;
+  bool _isListeningMessages = false;
+  int? _boundConversationId;
 
   @override
   void initState() {
     super.initState();
     _loadLocalAgentPhoto();
+    _boundConversationId = ref
+        .read(AllControllers.chatViewController)
+        .chatModel
+        ?.id;
     getMessages().then((_) => startStream());
   }
 
@@ -105,7 +109,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     if (_onboardingStateLoaded) return;
     _onboardingStateLoaded = true;
     final routeArgs = ModalRoute.of(context)?.settings.arguments;
-    var funnel = routeArgs is Map && routeArgs["onboardingFunnel"] == true;
+    final funnel = routeArgs is Map && routeArgs["onboardingFunnel"] == true;
 
     void applyFunnel(bool active) {
       if (!mounted) return;
@@ -118,17 +122,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     }
 
     applyFunnel(funnel);
-
-    // OnboardingDemoChatView önce prefs yazar; rota argümanı kaçarsa yedek.
-    if (!funnel) {
-      SharedPreferences.getInstance().then((prefs) {
-        if (!mounted) return;
-        final fromPrefs = LocalService(prefs: prefs).isOnboardingFunnelActive();
-        if (fromPrefs) {
-          setState(() => _onboardingFunnelActive = true);
-        }
-      });
-    }
   }
 
   /// Onboarding video kapısı: deneme yoksa [FreeTrialActivated] atlanır, doğrudan login/sonraki adım.
@@ -156,9 +149,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     Navigator.of(context).pushNamedAndRemoveUntil(
       '/freeTrialActivated',
       (route) => false,
-      arguments: {
-        "forceLogoutToLogin": forceLogoutToLogin,
-      },
+      arguments: {"forceLogoutToLogin": forceLogoutToLogin},
     );
   }
 
@@ -179,7 +170,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   void startStream() {
     timer?.cancel();
-    timer = Timer.periodic(const Duration(seconds: 1), (_) => listenMessages());
+    timer = Timer.periodic(
+      const Duration(milliseconds: 400),
+      (_) => listenMessages(),
+    );
   }
 
   Future<void> getMessages() async {
@@ -193,30 +187,38 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   Future<void> listenMessages() async {
+    if (_isListeningMessages) return;
+    _isListeningMessages = true;
     final previousCount = _previousMessageCount ?? 0;
     final previousChatState = _previousChatState ?? ChatState.normal;
-    await ref.read(AllControllers.chatViewController.notifier).listenMessages();
-    _evaluateOnboardingVideoCta();
+    try {
+      await ref
+          .read(AllControllers.chatViewController.notifier)
+          .listenMessages();
+      _evaluateOnboardingVideoCta();
 
-    // Mesaj sayısını kontrol et
-    final messages = ref.read(AllControllers.chatViewController).messages;
-    final currentCount = messages?.length ?? 0;
+      // Mesaj sayısını kontrol et
+      final messages = ref.read(AllControllers.chatViewController).messages;
+      final currentCount = messages?.length ?? 0;
 
-    // Yeni mesaj geldi mi kontrol et
-    if (currentCount > previousCount) {
-      // Yeni mesaj geldiğinde her zaman scroll yap
-      scrollToBottom();
+      // Yeni mesaj geldi mi kontrol et
+      if (currentCount > previousCount) {
+        // Yeni mesaj geldiğinde her zaman scroll yap
+        scrollToBottom();
+      }
+      final currentChatState = ref
+          .read(AllControllers.chatViewController)
+          .chatState;
+      if (currentChatState == ChatState.botWriting &&
+          previousChatState != ChatState.botWriting) {
+        scrollToBottom();
+      }
+
+      _previousMessageCount = currentCount;
+      _previousChatState = currentChatState;
+    } finally {
+      _isListeningMessages = false;
     }
-    final currentChatState = ref
-        .read(AllControllers.chatViewController)
-        .chatState;
-    if (currentChatState == ChatState.botWriting &&
-        previousChatState != ChatState.botWriting) {
-      scrollToBottom();
-    }
-
-    _previousMessageCount = currentCount;
-    _previousChatState = currentChatState;
   }
 
   Future<void> sendMessage() async {
@@ -224,6 +226,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
       return;
     }
     await ref.read(AllControllers.chatViewController.notifier).sendMessage();
+    // Gönderim sonrası anında güncelleme için bir kez daha çek.
+    await listenMessages();
     _evaluateOnboardingVideoCta();
     // Kullanıcı mesaj attığında her zaman aşağı scroll yap
     scrollToBottom();
@@ -368,16 +372,34 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 child: Row(
                   children: [
                     ClipOval(
-                      child: Container(width: 7, height: 7, color: Color(0xffAB10E2)),
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        color: Color(0xffAB10E2),
+                      ),
                     ),
                     SizedBox(width: 5.w),
                     Text(
-                      Translate.translate("video_gate_benefit_no_limits_title", context),
-                      style: GoogleFonts.quicksand(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.w700),
+                      Translate.translate(
+                        "video_gate_benefit_no_limits_title",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     Text(
-                      Translate.translate("video_gate_benefit_no_limits_suffix", context),
-                      style: GoogleFonts.quicksand(color: Color(0xff777777), fontSize: 14.sp, fontWeight: FontWeight.w500),
+                      Translate.translate(
+                        "video_gate_benefit_no_limits_suffix",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Color(0xff777777),
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -387,16 +409,34 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 child: Row(
                   children: [
                     ClipOval(
-                      child: Container(width: 7, height: 7, color: Color(0xffAB10E2)),
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        color: Color(0xffAB10E2),
+                      ),
                     ),
                     SizedBox(width: 5.w),
                     Text(
-                      Translate.translate("video_gate_benefit_video_calls_title", context),
-                      style: GoogleFonts.quicksand(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.w700),
+                      Translate.translate(
+                        "video_gate_benefit_video_calls_title",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     Text(
-                      Translate.translate("video_gate_benefit_video_calls_suffix", context),
-                      style: GoogleFonts.quicksand(color: Color(0xff777777), fontSize: 14.sp, fontWeight: FontWeight.w500),
+                      Translate.translate(
+                        "video_gate_benefit_video_calls_suffix",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Color(0xff777777),
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -406,16 +446,34 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 child: Row(
                   children: [
                     ClipOval(
-                      child: Container(width: 7, height: 7, color: Color(0xffAB10E2)),
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        color: Color(0xffAB10E2),
+                      ),
                     ),
                     SizedBox(width: 5.w),
                     Text(
-                      Translate.translate("video_gate_benefit_deeper_title", context),
-                      style: GoogleFonts.quicksand(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.w700),
+                      Translate.translate(
+                        "video_gate_benefit_deeper_title",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     Text(
-                      Translate.translate("video_gate_benefit_deeper_suffix", context),
-                      style: GoogleFonts.quicksand(color: Color(0xff777777), fontSize: 14.sp, fontWeight: FontWeight.w500),
+                      Translate.translate(
+                        "video_gate_benefit_deeper_suffix",
+                        context,
+                      ),
+                      style: GoogleFonts.quicksand(
+                        color: Color(0xff777777),
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -434,10 +492,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      HeroIcon(HeroIcons.sparkles, size: 16.w, color: Colors.white, style: HeroIconStyle.solid),
+                      HeroIcon(
+                        HeroIcons.sparkles,
+                        size: 16.w,
+                        color: Colors.white,
+                        style: HeroIconStyle.solid,
+                      ),
                       SizedBox(width: 8.w),
                       Text(
-                        Translate.translate("video_gate_answer_call_premium", context),
+                        Translate.translate(
+                          "video_gate_answer_call_premium",
+                          context,
+                        ),
                         style: GoogleFonts.quicksand(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
@@ -581,8 +647,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     color: bgColor.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                   ),
-                    child: Center(child: SvgPicture.asset(icon,width: 24.w,height: 24.h,)),
-                
+                  child: Center(
+                    child: SvgPicture.asset(icon, width: 24.w, height: 24.h),
+                  ),
                 ),
                 SizedBox(height: 7.h),
                 Text(
@@ -668,10 +735,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     SizedBox(width: 24.w),
                     attachmentItem(
                       icon: "assets/icons/document.svg",
-                      label: Translate.translate(
-                        "document",
-                        context,
-                      ),
+                      label: Translate.translate("document", context),
                       bgColor: const Color(0xFF6FA31E),
                       onTap: () {
                         Navigator.of(dialogContext).pop();
@@ -692,6 +756,24 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<ChatScreenViewModel>(AllControllers.chatViewController, (
+      previous,
+      next,
+    ) {
+      final prevId = previous?.chatModel?.id;
+      final nextId = next.chatModel?.id;
+      if (prevId == null || nextId == null || prevId == nextId) return;
+      if (_boundConversationId == nextId) return;
+      _boundConversationId = nextId;
+      timer?.cancel();
+      _previousMessageCount = 0;
+      final agentId = next.agent?.id;
+      if (agentId != null) {
+        unawaited(_loadLocalAgentPhotoFor(agentId));
+      }
+      unawaited(getMessages().then((_) => startStream()));
+    });
+
     final controller = ref.watch(AllControllers.chatViewController);
     final messages = controller.messages ?? [];
     final agentId = controller.agent?.id;
@@ -699,9 +781,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _loadLocalAgentPhotoFor(agentId);
     }
     final agentPhotoUrl = _agentPhotoUrl(controller);
+    final onboardingLocked = _onboardingFunnelActive;
 
     return PopScope(
-      canPop: !_onboardingFunnelActive,
+      canPop: !onboardingLocked,
       child: BackgroundWidget(
         child: Scaffold(
           backgroundColor: Colors.transparent,
@@ -709,204 +792,199 @@ class _ChatViewState extends ConsumerState<ChatView> {
           appBar: AppBar(
             scrolledUnderElevation: 0,
             backgroundColor: Colors.transparent,
-          leading: _onboardingFunnelActive
-              ? const SizedBox.shrink()
-              : IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: Icon(CupertinoIcons.back, color: Colors.white),
-                ),
-          leadingWidth: _onboardingFunnelActive ? 0 : null,
-          titleSpacing: _onboardingFunnelActive ? 0 : null,
-          centerTitle: true,
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              GestureDetector(
-                onTap: () {
-                  _showFullScreenImage(
-                    context,
-                    agentPhotoUrl,
-                  );
-                },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(40.r),
-                  child: CachedNetworkImage(
-                    imageUrl: agentPhotoUrl,
-                    width: 40.w,
-                    height: 40.w,
-                    alignment: Alignment(0, -1),
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Shimmer.fromColors(
-                      baseColor: Colors.grey[300]!,
-                      highlightColor: Colors.grey[100]!,
-                      child: Container(
-                        width: 40.w,
-                        height: 40.w,
-                        color: Colors.white,
-                      ),
-                    ),
-                    errorWidget: (context, url, error) => Container(
+            leading: onboardingLocked
+                ? const SizedBox.shrink()
+                : IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(CupertinoIcons.back, color: Colors.white),
+                  ),
+            leadingWidth: onboardingLocked ? 0 : null,
+            titleSpacing: onboardingLocked ? 0 : null,
+            centerTitle: true,
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    _showFullScreenImage(context, agentPhotoUrl);
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(40.r),
+                    child: CachedNetworkImage(
+                      imageUrl: agentPhotoUrl,
                       width: 40.w,
                       height: 40.w,
-                      color: Colors.grey[300],
-                      child: Icon(Icons.person, size: 25),
+                      alignment: Alignment(0, -1),
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Shimmer.fromColors(
+                        baseColor: Colors.grey[300]!,
+                        highlightColor: Colors.grey[100]!,
+                        child: Container(
+                          width: 40.w,
+                          height: 40.w,
+                          color: Colors.white,
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        width: 40.w,
+                        height: 40.w,
+                        color: Colors.grey[300],
+                        child: Icon(Icons.person, size: 25),
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              SizedBox(width: 10.w),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      ref
-                          .read(AllControllers.agentsViewController.notifier)
-                          .pushAgentView(controller.agent!);
-                    },
-                    child: Text(
-                      controller.agent?.name ?? "",
-                      style: GoogleFonts.quicksand(
+                SizedBox(width: 10.w),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        ref
+                            .read(AllControllers.agentsViewController.notifier)
+                            .pushAgentView(controller.agent!);
+                      },
+                      child: Text(
+                        controller.agent?.name ?? "",
+                        style: GoogleFonts.quicksand(
+                          color: Colors.white,
+                          fontSize: 17.sp,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (controller.chatState == ChatState.botWriting)
+                      Text(
+                        Translate.translate("typing", context),
+                        style: GoogleFonts.quicksand(
+                          color: Colors.grey,
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    if (controller.chatState == ChatState.botAudioRecording)
+                      Text(
+                        Translate.translate("recording_audio", context),
+                        style: GoogleFonts.quicksand(
+                          color: Colors.grey,
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            actions: onboardingLocked
+                ? []
+                : [
+                    IconButton(
+                      onPressed: () async {
+                        timer?.cancel();
+                        await navigatorKey.currentState?.pushNamed(
+                          "/voiceCallView",
+                        );
+                        if (!mounted) return;
+                        startStream();
+                      },
+                      icon: SvgPicture.asset(
+                        "assets/icons/call.svg",
                         color: Colors.white,
-                        fontSize: 17.sp,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                  if (controller.chatState == ChatState.botWriting)
-                    Text(
-                      Translate.translate("typing", context),
-                      style: GoogleFonts.quicksand(
-                        color: Colors.grey,
-                        fontSize: 12.sp,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    IconButton(
+                      onPressed: () async {
+                        timer?.cancel();
+                        await navigatorKey.currentState?.pushNamed(
+                          "/videoCallView",
+                        );
+                        if (!mounted) return;
+                        startStream();
+                      },
+                      icon: SvgPicture.asset("assets/icons/vieo_call.svg"),
                     ),
-                  if (controller.chatState == ChatState.botAudioRecording)
-                    Text(
-                      Translate.translate("recording_audio", context),
-                      style: GoogleFonts.quicksand(
-                        color: Colors.grey,
-                        fontSize: 12.sp,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                ],
-              ),
-            ],
+                  ],
           ),
-          actions: _onboardingFunnelActive
-              ? []
-              : [
-                  IconButton(
-                    onPressed: () async {
-                      timer?.cancel();
-                      await navigatorKey.currentState?.pushNamed("/voiceCallView");
-                      if (!mounted) return;
-                      startStream();
-                    },
-                    icon: SvgPicture.asset(
-                      "assets/icons/call.svg",
-                      color: Colors.white,
+
+          // --- BODY ---
+          body: SafeArea(
+            child: Column(
+              children: [
+                // Mesaj Listesi
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: EdgeInsets.symmetric(
+                      vertical: 15.h,
+                      horizontal: 10.w,
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () async {
-                      timer?.cancel();
-                      await navigatorKey.currentState?.pushNamed("/videoCallView");
-                      if (!mounted) return;
-                      startStream();
-                    },
-                    icon: SvgPicture.asset("assets/icons/vieo_call.svg"),
-                  ),
-                ],
-        ),
+                    itemCount:
+                        messages.length +
+                        (controller.chatState == ChatState.botWriting ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (controller.chatState == ChatState.botWriting &&
+                          index == messages.length) {
+                        return _buildTypingIndicator(controller);
+                      }
 
-        // --- BODY ---
-        body: SafeArea(
-          child: Column(
-            children: [
-              // Mesaj Listesi
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: EdgeInsets.symmetric(
-                    vertical: 15.h,
-                    horizontal: 10.w,
-                  ),
-                  itemCount:
-                      _getItemCount(messages) +
-                      (controller.chatState == ChatState.botWriting ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    final baseItemCount = _getItemCount(messages);
-                    if (controller.chatState == ChatState.botWriting &&
-                        index == baseItemCount) {
-                      return _buildTypingIndicator(controller);
-                    }
-
-                    final item = _getItemAtIndex(messages, index);
-                    if (item is String) {
-                      // Tarih başlığı
-                      return _buildDateHeader(item);
-                    } else {
-                      // Mesaj
-                      final msg = item as MessageModel;
+                      final msg = messages[index];
                       return Align(
                         alignment: msg.sender == "user"
                             ? Alignment.centerRight
                             : Alignment.centerLeft,
                         child: _chatBubble(msg),
                       );
-                    }
-                  },
-                ),
-              ),
-
-              // Yazı alanı
-              if (_onboardingFunnelActive && _showOnboardingVideoCta)
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 8.h),
-                  child: MyGradientButton(
-                    onTap: () async {
-                      final prefs = await SharedPreferences.getInstance();
-                      final localService = LocalService(prefs: prefs);
-                      await localService.setOnboardingVideoGatePending(true);
-                      timer?.cancel();
-                      final result = await navigatorKey.currentState?.pushNamed(
-                        "/videoCallView",
-                      );
-                      if (!mounted) return;
-                      if (result == "onboarding_gate_expired") {
-                        _showOnboardingGateSheet();
-                        return;
-                      }
-                      startStream();
                     },
-                    radius: BorderRadius.circular(40.r),
-                    size: Size(double.infinity, 48.h),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                       SvgPicture.asset("assets/icons/videocallmagic.svg"),
-                        SizedBox(width: 8.w),
-                        Text(
-                          Translate.translate("chat_join_video_call", context),
-                          style: GoogleFonts.quicksand(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 18.sp,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
-              _messageInput(controller.responseWaiting!),
-            ],
+
+                // Yazı alanı
+                if (_onboardingFunnelActive && _showOnboardingVideoCta)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 8.h),
+                    child: MyGradientButton(
+                      onTap: () async {
+                        final prefs = await SharedPreferences.getInstance();
+                        final localService = LocalService(prefs: prefs);
+                        await localService.setOnboardingVideoGatePending(true);
+                        timer?.cancel();
+                        final result = await navigatorKey.currentState
+                            ?.pushNamed("/videoCallView");
+                        if (!mounted) return;
+                        if (result == "onboarding_gate_expired") {
+                          _showOnboardingGateSheet();
+                          return;
+                        }
+                        startStream();
+                      },
+                      radius: BorderRadius.circular(40.r),
+                      size: Size(double.infinity, 48.h),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SvgPicture.asset("assets/icons/videocallmagic.svg"),
+                          SizedBox(width: 8.w),
+                          Text(
+                            Translate.translate(
+                              "chat_join_video_call",
+                              context,
+                            ),
+                            style: GoogleFonts.quicksand(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 18.sp,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                _messageInput(controller.responseWaiting!),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -978,7 +1056,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                             color: Colors.white.withValues(alpha: 0.3),
                           ),
                           color: Colors.black.withValues(alpha: 0.4),
-                           borderRadius: BorderRadius.only(
+                          borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(0).r,
                             topRight: const Radius.circular(16).r,
                             bottomLeft: const Radius.circular(16).r,
@@ -1026,8 +1104,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 4.h),
       child: Row(
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           if (!isUser) _buildBotAvatar(),
           if (!isUser) SizedBox(width: 8.w),
@@ -1041,24 +1120,25 @@ class _ChatViewState extends ConsumerState<ChatView> {
               constraints: BoxConstraints(maxWidth: 260.w),
               padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
               decoration: BoxDecoration(
- 
-                borderRadius: BorderRadius.circular(16.r).copyWith(topRight: Radius.circular(0)),
-                  border: Border.all(color: const Color(0xffAB10E2)),
-                    color: const Color(0xffAB10E2).withValues(alpha: 0.5)
-                ),
-              
+                borderRadius: BorderRadius.circular(
+                  16.r,
+                ).copyWith(topRight: Radius.circular(0)),
+                border: Border.all(color: const Color(0xffAB10E2)),
+                color: const Color(0xffAB10E2).withValues(alpha: 0.5),
+              ),
+
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                 SvgPicture.asset(
-                        "assets/icons/file.svg",
-                        width: 20.w,
-                        height: 20.h,
-                        colorFilter: const ColorFilter.mode(
-                          Colors.white,
-                          BlendMode.srcIn,
-                        ),
-                      ),
+                  SvgPicture.asset(
+                    "assets/icons/file.svg",
+                    width: 20.w,
+                    height: 20.h,
+                    colorFilter: const ColorFilter.mode(
+                      Colors.white,
+                      BlendMode.srcIn,
+                    ),
+                  ),
                   SizedBox(width: 10.w),
                   Flexible(
                     child: Text(
@@ -1352,12 +1432,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
         margin: EdgeInsets.only(top: 8.h, bottom: 8.h, right: 12.w, left: 70.w),
         decoration: BoxDecoration(
           color: MyColors.purple.withValues(alpha: 0.55),
-                 borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(16).r,
-                            topRight: const Radius.circular(0).r,
-                            bottomLeft: const Radius.circular(16).r,
-                            bottomRight: const Radius.circular(16).r,
-                          ),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16).r,
+            topRight: const Radius.circular(0).r,
+            bottomLeft: const Radius.circular(16).r,
+            bottomRight: const Radius.circular(16).r,
+          ),
           border: Border.all(color: MyColors.purple.withValues(alpha: 0.9)),
         ),
         child: _buildVoicePlayer(
@@ -1383,12 +1463,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(0).r,
-                            topRight: const Radius.circular(16).r,
-                            bottomLeft: const Radius.circular(16).r,
-                            bottomRight: const Radius.circular(16).r,
-                          ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(0).r,
+                    topRight: const Radius.circular(16).r,
+                    bottomLeft: const Radius.circular(16).r,
+                    bottomRight: const Radius.circular(16).r,
+                  ),
                   border: Border.all(
                     color: Colors.white.withValues(alpha: 0.30),
                   ),
@@ -1457,124 +1537,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
       minute = dateTime.minute.toString();
     }
     return "$hour:$minute";
-  }
-
-  /// Mesajları tarihlerine göre gruplar ve tarih başlıkları ekler
-  int _getItemCount(List<MessageModel> messages) {
-    if (messages.isEmpty) return 0;
-
-    int count = messages.length;
-    DateTime? lastDate;
-
-    for (var msg in messages) {
-      final msgDate = DateTime.parse(msg.createdAt);
-      final msgDateOnly = DateTime(msgDate.year, msgDate.month, msgDate.day);
-
-      if (lastDate == null || !_isSameDay(msgDateOnly, lastDate)) {
-        count++; // Tarih başlığı için ekstra item
-        lastDate = msgDateOnly;
-      }
-    }
-
-    return count;
-  }
-
-  /// Belirli bir index'teki item'ı döndürür (mesaj veya tarih başlığı)
-  dynamic _getItemAtIndex(List<MessageModel> messages, int index) {
-    int currentIndex = 0;
-    DateTime? lastDate;
-
-    for (int i = 0; i < messages.length; i++) {
-      final msg = messages[i];
-      final msgDate = DateTime.parse(msg.createdAt);
-      final msgDateOnly = DateTime(msgDate.year, msgDate.month, msgDate.day);
-
-      // Yeni bir gün mü?
-      if (lastDate == null || !_isSameDay(msgDateOnly, lastDate)) {
-        // Tarih başlığı ekle
-        if (currentIndex == index) {
-          return _formatDateHeader(msgDateOnly);
-        }
-        currentIndex++;
-        lastDate = msgDateOnly;
-      }
-
-      // Mesaj ekle
-      if (currentIndex == index) {
-        return msg;
-      }
-      currentIndex++;
-    }
-
-    // Fallback (olması gerekmez ama güvenlik için)
-    return messages.isNotEmpty ? messages.last : null;
-  }
-
-  /// İki tarihin aynı gün olup olmadığını kontrol eder
-  bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year &&
-        date1.month == date2.month &&
-        date1.day == date2.day;
-  }
-
-  /// Tarih başlığını formatlar (Bugün, Dün, veya tam tarih)
-  String _formatDateHeader(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(Duration(days: 1));
-    final dateOnly = DateTime(date.year, date.month, date.day);
-
-    if (_isSameDay(dateOnly, today)) {
-      return Translate.translate("today", context);
-    } else if (_isSameDay(dateOnly, yesterday)) {
-      return Translate.translate("yesterday", context);
-    } else {
-      // Tam tarih formatı
-      final locale = Localizations.localeOf(context);
-      if (locale.languageCode == 'tr') {
-        final months = [
-          'Ocak',
-          'Şubat',
-          'Mart',
-          'Nisan',
-          'Mayıs',
-          'Haziran',
-          'Temmuz',
-          'Ağustos',
-          'Eylül',
-          'Ekim',
-          'Kasım',
-          'Aralık',
-        ];
-        return '${date.day} ${months[date.month - 1]} ${date.year}';
-      } else {
-        return DateFormat('d MMMM yyyy', 'en').format(date);
-      }
-    }
-  }
-
-  /// Tarih başlığı widget'ı
-  Widget _buildDateHeader(String dateText) {
-    return Container(
-      margin: EdgeInsets.symmetric(vertical: 16.h),
-      child: Center(
-        child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12.r),
-          ),
-          child: Text(
-            dateText,
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 12.sp,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildTypingIndicator(ChatScreenViewModel controller) {
@@ -1892,6 +1854,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
             controller: controllerStream,
             enabled: !onboardingLocked,
             focusNode: _textFieldFocusNode,
+            onChanged: (_) {
+              if (!mounted) return;
+              setState(() {});
+            },
             filled: true,
             fillColor: Colors.black.withValues(alpha: 0.4),
             border: OutlineInputBorder(
@@ -1900,7 +1866,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
               ),
               borderRadius: BorderRadius.circular(40),
             ),
-            hintText: "${Translate.translate(TranslateKeys.enterMessage, context)}...",
+            hintText:
+                "${Translate.translate(TranslateKeys.enterMessage, context)}...",
             hintStyle: GoogleFonts.quicksand(color: Colors.white),
             prefixIcon: GestureDetector(
               onTap: onboardingLocked

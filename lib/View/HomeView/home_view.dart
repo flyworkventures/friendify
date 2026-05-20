@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,19 +12,18 @@ import 'package:friendfy/Controllers/ViewControllers/chat_screen_view_controller
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Models/user_model.dart';
+import 'package:friendfy/Services/premium_service.dart';
+import 'package:friendfy/Services/revenuecat_service.dart';
 import 'package:friendfy/Themes/colors.dart';
+import 'package:friendfy/View/EditAgentView/edit_agent_view.dart';
+import 'package:friendfy/View/PremiumScreen/premium_screen.dart';
 import 'package:friendfy/Widgets/HomeWidgets/feel_widget.dart';
 import 'package:friendfy/Widgets/HomeWidgets/your_matches.dart';
-
 import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gradient_borders/gradient_borders.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
-import 'package:friendfy/Services/revenuecat_service.dart';
-import 'package:friendfy/Services/premium_service.dart';
-import 'package:friendfy/View/EditAgentView/edit_agent_view.dart';
-import 'package:friendfy/View/PremiumScreen/premium_screen.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
@@ -109,8 +109,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
       // sürerken kart görünür ve kullanıcı tam aboneliğe yönlendirilebilir.
       final hasActiveRevenueCatPremium =
           await RevenueCatService.hasActiveEntitlement();
-      if (hasActiveRevenueCatPremium ||
-          PremiumService.isPremiumActive(user)) {
+      if (hasActiveRevenueCatPremium || PremiumService.isPremiumActive(user)) {
         debugPrint(
           "✅ Ücretli abonelik / mağaza entitlement var, paywall açılmadı",
         );
@@ -179,15 +178,13 @@ class _HomeViewState extends ConsumerState<HomeView> {
       body: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
-          padding: EdgeInsets.only(bottom: 40.h,top: 40.r).r,
+          physics: ClampingScrollPhysics(),
+          padding: EdgeInsets.all(16.r),
           child: Column(
             children: [
-              
               SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                  ).copyWith(right: 0),
+                  padding: EdgeInsets.zero,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -207,34 +204,28 @@ class _HomeViewState extends ConsumerState<HomeView> {
                       SizedBox(height: 10.h),
                       YourMatches(),
                       SizedBox(height: 20.h),
-          
-                      Padding(
-                        padding: const EdgeInsets.only(right: 20),
-                        child: Row(
-                          children: [
-                            Expanded(child: createCharacterWidget()),
-                            SizedBox(width: 10.w),
-                            Expanded(child: editCharacterWidget()),
-                          ],
-                        ),
+
+                      Row(
+                        children: [
+                          Expanded(child: createCharacterWidget()),
+                          SizedBox(width: 10.w),
+                          Expanded(child: editCharacterWidget()),
+                        ],
                       ),
                       SizedBox(height: 20.h),
                       chatWithCyra(conversations),
-                      
-          
-                      if (showPremiumPlanCta) ...[
-                        premiumCard(),
-                      ],
-          
+
+                      if (showPremiumPlanCta) ...[premiumCard()],
+
                       SizedBox(height: 20.h),
-          
+
                       recentagent(),
                     ],
                   ),
                 ),
               ),
               if (Platform.isAndroid) ...[SizedBox(height: 20.h)],
-          
+
               SizedBox(height: 20.h),
             ],
           ),
@@ -246,8 +237,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
   Widget premiumCard() {
     return GestureDetector(
       onTap: () => pushPremium(),
-      child: Container(
-        
+      child: SizedBox(
         height: 178.h,
         child: Stack(
           children: [
@@ -256,22 +246,22 @@ class _HomeViewState extends ConsumerState<HomeView> {
               child: Container(
                 height: 148.h,
                 padding: EdgeInsets.symmetric(horizontal: 15).r,
-                margin: EdgeInsets.only(right: 20),
+                margin: EdgeInsets.zero,
                 decoration: BoxDecoration(
                   image: DecorationImage(
                     image: AssetImage("assets/premium-bckg.png"),
                     fit: BoxFit.cover,
                   ),
-                           border: GradientBoxBorder(
-            gradient: LinearGradient(
-              colors: [
-                Color(0xff3E0951).withValues(alpha: 0.1),
-                Color(0xffFFC107),
-              ],
-              begin: Alignment.centerRight,
-              end: Alignment.centerLeft,
-            ),
-          ),
+                  border: GradientBoxBorder(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xff3E0951).withValues(alpha: 0.1),
+                        Color(0xffFFC107),
+                      ],
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                    ),
+                  ),
                   borderRadius: BorderRadius.circular(16).r,
                 ),
                 child: Row(
@@ -415,7 +405,9 @@ class _HomeViewState extends ConsumerState<HomeView> {
     return GestureDetector(
       onTap: () {
         navigatorKey.currentState?.push(
-          MaterialPageRoute(builder: (_) => const EditAgentView(createFlow: true)),
+          MaterialPageRoute(
+            builder: (_) => const EditAgentView(createFlow: true),
+          ),
         );
       },
       child: Container(
@@ -728,7 +720,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
           horizontal: 10,
           vertical: 10,
         ).copyWith(left: 20),
-        margin: EdgeInsets.only(right: 20).r,
+        margin: EdgeInsets.zero,
         decoration: BoxDecoration(
           border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
           image: DecorationImage(
@@ -810,7 +802,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                           "assets/icons/messages-2.svg",
                           width: 16.w,
                         ),
-                        SizedBox(width: 5.w,),
+                        SizedBox(width: 5.w),
                         Text(
                           Translate.translate("home_start_chat_cta", context),
                           style: GoogleFonts.quicksand(
@@ -852,10 +844,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                     color: Colors.transparent,
                     clipBehavior: Clip.antiAlias,
                     shape: CircleBorder(
-                      side: BorderSide(
-                        color: MyColors.purple,
-                        width: 2,
-                      ),
+                      side: BorderSide(color: MyColors.purple, width: 2),
                     ),
                     child: CachedNetworkImage(
                       imageUrl: photoURL,
@@ -1024,7 +1013,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
     );
   }
 
-
   Widget characterEdit() {
     final Shader linearGradient = LinearGradient(
       colors: <Color>[Color(0xffDA44bb), Color(0xff8921aa)],
@@ -1151,13 +1139,13 @@ class _HomeViewState extends ConsumerState<HomeView> {
       return SizedBox.shrink();
     }
 
+    final inset = 16.w;
     return GestureDetector(
       onTap: () {
         //   navigatorKey.currentState?.pushNamed('/agentsView');
       },
       child: Container(
-        width: MediaQuery.sizeOf(context).width,
-
+        width: double.infinity,
         height: 170.h,
         padding: EdgeInsets.only(top: 10, bottom: 10),
         decoration: BoxDecoration(
@@ -1180,138 +1168,149 @@ class _HomeViewState extends ConsumerState<HomeView> {
             SizedBox(height: 10.h),
 
             SizedBox(
-              child: SizedBox(
-                width: MediaQuery.sizeOf(context).width,
-                height: 102.h,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  shrinkWrap: true,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 30,
-                  ).copyWith(left: 0),
-                  itemCount: recentAgents.length,
-                  separatorBuilder: (context, index) => SizedBox(width: 16.w),
-                  itemBuilder: (context, index) {
-                    if (index >= recentAgents.length) {
-                      return SizedBox.shrink();
-                    }
-                    AgentModel agent = recentAgents[index];
-                    return GestureDetector(
-                      onTap: () => ref
-                          .read(
-                            AllControllers
-                                .agentsProfileViewController
-                                .notifier,
-                          )
-                          .startChat(agent),
-                      child: SizedBox(
-                        height: 120.h,
-                        width: 66.r,
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              height: 66.r,
+              height: 102.h,
+              child: LayoutBuilder(
+                builder: (context, constraints) => Transform.translate(
+                  offset: Offset(-inset, 0),
+                  child: OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    minWidth: constraints.maxWidth + inset * 2,
+                    maxWidth: constraints.maxWidth + inset * 2,
+                    child: SizedBox(
+                      width: constraints.maxWidth + inset * 2,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        shrinkWrap: true,
+                        padding: EdgeInsets.symmetric(horizontal: inset),
+                        itemCount: recentAgents.length,
+                        separatorBuilder: (context, index) =>
+                            SizedBox(width: 16.w),
+                        itemBuilder: (context, index) {
+                          if (index >= recentAgents.length) {
+                            return SizedBox.shrink();
+                          }
+                          AgentModel agent = recentAgents[index];
+                          return GestureDetector(
+                            onTap: () => ref
+                                .read(
+                                  AllControllers
+                                      .agentsProfileViewController
+                                      .notifier,
+                                )
+                                .startChat(agent),
+                            child: SizedBox(
+                              height: 120.h,
                               width: 66.r,
-                              child: Stack(
+                              child: Column(
                                 children: [
-                                  Center(
-                                    child: Container(
-                                      width: 66.r,
-                                      height: 66.r,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          width: 2,
-                                          color: MyColors.purple,
-                                        ),
-                                      ),
-                                      child: ClipOval(
-                                        child: CachedNetworkImage(
-                                          imageUrl: agent.photoURL,
-                                          fit: BoxFit.cover,
-                                          alignment: Alignment(0, -1),
-                                          placeholder: (context, url) =>
-                                              Shimmer.fromColors(
-                                                baseColor: Colors.grey[300]!,
-                                                highlightColor:
-                                                    Colors.grey[100]!,
-                                                child: Container(
-                                                  color: Colors.white,
-                                                ),
+                                  SizedBox(
+                                    height: 66.r,
+                                    width: 66.r,
+                                    child: Stack(
+                                      children: [
+                                        Center(
+                                          child: Container(
+                                            width: 66.r,
+                                            height: 66.r,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                width: 2,
+                                                color: MyColors.purple,
                                               ),
-                                          errorWidget:
-                                              (context, url, error) =>
-                                                  Container(
-                                                    color: Colors.grey[300],
-                                                    child: Icon(
-                                                      Icons.person,
-                                                      size: 30,
+                                            ),
+                                            child: ClipOval(
+                                              child: CachedNetworkImage(
+                                                imageUrl: agent.photoURL,
+                                                fit: BoxFit.cover,
+                                                alignment: Alignment(0, -1),
+                                                placeholder: (context, url) =>
+                                                    Shimmer.fromColors(
+                                                      baseColor:
+                                                          Colors.grey[300]!,
+                                                      highlightColor:
+                                                          Colors.grey[100]!,
+                                                      child: Container(
+                                                        color: Colors.white,
+                                                      ),
                                                     ),
-                                                  ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-
-                                  Align(
-                                    alignment: Alignment.topRight,
-                                    child: Container(
-                                      width: 28.r,
-                                      height: 28.r,
-                                      padding: EdgeInsets.all(3),
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            Color(0xffAB10E2),
-                                            Color(0xff2D30FF),
-                                          ],
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          alignment: Alignment.center,
-                                          child: Text(
-                                            Translate.translate(
-                                              "new",
-                                              context,
-                                            ).toLowerCase(),
-                                            textAlign: TextAlign.center,
-                                            maxLines: 1,
-                                            style: GoogleFonts.quicksand(
-                                              color: Colors.white,
-                                              fontSize: 11.sp,
-                                              fontWeight: FontWeight.w600,
-                                              height: 1.0,
+                                                errorWidget:
+                                                    (context, url, error) =>
+                                                        Container(
+                                                          color:
+                                                              Colors.grey[300],
+                                                          child: Icon(
+                                                            Icons.person,
+                                                            size: 30,
+                                                          ),
+                                                        ),
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
+
+                                        Align(
+                                          alignment: Alignment.topRight,
+                                          child: Container(
+                                            width: 28.r,
+                                            height: 28.r,
+                                            padding: EdgeInsets.all(3),
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  Color(0xffAB10E2),
+                                                  Color(0xff2D30FF),
+                                                ],
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                              ),
+                                            ),
+                                            child: Center(
+                                              child: FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                alignment: Alignment.center,
+                                                child: Text(
+                                                  Translate.translate(
+                                                    "new",
+                                                    context,
+                                                  ).toLowerCase(),
+                                                  textAlign: TextAlign.center,
+                                                  maxLines: 1,
+                                                  style: GoogleFonts.quicksand(
+                                                    color: Colors.white,
+                                                    fontSize: 11.sp,
+                                                    fontWeight: FontWeight.w600,
+                                                    height: 1.0,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
+                                  ),
+
+                                  Text(
+                                    agent.name,
+                                    style: GoogleFonts.quicksand(
+                                      color: Colors.white,
+                                      fontSize: 14.sp,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.2,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
                             ),
-
-                            Text(
-                              agent.name,
-                              style: GoogleFonts.quicksand(
-                                color: Colors.white,
-                                fontSize: 14.sp,
-                                fontWeight: FontWeight.bold,
-                                height: 1.2,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1323,7 +1322,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
 
   Widget appBar(isPremiumUser) {
     return Padding(
-      padding: const EdgeInsets.only(right: 20).r,
+      padding: EdgeInsets.zero,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -1357,47 +1356,51 @@ class _HomeViewState extends ConsumerState<HomeView> {
             ],
           ),
 
-       Row(
-        children: [
-           if(isPremiumUser)...[
-                  GestureDetector(
-            onTap: () async {
-             
-            },
-            child: Container(
-              width: 32.r,
-              height: 32.r,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Color(0xffDC7AFF)),
-                color: Color(0xffDC7AFF).withValues(alpha: 0.2),
+          Row(
+            children: [
+              if (isPremiumUser) ...[
+                GestureDetector(
+                  onTap: () async {},
+                  child: Container(
+                    width: 32.r,
+                    height: 32.r,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Color(0xffDC7AFF)),
+                      color: Color(0xffDC7AFF).withValues(alpha: 0.2),
+                    ),
+                    child: Center(
+                      child: Image.asset("assets/icons/king.png", width: 20.w),
+                    ),
+                  ),
+                ),
+
+                SizedBox(width: 10.w),
+              ],
+
+              GestureDetector(
+                onTap: () async {
+                  await navigatorKey.currentState?.pushNamed(
+                    '/notificationsView',
+                  );
+                },
+                child: Container(
+                  width: 32.r,
+                  height: 32.r,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
+                  child: Center(
+                    child: SvgPicture.asset("assets/icons/bell.svg"),
+                  ),
+                ),
               ),
-              child: Center(child: Image.asset("assets/icons/king.png",width: 20.w,)),
-            ),
+            ],
           ),
-
-          SizedBox(width: 10.w,),
-           ],
-
-
-
-          GestureDetector(
-            onTap: () async {
-              await navigatorKey.currentState?.pushNamed('/notificationsView');
-            },
-            child: Container(
-              width: 32.r,
-              height: 32.r,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                color: Colors.white.withValues(alpha: 0.2),
-              ),
-              child: Center(child: SvgPicture.asset("assets/icons/bell.svg")),
-            ),
-          ),
-        ],
-       )
         ],
       ),
     );

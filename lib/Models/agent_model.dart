@@ -12,6 +12,17 @@ class AgentModel {
   final String gender;
   final int age;
   final String? speakingStyle;
+  final String? characterLocalized;
+  final String? characterTr;
+  final String? characterEn;
+  final String? characterIt;
+  final String? characterDe;
+  final String? characterJa;
+  final String? characterFr;
+  final String? characterEs;
+  final String? characterKo;
+  final String? characterHi;
+  final String? characterPt;
   final dynamic interests;
   final dynamic interestsType;
   final String? voiceId;
@@ -38,6 +49,17 @@ class AgentModel {
     required this.gender,
     required this.age,
     required this.speakingStyle,
+    this.characterLocalized,
+    this.characterTr,
+    this.characterEn,
+    this.characterIt,
+    this.characterDe,
+    this.characterJa,
+    this.characterFr,
+    this.characterEs,
+    this.characterKo,
+    this.characterHi,
+    this.characterPt,
     required this.interests,
     required this.interestsType,
     required this.voiceId,
@@ -102,6 +124,57 @@ class AgentModel {
     'pt': jobPt,
   };
 
+  static bool _looksTurkish(String text) {
+    if (RegExp(r'[ğıüşöçİĞÜŞÖÇ]').hasMatch(text)) return true;
+    return RegExp(
+      r'\b(ve|bir|için|ile|olan|kişilik|enerjik|yardımsever)\b',
+      caseSensitive: false,
+    ).hasMatch(text);
+  }
+
+  static bool _textMatchesLang(String text, String lang) {
+    if (lang == 'tr') return _looksTurkish(text);
+    if (lang == 'en') return !_looksTurkish(text);
+    return false;
+  }
+
+  String getCharacterByLang(String? langCode) {
+    final normalized = (langCode ?? 'en')
+        .toLowerCase()
+        .split('_')
+        .first
+        .split('-')
+        .first;
+    final byLang = switch (normalized) {
+      'tr' => characterTr,
+      'en' => characterEn,
+      'it' => characterIt,
+      'de' => characterDe,
+      'ja' => characterJa,
+      'fr' => characterFr,
+      'es' => characterEs,
+      'ko' => characterKo,
+      'hi' => characterHi,
+      'pt' => characterPt,
+      _ => null,
+    }?.trim();
+    if (byLang != null && byLang.isNotEmpty) {
+      return byLang;
+    }
+
+    final base = character.trim();
+    if (base.isNotEmpty) return base;
+
+    final localized = characterLocalized?.trim();
+    if (localized != null &&
+        localized.isNotEmpty &&
+        _textMatchesLang(localized, normalized)) {
+      return localized;
+    }
+
+    return (speakingStyle ?? '').trim();
+  }
+
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
@@ -116,6 +189,17 @@ class AgentModel {
       'gender': gender,
       'age': age,
       'speakingStyle': speakingStyle,
+      'character_localized': characterLocalized,
+      'character_tr': characterTr,
+      'character_en': characterEn,
+      'character_it': characterIt,
+      'character_de': characterDe,
+      'character_ja': characterJa,
+      'character_fr': characterFr,
+      'character_es': characterEs,
+      'character_ko': characterKo,
+      'character_hi': characterHi,
+      'character_pt': characterPt,
       'interests': interests,
       'interestsType': interestsType,
       'voiceId': voiceId,
@@ -147,6 +231,21 @@ class AgentModel {
       gender: map['gender'] as String,
       age: map['age'] as int,
       speakingStyle: map['speakingStyle'],
+      characterLocalized:
+          map['character_localized'] ??
+          map['characterLocalized'] ??
+          map['character_description'] ??
+          map['characterDescription'],
+      characterTr: map['character_tr'],
+      characterEn: map['character_en'],
+      characterIt: map['character_it'],
+      characterDe: map['character_de'],
+      characterJa: map['character_ja'],
+      characterFr: map['character_fr'],
+      characterEs: map['character_es'],
+      characterKo: map['character_ko'],
+      characterHi: map['character_hi'],
+      characterPt: map['character_pt'],
       interests: map['interests'] as dynamic,
       interestsType: map['interestsType'] as dynamic,
       voiceId: map['voiceId'],

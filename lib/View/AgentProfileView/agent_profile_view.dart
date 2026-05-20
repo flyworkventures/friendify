@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -12,13 +11,12 @@ import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Services/local_service.dart';
-import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
 import 'package:friendfy/main.dart';
-import 'package:friendfy/utils/hero_icon_converter.dart';
+import 'package:friendfy/Widgets/agent_character_description_text.dart';
+import 'package:friendfy/utils/agent_display_localization.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:heroicons/heroicons.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../AppLocalizations/translate_keys.dart';
@@ -31,7 +29,6 @@ class AgentProfileView extends ConsumerStatefulWidget {
 }
 
 class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
-  List<Widget> icons = [];
   int? _selectedPhotoAgentId;
   String? _selectedPhotoUrl;
   final PageController _photoPageController = PageController();
@@ -42,7 +39,6 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
   @override
   void initState() {
     super.initState();
-    init();
     _loadSelectedPhoto();
   }
 
@@ -54,7 +50,8 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
   }
 
   void _syncCarouselPhotos(List<String> photos) {
-    final isSame = photos.length == _carouselPhotos.length &&
+    final isSame =
+        photos.length == _carouselPhotos.length &&
         () {
           for (var i = 0; i < photos.length; i++) {
             if (photos[i] != _carouselPhotos[i]) return false;
@@ -109,20 +106,6 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
     return ordered;
   }
 
-
-  init() {
-    AgentModel? agent = ref
-        .read(AllControllers.agentsProfileViewController)
-        .agent;
-    List<String> interest = List.from(jsonDecode(agent?.interestsType));
-    for (var element in interest) {
-      icons.add(
-        interestIcon(element, size: 18, color: MyColors.purple, style: HeroIconStyle.outline),
-      );
-      setState(() {});
-    }
-  }
-
   Future<void> _loadSelectedPhoto() async {
     final agent = ref.read(AllControllers.agentsProfileViewController).agent;
     if (agent == null) return;
@@ -148,6 +131,10 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
       );
     }
     final userId = ref.read(AllControllers.userController)?.id?.toString();
+    final localizedInterests = AgentDisplayLocalization.localizedInterests(
+      agent,
+      context,
+    );
 
     // Kontrol: Kullanıcının kendi karakteri mi?
     final bool isOwnAgent = agent.system == 0 && agent.creatorId == userId;
@@ -233,27 +220,37 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
                                       },
                                       itemBuilder: (context, index) {
                                         return CachedNetworkImage(
-                                          width: MediaQuery.sizeOf(context).width,
+                                          width: MediaQuery.sizeOf(
+                                            context,
+                                          ).width,
                                           height: double.infinity,
                                           fit: BoxFit.cover,
                                           imageUrl: carouselPhotos[index],
                                           placeholder: (context, url) =>
                                               Shimmer.fromColors(
-                                            baseColor: Colors.grey[300]!,
-                                            highlightColor: Colors.grey[100]!,
-                                            child: Container(
-                                              width: MediaQuery.sizeOf(context).width,
-                                              height: 336.h,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                          errorWidget:
-                                              (context, url, error) => Container(
-                                            width: MediaQuery.sizeOf(context).width,
-                                            height: 336.h,
-                                            color: Colors.grey[300],
-                                            child: Icon(Icons.person, size: 80),
-                                          ),
+                                                baseColor: Colors.grey[300]!,
+                                                highlightColor:
+                                                    Colors.grey[100]!,
+                                                child: Container(
+                                                  width: MediaQuery.sizeOf(
+                                                    context,
+                                                  ).width,
+                                                  height: 336.h,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                          errorWidget: (context, url, error) =>
+                                              Container(
+                                                width: MediaQuery.sizeOf(
+                                                  context,
+                                                ).width,
+                                                height: 336.h,
+                                                color: Colors.grey[300],
+                                                child: Icon(
+                                                  Icons.person,
+                                                  size: 80,
+                                                ),
+                                              ),
                                         );
                                       },
                                     ),
@@ -292,16 +289,9 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
                                           height: 21.h,
                                           child: ListView(
                                             scrollDirection: Axis.horizontal,
-                                            children:
-                                                (List.from(
-                                                      jsonDecode(
-                                                        agent.interests,
-                                                      ),
-                                                    ))
-                                                    .map(
-                                                      (a) => interestWidget(a),
-                                                    )
-                                                    .toList(),
+                                            children: localizedInterests
+                                                .map((a) => interestWidget(a))
+                                                .toList(),
                                           ),
                                         ),
                                         SizedBox(height: 10),
@@ -323,15 +313,14 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
                                           ],
                                         ),
                                         SizedBox(height: 5.h),
-                                        Text(
-                                          agent.character,
+                                        AgentCharacterDescriptionText(
+                                          agent: agent,
+                                          maxLines: 3,
                                           style: GoogleFonts.quicksand(
                                             fontWeight: FontWeight.w400,
                                             fontSize: 14.sp,
                                             color: Colors.white,
                                           ),
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 3,
                                         ),
                                         SizedBox(height: 10.h),
                                         GestureDetector(
@@ -430,7 +419,6 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
                       messageButton(agent),
                     ],
                   ),
-
                 ],
               ),
 
@@ -475,11 +463,7 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
       onTap: () async {
         if (agent == null) return;
         await ref
-            .read(
-              AllControllers
-                  .agentsProfileViewController
-                  .notifier,
-            )
+            .read(AllControllers.agentsProfileViewController.notifier)
             .startVoiceCall(agent);
       },
       child: Container(
@@ -500,11 +484,7 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
       onTap: () async {
         if (agent == null) return;
         await ref
-            .read(
-              AllControllers
-                  .agentsProfileViewController
-                  .notifier,
-            )
+            .read(AllControllers.agentsProfileViewController.notifier)
             .startChat(agent);
       },
       child: Container(
@@ -602,12 +582,7 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          Translate.translate(
-            TranslateKeys.delete,
-            context,
-          ),
-        ),
+        title: Text(Translate.translate(TranslateKeys.delete, context)),
         content: Text(
           Translate.translate(
             "agent_profile_delete_character_confirmation",
@@ -617,20 +592,12 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              Translate.translate(
-                TranslateKeys.cancel,
-                context,
-              ),
-            ),
+            child: Text(Translate.translate(TranslateKeys.cancel, context)),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(
-              Translate.translate(
-                TranslateKeys.delete,
-                context,
-              ),
+              Translate.translate(TranslateKeys.delete, context),
               style: const TextStyle(color: Colors.red),
             ),
           ),
@@ -640,11 +607,7 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
 
     if (confirmed == true) {
       await ref
-          .read(
-            AllControllers
-                .agentsProfileViewController
-                .notifier,
-          )
+          .read(AllControllers.agentsProfileViewController.notifier)
           .deleteAgent();
     }
   }

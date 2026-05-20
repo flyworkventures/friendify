@@ -1,29 +1,31 @@
+import 'dart:io';
+import 'dart:ui';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
-import 'package:friendfy/Services/notification_service.dart';
-import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/Models/premium_model.dart';
 import 'package:friendfy/Models/user_model.dart';
+import 'package:friendfy/Services/notification_service.dart';
+import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/Widgets/button.dart';
+import 'package:friendfy/Widgets/future_progress_dialog.dart';
 import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gradient_borders/gradient_borders.dart';
 import 'package:heroicons/heroicons.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:io';
-import 'dart:ui';
-import 'package:package_info_plus/package_info_plus.dart';
 
 class ProfileView extends ConsumerStatefulWidget {
   const ProfileView({super.key});
@@ -129,6 +131,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SingleChildScrollView(
+        physics: ClampingScrollPhysics(),
         padding: EdgeInsets.only(bottom: 120).r,
         child: Column(
           children: [
@@ -136,16 +139,16 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
             if (showPremiumPlanCta) buildPremiumWidget(),
             SizedBox(height: 20.h),
             listTile(
-              icon: SvgPicture.asset("assets/icons/user-edit.svg",width: 24,),
+              icon: SvgPicture.asset("assets/icons/user-edit.svg", width: 24),
               text: Translate.translate("profile_settings", context),
               onTap: () async {
                 navigatorKey.currentState?.pushNamed('/profileSettings');
               },
             ),
-        
+
             //listTile(icon: SvgPicture.asset("assets/icons/user-edit.svg"), text: "Premium!", onTap: ()=> pushPremium()),
             listTile(
-              icon: SvgPicture.asset("assets/icons/profile.svg",width: 24,),
+              icon: SvgPicture.asset("assets/icons/profile.svg", width: 24),
               text: Translate.translate("share_with_friends", context),
               onTap: () {
                 _showInviteDialog(context);
@@ -158,18 +161,18 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                 navigatorKey.currentState?.pushNamed('/languageView');
               },
             ),
-        
+
             listTile(
               icon: SvgPicture.asset("assets/icons/notification-bing.svg"),
               text: Translate.translate(TranslateKeys.notifications, context),
               trailing: CupertinoSwitch(
                 value: _notificationsEnabled,
-                activeColor: Color(0xffA213E4),
+                activeTrackColor: Color(0xffA213E4),
                 onChanged: _toggleNotifications,
               ),
               onTap: () {},
             ),
-        
+
             listTile(
               icon: SvgPicture.asset("assets/icons/medal-star.svg"),
               text: Translate.translate("rate_app", context),
@@ -208,7 +211,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
       decoration: BoxDecoration(),
       child: Stack(
         children: [
-          Container(
+          SizedBox(
             height: 270.h,
             width: MediaQuery.sizeOf(context).width,
             child: Stack(
@@ -219,7 +222,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       ClipOval(
-                        child: Container(
+                        child: SizedBox(
                           width: 86.w,
                           height: 86.w,
                           child: CachedNetworkImage(
@@ -407,7 +410,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
             MyGradientButton(
               colors: [Color(0xffE1A903), Color(0xffC67A00)],
               size: Size(120.w, 32.h),
-      onTap: () => pushPremium(),
+              onTap: () => pushPremium(),
               radius: BorderRadius.circular(40).r,
               child: Center(
                 child: Text(
@@ -446,7 +449,9 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
               : Colors.white.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(8).r,
         ),
-        child: Center(child: SizedBox(width: 24.w, height: 24.h, child: icon,)),
+        child: Center(
+          child: SizedBox(width: 24.w, height: 24.h, child: icon),
+        ),
       ),
       title: Text(
         text,
@@ -468,16 +473,14 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
     }
 
     final activePremium = PremiumService.getActivePremium(user);
-    final isPaidPremium = activePremium != null && activePremium.type == PremiumType.paid;
+    final isPaidPremium =
+        activePremium != null && activePremium.type == PremiumType.paid;
 
     String subscriptionText;
     Color textColor = Colors.white;
 
     if (isPaidPremium) {
-      subscriptionText = Translate.translate(
-        "profile_badge_premium",
-        context,
-      );
+      subscriptionText = Translate.translate("profile_badge_premium", context);
     } else {
       subscriptionText = Translate.translate(
         "profile_badge_free_user",
@@ -496,9 +499,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
           color: isPaidPremium ? Color(0xffFFA500) : Colors.grey,
           borderRadius: BorderRadius.circular(20.r),
           gradient: isPaidPremium
-              ? LinearGradient(
-                  colors: [Color(0xffE1A903), Color(0xffC67A00)],
-                )
+              ? LinearGradient(colors: [Color(0xffE1A903), Color(0xffC67A00)])
               : null,
         ),
         child: isPaidPremium
@@ -602,11 +603,12 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                       padding: EdgeInsets.fromLTRB(16.w, 18.h, 16.w, 20.h),
                       child: Row(
                         children: [
-              Expanded(
+                          Expanded(
                             child: SizedBox(
                               height: 40.h,
                               child: ElevatedButton(
-                                onPressed: () => Navigator.of(sheetContext).pop(),
+                                onPressed: () =>
+                                    Navigator.of(sheetContext).pop(),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFFCE64FF),
                                   foregroundColor: Colors.white,
@@ -626,20 +628,22 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                             ),
                           ),
                           SizedBox(width: 10.w),
-                       
-               Expanded(
+
+                          Expanded(
                             child: SizedBox(
                               height: 40.h,
                               child: ElevatedButton(
                                 onPressed: () {
                                   Navigator.of(sheetContext).pop();
-                                  ref
-                                      .read(
-                                        AllControllers
-                                            .profileSettingsViewController
-                                            .notifier,
-                                      )
-                                      .logout();
+                                  context.runWithProgressDialog(
+                                    () => ref
+                                        .read(
+                                          AllControllers
+                                              .profileSettingsViewController
+                                              .notifier,
+                                        )
+                                        .logout(),
+                                  );
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF9B9B9B),
@@ -659,7 +663,6 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                               ),
                             ),
                           ),
-
                         ],
                       ),
                     ),
@@ -674,8 +677,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
   }
 
   void _showInviteDialog(BuildContext context) {
-    final inviteLink =
-        "https://apps.apple.com/tr/app/friendify-ai-friends/id6755447367?l=tr";
+    final inviteLink = "https://fly-work.com/friendify/download/";
 
     showModalBottomSheet(
       context: context,
@@ -710,7 +712,9 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                 padding: EdgeInsets.symmetric(horizontal: 14.w),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999.r),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -735,7 +739,9 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
                     SizedBox(width: 10.w),
                     GestureDetector(
                       onTap: () async {
-                        await Clipboard.setData(ClipboardData(text: inviteLink));
+                        await Clipboard.setData(
+                          ClipboardData(text: inviteLink),
+                        );
                         if (!mounted) return;
                         Navigator.of(sheetContext).pop();
                         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -802,8 +808,6 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
       },
     );
   }
-
-
 
   /// Uygulamayı App Store veya Play Store'da değerlendirmeye yönlendir
   Future<void> _rateApp() async {

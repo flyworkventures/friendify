@@ -42,6 +42,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
         debugPrint("⚠️ Paywall could not be shown: $e");
       }
     }
+    ref.read(AllControllers.bottomNavbarController.notifier).updateIndex(0);
     await navigatorKey.currentState?.pushNamedAndRemoveUntil(
       '/bottomNavbar',
       (route) => false,
@@ -233,113 +234,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
     }
   }
 
-  facebookAuth() async {
-    try {
-      debugPrint("🟢 facebookAuth started");
-      LocalService localService = LocalService(
-        prefs: await SharedPreferences.getInstance(),
-      );
 
-      debugPrint("🟢 Calling authRepository.facebookSignIn()");
-      Map<String, dynamic>? facebookData = await authRepository
-          .facebookSignIn();
-
-      if (facebookData != null) {
-        debugPrint("✅ Facebook Account not null");
-        debugPrint("📦 Facebook data: $facebookData");
-
-        final userData = facebookData['userData'];
-        final String email = userData['email'] ?? '';
-        final String name = userData['name'] ?? '';
-
-        debugPrint("📧 Email: $email, Name: $name");
-
-        if (email.isEmpty) {
-          debugPrint("❌ Email not provided by Facebook");
-          return;
-        }
-
-        debugPrint("🌐 Checking email on server...");
-        Response response = await httpService.post(
-          path: AppConstants.checkMailURL,
-          body: {"email": email},
-          headers: {"Content-type": "application/json"},
-        );
-
-        debugPrint("📡 Server response: ${response.statusCode}");
-
-        if (response.statusCode == 200) {
-          debugPrint("✨ Facebook Account 200 - New user creating account");
-
-          final fbPrefs = await SharedPreferences.getInstance();
-          final fbLocalAnswers = LocalService(prefs: fbPrefs).getOnboardingAnswers();
-          final fbHasLocalAnswers = fbLocalAnswers != null && fbLocalAnswers.isNotEmpty;
-
-          if (!fbHasLocalAnswers) {
-            debugPrint("📝 [Facebook Auth] Onboarding cevapları yok – register akışına yönlendiriliyor");
-            await localService.saveOnboardingPendingAuth({
-              "email": email,
-              "credential": "facebook",
-              "fallbackUsername": name,
-            });
-            navigatorKey.currentState?.pushNamedAndRemoveUntil(
-              '/register',
-              (route) => false,
-            );
-            return;
-          }
-
-          final registerNotifier = ref.read(
-            AllControllers.registerViewController.notifier,
-          );
-          await registerNotifier.hydrateFromLocalAnswers(
-            email: email,
-            credential: "facebook",
-            fallbackUsername: name,
-          );
-          final created = await registerNotifier.createUser();
-          if (!created) return;
-          await _navigateToRegisterFlow();
-        } else {
-          debugPrint("✨ Facebook Account exists, logging in");
-          var json = jsonDecode(response.body);
-          log("Usermodel: ${json["model"][0]}");
-          UserModel userModel = UserModel.fromMap(json["model"][0]);
-
-          await localService.setAuthTokens(
-            accessToken: userModel.token!,
-            refreshToken: userModel.refreshToken,
-          );
-          ref
-              .read(AllControllers.userController.notifier)
-              .updateUserModel(userModel);
-          debugPrint("✅ UserController updated with user ID: ${userModel.id}");
-
-          // State güncellemesini bekle
-          await Future.delayed(Duration(milliseconds: 200));
-
-          debugPrint("🔄 Fetching user data...");
-          await ref
-              .read(AllControllers.chatViewController.notifier)
-              .getConversations();
-          await ref
-              .read(AllControllers.agentsViewController.notifier)
-              .getAgents();
-          await ref
-              .read(AllControllers.agentsViewController.notifier)
-              .getRecentAgents();
-
-          debugPrint("✨ All data fetched, navigating to home");
-          await _handlePostAuthActionOrHome();
-        }
-      } else {
-        debugPrint("⚠️ Facebook login cancelled or failed");
-      }
-    } catch (e, stackTrace) {
-      debugPrint("❌ Error in facebookAuth: $e");
-      debugPrint("📍 StackTrace: $stackTrace");
-    }
-  }
 
   appleAuth() async {
     try {

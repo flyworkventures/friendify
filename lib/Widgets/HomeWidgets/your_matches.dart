@@ -27,12 +27,30 @@ class _YourMatchesState extends ConsumerState<YourMatches> {
     if (agents == null || agents.isEmpty) {
       return const SizedBox.shrink();
     }
+    final inset = 16.w;
     return SizedBox(
       height: 197.h,
-      child: ListView(
-        shrinkWrap: true,
-        scrollDirection: Axis.horizontal,
-        children: agents.map((e) => agentWidget(e, appPrv)).toList(),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Transform.translate(
+          offset: Offset(-inset, 0),
+          child: OverflowBox(
+            alignment: Alignment.centerLeft,
+            minWidth: constraints.maxWidth + inset * 2,
+            maxWidth: constraints.maxWidth + inset * 2,
+            child: SizedBox(
+              width: constraints.maxWidth + inset * 2,
+              child: ListView.separated(
+                padding: EdgeInsets.symmetric(horizontal: inset),
+                shrinkWrap: true,
+                scrollDirection: Axis.horizontal,
+                itemCount: agents.length,
+                separatorBuilder: (_, __) => SizedBox(width: 10.w),
+                itemBuilder: (context, index) =>
+                    agentWidget(agents[index], appPrv),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -47,7 +65,6 @@ class _YourMatchesState extends ConsumerState<YourMatches> {
       child: Container(
         height: 197.h,
         width: 143.w,
-        margin: EdgeInsets.only(right: 10).r,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20).r,

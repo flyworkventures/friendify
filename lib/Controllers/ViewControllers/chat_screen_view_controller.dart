@@ -39,6 +39,34 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
   XFile? selectedImage;
   DateTime? _recordingStartTime; // Kayıt başlangıç zamanı
 
+  void _appendOptimisticUserMessage(String text) {
+    final existing = List<MessageModel>.from(state.messages ?? const []);
+    existing.add(
+      MessageModel(
+        id: -DateTime.now().microsecondsSinceEpoch,
+        conversationId: (state.chatModel?.id ?? 0).toString(),
+        sender: "user",
+        message: text,
+        createdAt: DateTime.now().toIso8601String(),
+        messageType: "text",
+      ),
+    );
+    existing.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    state = state.copyWith(messages: existing);
+  }
+
+  void _removeOptimisticUserMessage(String text) {
+    final existing = List<MessageModel>.from(state.messages ?? const []);
+    existing.removeWhere(
+      (m) =>
+          m.id < 0 &&
+          m.sender == "user" &&
+          m.messageType == "text" &&
+          (m.message?.toString().trim() ?? "") == text.trim(),
+    );
+    state = state.copyWith(messages: existing);
+  }
+
   getConversations() async {
     HttpService httpService = HttpService(ref: ref);
     var res = await httpService.post(
@@ -147,16 +175,25 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
   }
 
   changeChatModel(ChatModel chatModel, AgentModel agent) {
-    state = state.copyWith(chatModel: chatModel, agent: agent);
+    state = state.copyWith(
+      chatModel: chatModel,
+      agent: agent,
+      messages: const [],
+      chatState: ChatState.normal,
+      responseWaiting: false,
+    );
   }
 
   getMessages() async {
+    final conversationId = state.chatModel?.id;
+    if (conversationId == null) return;
     HttpService httpService = HttpService(ref: ref);
     var res = await httpService.post(
       path: AppConstants.getMessage,
-      body: {"conversationId": state.chatModel?.id},
+      body: {"conversationId": conversationId},
     );
     if (res.statusCode == 200) {
+      if (state.chatModel?.id != conversationId) return;
       List messagesJson = jsonDecode(res.body);
       List<MessageModel> messages = messagesJson
           .map((a) => MessageModel.fromMap(a))
@@ -181,12 +218,15 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
   }
 
   listenMessages() async {
+    final conversationId = state.chatModel?.id;
+    if (conversationId == null) return;
     HttpService httpService = HttpService(ref: ref);
     var res = await httpService.post(
       path: AppConstants.listenMessage,
-      body: {"conversationId": state.chatModel?.id},
+      body: {"conversationId": conversationId},
     );
     if (res.statusCode == 200) {
+      if (state.chatModel?.id != conversationId) return;
       var json = jsonDecode(res.body);
       // debugPrint(json.toString());
       List messagesJson = json["messages"];
@@ -201,6 +241,19 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
         ...oldMessages,
         ...newMessages.where((m) => !oldMessages.any((old) => old.id == m.id)),
       ];
+
+      // Optimistic user mesajları, gerçek DB mesajı geldiyse temizle.
+      final normalizedServerUserTexts = newMessages
+          .where((m) => m.sender == "user")
+          .map((m) => m.message?.toString().trim() ?? "")
+          .where((t) => t.isNotEmpty)
+          .toSet();
+      mergedMessages.removeWhere(
+        (m) =>
+            m.id < 0 &&
+            m.sender == "user" &&
+            normalizedServerUserTexts.contains(m.message?.toString().trim() ?? ""),
+      );
 
       // Mesajları createdAt'e göre sırala (en eski üstte)
       mergedMessages.sort((a, b) {
@@ -470,6 +523,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
     } else if (message.isNotEmpty) {
       // Normal text mesaj gönder
       messageController.clear();
+      _appendOptimisticUserMessage(message);
       var res = await httpService.post(
         path: AppConstants.sendMessage,
         body: {
@@ -498,6 +552,9 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
         } catch (e) {
           log("Error parsing error response: $e");
         }
+        _removeOptimisticUserMessage(message);
+      } else {
+        _removeOptimisticUserMessage(message);
       }
 
       state = state.copyWith(responseWaiting: false);

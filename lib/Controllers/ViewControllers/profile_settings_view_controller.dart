@@ -54,7 +54,14 @@ init(){
       genderController.text = "Belirtmeyi tercih etmiyorum"; // Translate edilecek
     }
     
-    state = state.copyWith(photoURL: user?.photoURL);
+    state = state.copyWith(
+      photoURL: user?.photoURL,
+      birthdate: user?.birthdate,
+      gender: user?.gender,
+      setGenderToNull: user?.gender == null,
+      genderChanged: false,
+      nameChanged: false,
+    );
   } catch (e) {
     log("⚠️ Error in init: $e");
   }
@@ -134,24 +141,28 @@ void _checkIfChanged() {
   try {
     final user = ref?.read(AllControllers.userController);
     final hasNameChanged = nameController.text.trim() != (user?.username ?? "");
-    final hasBirthdateChanged = state.birthdate != null && 
-        (user?.birthdate == null || 
-         state.birthdate!.year != user!.birthdate.year ||
-         state.birthdate!.month != user.birthdate.month ||
-         state.birthdate!.day != user.birthdate.day);
-    
-    // Gender değişikliğini kontrol et - null değerleri de doğru şekilde karşılaştır
-    final currentGender = state.gender;
+    final selectedBirthdate = state.birthdate;
+    final userBirthdate = user?.birthdate;
+    final hasBirthdateChanged =
+        selectedBirthdate != null &&
+        (userBirthdate == null ||
+            selectedBirthdate.year != userBirthdate.year ||
+            selectedBirthdate.month != userBirthdate.month ||
+            selectedBirthdate.day != userBirthdate.day);
+
     final userGender = user?.gender;
-    final hasGenderChanged = currentGender != userGender; // Null-safe karşılaştırma
-    
-    if (hasNameChanged || hasBirthdateChanged || hasGenderChanged || state.selectedImagePath != null) {
+    final hasGenderChanged = state.genderChanged == true && state.gender != userGender;
+
+    if (hasNameChanged ||
+        hasBirthdateChanged ||
+        hasGenderChanged ||
+        state.selectedImagePath != null) {
       state = state.copyWith(nameChanged: true);
     } else {
       state = state.copyWith(nameChanged: false);
     }
     
-    log("🔍 _checkIfChanged: name=$hasNameChanged, birthdate=$hasBirthdateChanged, gender=$hasGenderChanged (current: $currentGender, user: $userGender), image=${state.selectedImagePath != null}");
+    log("🔍 _checkIfChanged: name=$hasNameChanged, birthdate=$hasBirthdateChanged, gender=$hasGenderChanged (current: ${state.gender}, user: $userGender), image=${state.selectedImagePath != null}");
   } catch (e) {
     log("⚠️ Error in _checkIfChanged: $e");
   }
@@ -176,7 +187,8 @@ Future<void> pickImage() async {
   }
 
   Future<void> updateProfile() async {
-    if (!state.nameChanged!) return;
+    _checkIfChanged();
+    if (state.nameChanged != true) return;
     
     // Orijinal user'ı sakla (hata durumunda geri almak için)
     final originalUser = ref?.read(AllControllers.userController);
@@ -207,15 +219,32 @@ Future<void> pickImage() async {
         }
       }
       
+      final trimmedUsername = nameController.text.trim();
+      final selectedBirthdate = state.birthdate;
+      final userBirthdate = originalUser.birthdate;
+      final birthdateChanged =
+          selectedBirthdate != null &&
+          (selectedBirthdate.year != userBirthdate.year ||
+              selectedBirthdate.month != userBirthdate.month ||
+              selectedBirthdate.day != userBirthdate.day);
+      final genderChanged =
+          state.genderChanged == true && state.gender != originalUser.gender;
+
       final body = {
-        "userId": ref?.read(AllControllers.userController)?.id,
-        "username": nameController.text.trim(),
+        "userId": originalUser.id,
+        // Backend tarafı bazı sürümlerde username beklediği için her zaman gönder.
+        "username": trimmedUsername,
         if (uploadedPhotoURL != null) "photoURL": uploadedPhotoURL,
-        if (state.birthdate != null) "birthdate": "${state.birthdate!.year}-${state.birthdate!.month.toString().padLeft(2, '0')}-${state.birthdate!.day.toString().padLeft(2, '0')}",
-        // Gender null olabilir (kullanıcı "belirtmeyi tercih etmiyorum" seçebilir)
-        // Gender değiştiyse (null dahil) gönder
-        if (state.genderChanged == true) "gender": state.gender,
+        if (birthdateChanged)
+          "birthdate":
+              "${selectedBirthdate.year}-${selectedBirthdate.month.toString().padLeft(2, '0')}-${selectedBirthdate.day.toString().padLeft(2, '0')}",
+        if (genderChanged) "gender": state.gender,
       };
+
+      if (body.length <= 1) {
+        state = state.copyWith(isLoading: false, nameChanged: false);
+        return;
+      }
       
       final response = await httpService.post(
         path: AppConstants.updateProfileURL,
@@ -265,20 +294,16 @@ Future<void> pickImage() async {
       } else {
         // Hata durumunda optimistic update'i geri al
         ref?.read(AllControllers.userController.notifier).updateUserModel(originalUser);
-        try {
+        if (mounted) {
           state = state.copyWith(isLoading: false);
-        } catch (e) {
-          log("⚠️ State update error: $e");
         }
         log("❌ Failed to update profile - Status: ${response.statusCode}");
       }
     } catch (e, stackTrace) {
       // Hata durumunda optimistic update'i geri al
       ref?.read(AllControllers.userController.notifier).updateUserModel(originalUser);
-      try {
+      if (mounted) {
         state = state.copyWith(isLoading: false);
-      } catch (stateError) {
-        log("⚠️ State update error in catch: $stateError");
       }
       log("❌ Error updating profile: $e");
       log("📍 StackTrace: $stackTrace");
@@ -440,6 +465,7 @@ Future<void> pickImage() async {
 
     // User state'ini temizle.
     ref?.read(AllControllers.userController.notifier).state = null;
+    ref?.read(AllControllers.bottomNavbarController.notifier).updateIndex(0);
 
     ref?.read(AllControllers.registerViewController.notifier).resetRegistrationFlow();
 

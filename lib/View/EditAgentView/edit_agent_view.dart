@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -265,6 +266,7 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
                   _darkField(
                     controller: nameController,
                     hint: Translate.translate(TranslateKeys.editCharacterNameHint, context),
+                    maxLength: 20,
                   ),
                   SizedBox(height: 16.h),
                   _title(Translate.translate(TranslateKeys.gender, context)),
@@ -530,13 +532,16 @@ class _EditAgentViewState extends ConsumerState<EditAgentView> {
     required TextEditingController controller,
     required String hint,
     int maxLines = 1,
+    int? maxLength,
   }) {
     return Container(
       height: 40.h,
       decoration: _sectionDecoration(),
       child: TextField(
         controller: controller,
-      
+        inputFormatters: maxLength != null
+            ? [LengthLimitingTextInputFormatter(maxLength)]
+            : null,
         maxLines: maxLines,
         style: GoogleFonts.quicksand(
           color: Colors.white,

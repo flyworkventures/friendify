@@ -1,7 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
@@ -9,12 +14,8 @@ import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/View/AgentsScreen/agents_screen.dart';
 import 'package:friendfy/Widgets/background.dart';
 import 'package:friendfy/Widgets/button.dart';
+import 'package:friendfy/Widgets/future_progress_dialog.dart';
 import 'package:friendfy/utils/app_constants.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,29 +56,25 @@ class LoginViewState extends ConsumerState<LoginView>
       parent: _headerAnimationController,
       curve: const Interval(0.0, 0.75, curve: Curves.easeOutCubic),
     );
-    _daisySlide = Tween<Offset>(
-      begin: const Offset(0, 0.12),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _headerAnimationController,
-        curve: const Interval(0.0, 0.75, curve: Curves.easeOutCubic),
-      ),
-    );
+    _daisySlide = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _headerAnimationController,
+            curve: const Interval(0.0, 0.75, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _laraOpacity = CurvedAnimation(
       parent: _headerAnimationController,
       curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
     );
-    _laraSlide = Tween<Offset>(
-      begin: const Offset(0, 0.12),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _headerAnimationController,
-        curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
-      ),
-    );
+    _laraSlide = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _headerAnimationController,
+            curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _headerAnimationController.forward();
   }
@@ -98,14 +95,12 @@ class LoginViewState extends ConsumerState<LoginView>
     final prefs = await SharedPreferences.getInstance();
     final localService = LocalService(prefs: prefs);
     final answers = localService.getOnboardingAnswers();
-    final alreadyCompletedRegister =
-        answers != null && answers.isNotEmpty;
+    final alreadyCompletedRegister = answers != null && answers.isNotEmpty;
 
     if (!alreadyCompletedRegister) {
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/register',
-        (route) => false,
-      );
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/register', (route) => false);
       return;
     }
 
@@ -198,9 +193,11 @@ class LoginViewState extends ConsumerState<LoginView>
                 MyButton(
                   onTap: () async {
                     debugPrint("🍎 Apple button clicked");
-                    await ref
-                        .read(AllControllers.onboardViewController.notifier)
-                        .appleAuth();
+                    await context.runWithProgressDialog(
+                      () => ref
+                          .read(AllControllers.onboardViewController.notifier)
+                          .appleAuth(),
+                    );
                   },
                   boxBorder: Border.all(
                     color: Colors.white.withValues(alpha: 0.2),
@@ -240,9 +237,11 @@ class LoginViewState extends ConsumerState<LoginView>
 
                 MyButton(
                   onTap: () async {
-                    await ref
-                        .read(AllControllers.onboardViewController.notifier)
-                        .googleAuth();
+                    await context.runWithProgressDialog(
+                      () => ref
+                          .read(AllControllers.onboardViewController.notifier)
+                          .googleAuth(),
+                    );
                   },
                   margin: EdgeInsets.symmetric(horizontal: 20),
                   radius: BorderRadius.circular(50),
@@ -276,7 +275,7 @@ class LoginViewState extends ConsumerState<LoginView>
                 MyButton(
                   onTap: () async {
                     if (!mounted) return;
-                    await _continueAsGuest();
+                    await context.runWithProgressDialog(_continueAsGuest);
                   },
                   margin: EdgeInsets.symmetric(
                     horizontal: 20,
@@ -299,10 +298,12 @@ class LoginViewState extends ConsumerState<LoginView>
 
               if (Platform.isAndroid) ...[
                 MyButton(
-                  onTap: () {
-                    ref
-                        .read(AllControllers.onboardViewController.notifier)
-                        .googleAuth();
+                  onTap: () async {
+                    await context.runWithProgressDialog(
+                      () => ref
+                          .read(AllControllers.onboardViewController.notifier)
+                          .googleAuth(),
+                    );
                   },
                   margin: EdgeInsets.symmetric(horizontal: 20),
                   radius: BorderRadius.circular(50),
@@ -332,7 +333,7 @@ class LoginViewState extends ConsumerState<LoginView>
                 MyButton(
                   onTap: () async {
                     if (!mounted) return;
-                    await _continueAsGuest();
+                    await context.runWithProgressDialog(_continueAsGuest);
                   },
                   margin: EdgeInsets.symmetric(
                     horizontal: 20,
@@ -403,7 +404,11 @@ class LoginViewState extends ConsumerState<LoginView>
                         ),
                         recognizer: TapGestureRecognizer()
                           ..onTap = () {
-                            launchUrl(Uri.parse("https://fly-work.com/friendify/privacy-policy/"));
+                            launchUrl(
+                              Uri.parse(
+                                "https://fly-work.com/friendify/privacy-policy/",
+                              ),
+                            );
                           },
                       ),
                       TextSpan(text: " ve "),
@@ -417,7 +422,11 @@ class LoginViewState extends ConsumerState<LoginView>
                         ),
                         recognizer: TapGestureRecognizer()
                           ..onTap = () {
-                            launchUrl(Uri.parse("https://fly-work.com/friendify/cookies/"));
+                            launchUrl(
+                              Uri.parse(
+                                "https://fly-work.com/friendify/cookies/",
+                              ),
+                            );
                           },
                       ),
                       TextSpan(text: " nasıl işlediğimizi öğrenin"),
@@ -552,24 +561,12 @@ class LoginViewState extends ConsumerState<LoginView>
         */
         socialButton(
           onTap: () async {
-            debugPrint("🔵 Facebook button clicked");
-
-            await ref
-                .read(AllControllers.onboardViewController.notifier)
-                .facebookAuth();
-
-            debugPrint("🔵 Facebook auth completed");
-          },
-          child: Center(child: SvgPicture.asset("assets/facebook.svg")),
-          backgroundColor: Color(0xff1877F2),
-        ),
-        SizedBox(width: 15.w),
-        socialButton(
-          onTap: () async {
             debugPrint("🍎 Apple button clicked");
-            await ref
-                .read(AllControllers.onboardViewController.notifier)
-                .appleAuth();
+            await context.runWithProgressDialog(
+              () => ref
+                  .read(AllControllers.onboardViewController.notifier)
+                  .appleAuth(),
+            );
             debugPrint("🍎 Apple auth completed");
           },
           child: Center(
@@ -608,9 +605,11 @@ class LoginViewState extends ConsumerState<LoginView>
         SizedBox(width: 15.w),
         socialButton(
           onTap: () async {
-            ref
-                .read(AllControllers.onboardViewController.notifier)
-                .googleAuth();
+            await context.runWithProgressDialog(
+              () => ref
+                  .read(AllControllers.onboardViewController.notifier)
+                  .googleAuth(),
+            );
           },
           child: Center(child: Image.asset("assets/google.png", width: 24.w)),
           backgroundColor: Colors.white,

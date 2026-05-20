@@ -4,7 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
+import 'package:friendfy/Controllers/all_controllers.dart';
+import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Widgets/background.dart';
+import 'package:friendfy/Providers/agent_character_translation_provider.dart';
+import 'package:friendfy/Services/agent_character_translation_service.dart';
 import 'package:friendfy/locale_provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:heroicons/heroicons.dart';
@@ -48,6 +52,21 @@ class _LanguageViewState extends ConsumerState<LanguageView> {
             currentLocale: currentLocale,
             onSave: (selectedLocale) async {
               await appPrv.changeLang(selectedLocale);
+              final agentsVm = ref.read(AllControllers.agentsViewController);
+              final allAgents = <AgentModel>[
+                ...?agentsVm.agents,
+                ...?agentsVm.userAgents,
+                ...?agentsVm.recentAgents,
+              ];
+              if (allAgents.isNotEmpty) {
+                await AgentCharacterTranslationService.instance.prefetchAgents(
+                  allAgents,
+                  selectedLocale.languageCode,
+                );
+                ref
+                    .read(agentCharacterTranslationVersionProvider.notifier)
+                    .state++;
+              }
               if (!mounted) return;
               Navigator.pop(context);
             },

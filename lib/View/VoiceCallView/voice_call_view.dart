@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -13,10 +14,11 @@ import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Widgets/background.dart';
+import 'package:friendfy/locale_provider.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:proximity_sensor/proximity_sensor.dart';
-import 'package:record/record.dart';
+import 'package:record/record.dart' hide IosAudioCategory;
 
 class VoiceCallView extends ConsumerStatefulWidget {
   const VoiceCallView({super.key});
@@ -41,6 +43,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   static const double _bargeInEnergyMultiplier = 1.8;
   static const double _bargeInMinEnergy = 1200.0;
   static const int _ttsFeedbackGuardMs = 280;
+  static const int _ttsPcmSampleRate = 24000;
   static const bool _debugLogs = true;
 
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -55,6 +58,11 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   StreamSubscription<int>? _proximitySub;
   Timer? _reconnectTimer;
   Timer? _ringbackTimer;
+  Timer? _playbackDoneTimer;
+  bool _pcmPlayerReady = false;
+  bool _ttsUsesPcm = true;
+  bool _avatarReadySentToServer = false;
+  String? _activeTtsUtteranceId;
   bool _ringbackActive = false;
   bool _proximityScreenOffEnabled = false;
   bool _isProximityNear = false;
@@ -62,7 +70,8 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   bool _connected = false;
   bool _sessionReady = false;
   bool _isMicStreaming = false;
-  bool _isSpeakerOn = true;
+  bool _micUserWantsOn = true;
+  bool _isSpeakerOn = false;
   bool _isSpeechActive = false;
   bool _isAiSpeaking = false;
   String _turnState = "idle";
@@ -89,11 +98,11 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   String _stateText() {
     switch (_turnState) {
       case "listening":
-        return "Seni dinliyorum";
+        return _t("voice_call_status_listening_you");
       case "thinking":
-        return "Düşünüyorum...";
+        return _t("voice_call_status_ai_thinking");
       case "speaking":
-        return "Konuşuyorum";
+        return _t("voice_call_status_ai_speaking");
       default:
         return "";
     }
@@ -173,61 +182,51 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     debugPrint("[VoiceCall] ${DateTime.now().toIso8601String()} | $message");
   }
 
-  Future<void> _configureAudioPlayerSession() async {
+  Future<void> _applyAudioRoute() async {
     try {
-      await _audioPlayer.setAudioContext(
-        AudioContextConfig(
-          route: AudioContextConfigRoute.speaker,
-          focus: AudioContextConfigFocus.gain,
-          respectSilence: false,
-          stayAwake: false,
-        ).build(),
-      );
-      _log("Audio session configured (speaker, respectSilence=false)");
+      final route = _isSpeakerOn
+          ? AudioContextConfigRoute.speaker
+          : AudioContextConfigRoute.earpiece;
+      final audioCtx = AudioContextConfig(
+        route: route,
+        focus: AudioContextConfigFocus.gain,
+        respectSilence: false,
+        stayAwake: false,
+      ).build();
+      await _audioPlayer.setAudioContext(audioCtx);
+      await _ringbackPlayer.setAudioContext(audioCtx);
+      if (_pcmPlayerReady) {
+        try {
+          await FlutterPcmSound.release();
+        } catch (_) {}
+        _pcmPlayerReady = false;
+      }
+      _applyProximityScreenOff();
+      _log("Audio route -> ${_isSpeakerOn ? "speaker" : "earpiece"}");
     } catch (e, st) {
-      _log("Audio session configure error: $e\n$st");
+      _log("Audio route error: $e\n$st");
     }
   }
 
   Future<void> _toggleMicrophone() async {
-    if (_isMicStreaming) {
-      await _stopMicStreaming();
-    } else {
-      await _startMicStreaming();
+    _micUserWantsOn = !_micUserWantsOn;
+    if (!mounted) return;
+    setState(() {});
+    if (!_micUserWantsOn) {
+      await _stopMicStreaming(preserveConversationUi: true);
+      return;
+    }
+    if (_sessionReady && !_isMicStreaming) {
+      await _startMicStreaming(preserveConversationUi: true);
     }
   }
 
   Future<void> _toggleSpeaker() async {
-    try {
-      _isSpeakerOn = !_isSpeakerOn;
-      final route = _isSpeakerOn
-          ? AudioContextConfigRoute.speaker
-          : AudioContextConfigRoute.earpiece;
-      await _audioPlayer.setAudioContext(
-        AudioContextConfig(
-          route: route,
-          focus: AudioContextConfigFocus.gain,
-          respectSilence: false,
-          stayAwake: false,
-        ).build(),
-      );
-      try {
-        await _ringbackPlayer.setAudioContext(
-          AudioContextConfig(
-            route: route,
-            focus: AudioContextConfigFocus.gain,
-            respectSilence: false,
-            stayAwake: false,
-          ).build(),
-        );
-      } catch (_) {}
-      _applyProximityScreenOff();
-      if (!mounted) return;
-      setState(() {});
-      _log("Speaker toggled -> ${_isSpeakerOn ? "on" : "off"}");
-    } catch (e, st) {
-      _log("Speaker toggle error: $e\n$st");
-    }
+    _isSpeakerOn = !_isSpeakerOn;
+    await _applyAudioRoute();
+    if (!mounted) return;
+    setState(() {});
+    _log("Speaker toggled -> ${_isSpeakerOn ? "on" : "off"}");
   }
 
   Future<void> _startRingback() async {
@@ -268,6 +267,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
         if (_isProximityNear == near) return;
         _isProximityNear = near;
         _log("Proximity changed -> ${near ? "near" : "far"}");
+        if (mounted) setState(() {});
       });
       _applyProximityScreenOff();
     } catch (e, st) {
@@ -287,14 +287,9 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _log("Proximity screen-off -> $shouldEnable");
   }
 
-  Future<void> _playRingbackThenConnect() async {
-    await _startRingback();
-    _ringbackTimer?.cancel();
-    _ringbackTimer = Timer(const Duration(seconds: 3), () async {
-      await _stopRingback();
-      if (!mounted) return;
-      await _connectVoiceWs();
-    });
+  Future<void> _beginCallSetup() async {
+    unawaited(_startRingback());
+    await _connectVoiceWs();
   }
 
   @override
@@ -307,14 +302,18 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _log("VoiceCallView init");
     _audioPlayer.onPlayerComplete.listen((_) {
       _isAiSpeaking = false;
+      _sendPlaybackDone();
       if (mounted) {
         setState(() => _status = _t("voice_call_status_listening_active"));
       }
       _log("Audio player complete -> AI speaking false");
     });
-    _configureAudioPlayerSession();
-    _initProximitySensor();
-    _playRingbackThenConnect();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_applyAudioRoute());
+      unawaited(_initProximitySensor());
+      unawaited(_beginCallSetup());
+    });
   }
 
   @override
@@ -328,11 +327,20 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   String _buildWsUrl(String token) {
     final apiUri = Uri.parse(AppConstants.baseURL);
     final wsScheme = apiUri.scheme == "https" ? "wss" : "ws";
+    final consultantId = _activeAgent?.id.toString();
+    final lang =
+        ref.read(appProvider).currentLang?.languageCode ??
+        Localizations.localeOf(context).languageCode;
     return apiUri
         .replace(
           scheme: wsScheme,
-          path: "/ws/voice",
-          queryParameters: {"token": token},
+          path: "/realtime",
+          queryParameters: {
+            "token": token,
+            if (consultantId != null) "consultantId": consultantId,
+            "lang": lang,
+            "callMode": "voice",
+          },
         )
         .toString();
   }
@@ -381,6 +389,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   void _onWsClosed() {
     _log("WS closed");
     _stopMicStreaming();
+    _playbackDoneTimer?.cancel();
     if (!mounted) return;
     setState(() {
       _connected = false;
@@ -389,7 +398,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
       _status = _t("voice_call_status_connection_closed");
     });
     if (_manualClose) return;
-    _scheduleReconnect();
+    unawaited(_endCall());
   }
 
   void _scheduleReconnect() {
@@ -441,6 +450,121 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     });
   }
 
+  void _signalAvatarReadyToServer() {
+    if (_avatarReadySentToServer || _socket == null) return;
+    _avatarReadySentToServer = true;
+    _sendEvent("avatar.ready", {"sessionId": _sessionId});
+    _log("Signaled avatar.ready to server (voice call)");
+  }
+
+  void _sendPlaybackDone() {
+    if (_socket == null) return;
+    _socket!.add(jsonEncode({"type": "playback_done"}));
+    _log("-> playback_done");
+  }
+
+  void _schedulePlaybackDoneAfterMs(int durationMs) {
+    _playbackDoneTimer?.cancel();
+    final waitMs = durationMs.clamp(200, 120000);
+    _playbackDoneTimer = Timer(Duration(milliseconds: waitMs), () {
+      _playbackDoneTimer = null;
+      _sendPlaybackDone();
+      _isAiSpeaking = false;
+      if (mounted) {
+        setState(() => _status = _t("voice_call_status_listening_active"));
+      }
+    });
+  }
+
+  Future<void> _ensurePcmPlayer() async {
+    if (_pcmPlayerReady) return;
+    await FlutterPcmSound.setup(
+      sampleRate: _ttsPcmSampleRate,
+      channelCount: 1,
+      iosAudioCategory: _isSpeakerOn
+          ? IosAudioCategory.playback
+          : IosAudioCategory.playAndRecord,
+    );
+    _pcmPlayerReady = true;
+  }
+
+  Future<void> _playTtsAsPcm(List<int> bytes) async {
+    await _ensurePcmPlayer();
+    await _audioPlayer.stop();
+    FlutterPcmSound.start();
+    if (bytes.length >= 2) {
+      final bd = ByteData.sublistView(Uint8List.fromList(bytes));
+      final sampleCount = bytes.length ~/ 2;
+      final samples = List<int>.generate(
+        sampleCount,
+        (i) => bd.getInt16(i * 2, Endian.little),
+      );
+      await FlutterPcmSound.feed(PcmArrayInt16.fromList(samples));
+    }
+    final durationMs =
+        ((bytes.length / (_ttsPcmSampleRate * 2)) * 1000).round() + 450;
+    _schedulePlaybackDoneAfterMs(durationMs);
+  }
+
+  Future<void> _stopPcmPlayback() async {
+    try {
+      await FlutterPcmSound.feed(PcmArrayInt16.fromList(const []));
+    } catch (_) {}
+  }
+
+  Future<void> _playTtsAsMp3(List<int> bytes) async {
+    await _stopPcmPlayback();
+    await _audioPlayer.stop();
+    await _audioPlayer.play(
+      BytesSource(Uint8List.fromList(bytes), mimeType: "audio/mpeg"),
+    );
+  }
+
+  Uint8List _pcm16ToWav(
+    List<int> pcmBytes, {
+    int sampleRate = _ttsPcmSampleRate,
+    int channels = 1,
+  }) {
+    final pcm = Uint8List.fromList(pcmBytes);
+    final dataSize = pcm.length;
+    final byteRate = sampleRate * channels * 2;
+    final blockAlign = channels * 2;
+    final header = ByteData(44);
+    header.setUint8(0, 0x52); // R
+    header.setUint8(1, 0x49); // I
+    header.setUint8(2, 0x46); // F
+    header.setUint8(3, 0x46); // F
+    header.setUint32(4, 36 + dataSize, Endian.little);
+    header.setUint8(8, 0x57); // W
+    header.setUint8(9, 0x41); // A
+    header.setUint8(10, 0x56); // V
+    header.setUint8(11, 0x45); // E
+    header.setUint32(12, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little);
+    header.setUint16(22, channels, Endian.little);
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(28, byteRate, Endian.little);
+    header.setUint16(32, blockAlign, Endian.little);
+    header.setUint16(34, 16, Endian.little);
+    header.setUint8(36, 0x64); // d
+    header.setUint8(37, 0x61); // a
+    header.setUint8(38, 0x74); // t
+    header.setUint8(39, 0x61); // a
+    header.setUint32(40, dataSize, Endian.little);
+    return Uint8List.fromList([...header.buffer.asUint8List(), ...pcm]);
+  }
+
+  Future<void> _playTtsAsWavFromPcm(List<int> bytes) async {
+    await _stopPcmPlayback();
+    await _audioPlayer.stop();
+    await _audioPlayer.play(
+      BytesSource(_pcm16ToWav(bytes), mimeType: "audio/wav"),
+    );
+    final durationMs =
+        ((bytes.length / (_ttsPcmSampleRate * 2)) * 1000).round() + 450;
+    _schedulePlaybackDoneAfterMs(durationMs);
+  }
+
   Future<void> _finalizeAndPlayTts(
     String utteranceId, {
     required String reason,
@@ -448,6 +572,9 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     if (utteranceId.isEmpty) return;
     if (_completedTtsUtterances.contains(utteranceId)) return;
     final bytes = _ttsBuffers.remove(utteranceId);
+    if (utteranceId == _activeTtsUtteranceId) {
+      _activeTtsUtteranceId = null;
+    }
     if (bytes == null || bytes.isEmpty) {
       _log(
         "TTS finalize skipped (empty buffer): utterance=$utteranceId reason=$reason",
@@ -457,153 +584,206 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _completedTtsUtterances.add(utteranceId);
     _lastTtsBytes = bytes.length;
     _log(
-      "TTS finalize/play: utterance=$utteranceId bytes=$_lastTtsBytes reason=$reason enough=${_lastTtsBytes > 10240}",
+      "TTS finalize/play: utterance=$utteranceId bytes=$_lastTtsBytes format=${_ttsUsesPcm ? "pcm" : "mp3"} reason=$reason",
     );
     _suppressVadUntilMs =
         DateTime.now().millisecondsSinceEpoch + _ttsFeedbackGuardMs;
-    try {
-      await _audioPlayer.stop();
-      await _audioPlayer.play(
-        BytesSource(Uint8List.fromList(bytes), mimeType: "audio/mpeg"),
-      );
-    } catch (e, st) {
-      _log("BytesSource play failed, trying device file fallback: $e\n$st");
-      try {
-        final tempFile = File(
-          "${Directory.systemTemp.path}/voice_tts_${DateTime.now().millisecondsSinceEpoch}.mp3",
-        );
-        await tempFile.writeAsBytes(bytes, flush: true);
-        await _audioPlayer.stop();
-        await _audioPlayer.play(
-          DeviceFileSource(tempFile.path, mimeType: "audio/mpeg"),
-        );
-        _log("Fallback device file play ok: ${tempFile.path}");
-      } catch (e2, st2) {
-        _log("Fallback device file play failed: $e2\n$st2");
-        if (mounted) {
-          setState(
-            () => _status = _t("voice_call_status_audio_playback_error"),
-          );
-        }
-      }
-    }
     _isAiSpeaking = true;
     if (mounted) {
       setState(() => _status = _t("voice_call_status_ai_speaking"));
+    }
+    try {
+      if (_ttsUsesPcm) {
+        try {
+          await _playTtsAsPcm(bytes);
+        } catch (pcmErr, pcmSt) {
+          _log("PCM playback failed, trying WAV fallback: $pcmErr\n$pcmSt");
+          await _playTtsAsWavFromPcm(bytes);
+        }
+      } else {
+        await _playTtsAsMp3(bytes);
+      }
+    } catch (e, st) {
+      _log("TTS playback failed: $e\n$st");
+      if (mounted) {
+        setState(() => _status = _t("voice_call_status_audio_playback_error"));
+      }
+      _isAiSpeaking = false;
+    }
+  }
+
+  void _bufferWsPcmBinary(dynamic raw) {
+    final id = _activeTtsUtteranceId;
+    if (id == null || id.isEmpty) return;
+    final bytes = raw is Uint8List
+        ? raw
+        : Uint8List.fromList(raw is List<int> ? raw : <int>[]);
+    if (bytes.isEmpty) return;
+    _ttsBuffers.putIfAbsent(id, () => <int>[]).addAll(bytes);
+  }
+
+  void _handleWsJson(Map<String, dynamic> data) {
+    final String type = (data["type"] ?? "").toString();
+    final payload = (data["payload"] is Map<String, dynamic>)
+        ? data["payload"] as Map<String, dynamic>
+        : <String, dynamic>{};
+    _receivedEventCounter++;
+    if (type != "tts.chunk" || _receivedEventCounter % 8 == 0) {
+      _log("<- [$type] #$_receivedEventCounter ${jsonEncode(data)}");
+    }
+
+    switch (type) {
+      case "connection.ready":
+        setState(() => _status = _t("voice_call_status_session_preparing"));
+        _startSession();
+        break;
+      case "session.ready":
+        _stopRingback();
+        _signalAvatarReadyToServer();
+        if (!mounted) return;
+        setState(() {
+          _sessionReady = true;
+          _turnState = "listening";
+          _status = _t("voice_call_status_listening_active");
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_micUserWantsOn || _isMicStreaming) return;
+          unawaited(_startMicStreaming());
+        });
+        break;
+      case "turn.state":
+        final state = (payload["state"] ?? "").toString();
+        _turnState = state;
+        if (state == "listening") {
+          _isAiSpeaking = false;
+          if (mounted) {
+            setState(() => _status = _t("voice_call_status_listening_you"));
+          }
+        } else if (state == "thinking") {
+          _isAiSpeaking = false;
+          if (mounted)
+            setState(() => _status = _t("voice_call_status_ai_thinking"));
+        } else if (state == "speaking") {
+          _isAiSpeaking = true;
+          if (mounted)
+            setState(() => _status = _t("voice_call_status_ai_speaking"));
+        } else if (mounted) {
+          setState(() {});
+        }
+        break;
+      case "stt.partial":
+        setState(
+          () => _userText = _userLine((payload["transcript"] ?? "").toString()),
+        );
+        break;
+      case "stt.final":
+        setState(
+          () => _userText = _userLine((payload["transcript"] ?? "").toString()),
+        );
+        break;
+      case "ai.response":
+        final utteranceId = (payload["utteranceId"] ?? "").toString();
+        final text = (payload["text"] ?? "").toString();
+        setState(() => _aiText = _aiLine(text));
+        _log("AI response received for utterance=$utteranceId");
+        break;
+      case "tts.start":
+        final utteranceId = (payload["utteranceId"] ?? "").toString();
+        final format = (payload["format"] ?? "").toString();
+        if (utteranceId.isNotEmpty) {
+          _activeTtsUtteranceId = utteranceId;
+          _ttsUsesPcm = format.contains("pcm");
+          _completedTtsUtterances.remove(utteranceId);
+          _ttsBuffers[utteranceId] = <int>[];
+          _isAiSpeaking = true;
+          setState(() => _status = _t("voice_call_status_ai_speaking"));
+        }
+        break;
+      case "tts.chunk":
+        final utteranceId = (payload["utteranceId"] ?? "").toString();
+        final b64 = (payload["audioBase64"] ?? "").toString();
+        final isLast = payload["isLast"] == true;
+        if (utteranceId.isNotEmpty) {
+          _activeTtsUtteranceId = utteranceId;
+        }
+        if (utteranceId.isNotEmpty && b64.isNotEmpty) {
+          _ttsBuffers.putIfAbsent(utteranceId, () => <int>[]);
+          _ttsBuffers[utteranceId]!.addAll(base64Decode(b64));
+          _log(
+            "TTS chunk buffered: utterance=$utteranceId size=${_ttsBuffers[utteranceId]!.length} isLast=$isLast",
+          );
+        }
+        if (utteranceId.isNotEmpty && isLast) {
+          _finalizeAndPlayTts(utteranceId, reason: "tts.chunk.isLast");
+        }
+        break;
+      case "tts.end":
+        final utteranceId = (payload["utteranceId"] ?? "").toString();
+        _finalizeAndPlayTts(utteranceId, reason: "tts.end");
+        break;
+      case "ai.interrupted":
+        _playbackDoneTimer?.cancel();
+        _audioPlayer.stop();
+        _stopPcmPlayback();
+        _isAiSpeaking = false;
+        setState(() => _status = _t("voice_call_status_ai_interrupted"));
+        break;
+      case "tts.stop":
+        _playbackDoneTimer?.cancel();
+        _audioPlayer.stop();
+        _stopPcmPlayback();
+        _isAiSpeaking = false;
+        setState(() => _status = _t("voice_call_status_tts_stopped"));
+        break;
+      case "error":
+        final message =
+            (payload["message"] ??
+                    data["error"] ??
+                    _t("voice_call_status_unknown_error"))
+                .toString();
+        setState(
+          () => _status = _fmt("voice_call_status_error_prefix", {
+            "message": message,
+          }),
+        );
+        break;
+      case "call_ended_idle":
+        _log("Server ended call (idle timeout)");
+        unawaited(_endCall());
+        break;
+      case "viseme_timeline":
+      case "viseme.timeline":
+      case "connection_success":
+      case "ai_speaking_start":
+      case "ai_response_complete":
+      case "transcript":
+      case "user_speech_started":
+      case "user_speech_stopped":
+      case "barge_in":
+      case "pong":
+        break;
+      default:
+        break;
     }
   }
 
   void _onWsMessage(dynamic raw) {
     try {
-      final Map<String, dynamic> data = jsonDecode(raw.toString());
-      final String type = (data["type"] ?? "").toString();
-      final payload = (data["payload"] is Map<String, dynamic>)
-          ? data["payload"] as Map<String, dynamic>
-          : <String, dynamic>{};
-      _receivedEventCounter++;
-      _log("<- [$type] #$_receivedEventCounter ${jsonEncode(data)}");
-
-      switch (type) {
-        case "connection.ready":
-          setState(() => _status = _t("voice_call_status_session_preparing"));
-          _startSession();
-          break;
-        case "session.ready":
-          _stopRingback();
-          setState(() {
-            _sessionReady = true;
-            _turnState = "listening";
-            _status = _t("voice_call_status_listening_active");
-          });
-          _startMicStreaming();
-          break;
-        case "turn.state":
-          final state = (payload["state"] ?? "").toString();
-          _turnState = state;
-          if (state == "listening") {
-            _isAiSpeaking = false;
-            setState(() => _status = _t("voice_call_status_listening_you"));
-          } else if (state == "thinking") {
-            _isAiSpeaking = false;
-            setState(() => _status = _t("voice_call_status_ai_thinking"));
-          } else if (state == "speaking") {
-            _isAiSpeaking = true;
-            setState(() => _status = _t("voice_call_status_ai_speaking"));
-          }
-          break;
-        case "stt.partial":
-          setState(
-            () =>
-                _userText = _userLine((payload["transcript"] ?? "").toString()),
-          );
-          break;
-        case "stt.final":
-          setState(
-            () =>
-                _userText = _userLine((payload["transcript"] ?? "").toString()),
-          );
-          break;
-        case "ai.response":
-          final utteranceId = (payload["utteranceId"] ?? "").toString();
-          final text = (payload["text"] ?? "").toString();
-          setState(() => _aiText = _aiLine(text));
-          _log("AI response received for utterance=$utteranceId");
-          break;
-        case "tts.start":
-          final utteranceId = (payload["utteranceId"] ?? "").toString();
-          if (utteranceId.isNotEmpty) {
-            _completedTtsUtterances.remove(utteranceId);
-            _ttsBuffers[utteranceId] = <int>[];
-            _isAiSpeaking = true;
-            setState(() => _status = _t("voice_call_status_ai_speaking"));
-          }
-          break;
-        case "tts.chunk":
-          final utteranceId = (payload["utteranceId"] ?? "").toString();
-          final b64 = (payload["audioBase64"] ?? "").toString();
-          final isLast = payload["isLast"] == true;
-          if (utteranceId.isNotEmpty && b64.isNotEmpty) {
-            _ttsBuffers.putIfAbsent(utteranceId, () => <int>[]);
-            _ttsBuffers[utteranceId]!.addAll(base64Decode(b64));
-            _log(
-              "TTS chunk buffered: utterance=$utteranceId size=${_ttsBuffers[utteranceId]!.length} isLast=$isLast",
-            );
-          } else if (utteranceId.isNotEmpty) {
-            _log(
-              "TTS chunk received without audioBase64: utterance=$utteranceId isLast=$isLast",
-            );
-          }
-          if (utteranceId.isNotEmpty && isLast) {
-            _finalizeAndPlayTts(utteranceId, reason: "tts.chunk.isLast");
-          }
-          break;
-        case "tts.end":
-          final utteranceId = (payload["utteranceId"] ?? "").toString();
-          _finalizeAndPlayTts(utteranceId, reason: "tts.end");
-          break;
-        case "ai.interrupted":
-          _audioPlayer.stop();
-          _isAiSpeaking = false;
-          setState(() => _status = _t("voice_call_status_ai_interrupted"));
-          break;
-        case "tts.stop":
-          _audioPlayer.stop();
-          _isAiSpeaking = false;
-          setState(() => _status = _t("voice_call_status_tts_stopped"));
-          break;
-        case "error":
-          final message =
-              (payload["message"] ?? _t("voice_call_status_unknown_error"))
-                  .toString();
-          setState(
-            () => _status = _fmt("voice_call_status_error_prefix", {
-              "message": message,
-            }),
-          );
-          break;
-        default:
-          break;
+      if (raw is Uint8List || raw is List<int>) {
+        _bufferWsPcmBinary(raw);
+        return;
       }
+      final dynamic decoded = jsonDecode(raw.toString());
+      if (decoded is List) {
+        for (final item in decoded) {
+          if (item is Map) {
+            _handleWsJson(Map<String, dynamic>.from(item));
+          }
+        }
+        return;
+      }
+      if (decoded is! Map) return;
+      _handleWsJson(Map<String, dynamic>.from(decoded));
     } catch (e, st) {
       _log("WS message parse/handle error: $e\n$st");
     }
@@ -728,7 +908,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     }
   }
 
-  Future<void> _startMicStreaming() async {
+  Future<void> _startMicStreaming({bool preserveConversationUi = false}) async {
     if (!_connected || !_sessionReady) {
       _log(
         "Mic start blocked: connected=$_connected sessionReady=$_sessionReady",
@@ -783,12 +963,14 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     if (!mounted) return;
     setState(() {
       _isMicStreaming = true;
-      _status = _t("voice_call_status_listening_active");
-      _userText = _userLine("...");
+      if (!preserveConversationUi) {
+        _status = _t("voice_call_status_listening_active");
+        _userText = _userLine("...");
+      }
     });
   }
 
-  Future<void> _stopMicStreaming() async {
+  Future<void> _stopMicStreaming({bool preserveConversationUi = false}) async {
     if (!_isMicStreaming) return;
     _log("Stopping mic streaming");
     await _recordSub?.cancel();
@@ -805,17 +987,22 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     if (!mounted) return;
     setState(() {
       _isMicStreaming = false;
-      _status = _t("voice_call_status_listening_off");
-      _turnState = "idle";
+      if (!preserveConversationUi) {
+        _status = _t("voice_call_status_listening_off");
+        _turnState = "idle";
+      }
     });
   }
 
   Future<void> _endCall() async {
+    if (_manualClose) return;
     _log("Ending call");
     _manualClose = true;
     _reconnectTimer?.cancel();
+    _playbackDoneTimer?.cancel();
     await _stopMicStreaming();
     await _audioPlayer.stop();
+    await _stopPcmPlayback();
     await _wsSub?.cancel();
     await _socket?.close();
     if (mounted) Navigator.of(context).pop();
@@ -827,6 +1014,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _log("VoiceCallView dispose");
     _manualClose = true;
     _reconnectTimer?.cancel();
+    _playbackDoneTimer?.cancel();
     _ringbackTimer?.cancel();
     _ringbackActive = false;
     _proximitySub?.cancel();
@@ -842,15 +1030,27 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _recorder.dispose();
     _audioPlayer.dispose();
     _ringbackPlayer.dispose();
+    if (_pcmPlayerReady) {
+      unawaited(FlutterPcmSound.release().catchError((Object _) {}));
+    }
     _wsSub?.cancel();
     _socket?.close();
     super.dispose();
   }
 
+  String _connectingStatusText() {
+    if (!_connected) return _t("voice_call_status_connecting");
+    if (!_sessionReady) {
+      return _t("voice_call_status_connected_session_starting");
+    }
+    return "";
+  }
+
   @override
   Widget build(BuildContext context) {
     final agent = ref.watch(AllControllers.chatViewController).agent;
-    final showCallingScreen = !(_connected && _sessionReady);
+    final connectingText = _connectingStatusText();
+    final micActive = _micUserWantsOn;
     return BackgroundWidget(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -944,7 +1144,31 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
                         fontSize: 24.sp,
                       ),
                     ),
-                    if (_turnState != "idle") ...[
+                    if (connectingText.isNotEmpty) ...[
+                      SizedBox(height: 10.h),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 14.w,
+                            height: 14.w,
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          SizedBox(width: 8.w),
+                          Text(
+                            connectingText,
+                            style: GoogleFonts.quicksand(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14.sp,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (_turnState != "idle") ...[
                       SizedBox(height: 12.h),
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 300),
@@ -963,163 +1187,77 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
                 ),
               ),
 
-             Padding(padding: EdgeInsets.only(bottom: 40.h),
+              Padding(
+                padding: EdgeInsets.only(bottom: 40.h),
 
-              child:  Align(
-                alignment: Alignment.bottomCenter,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    GestureDetector(
-                      onTap: _toggleMicrophone,
-                      child: Container(
-                        width: 82.w,
-                        height: 55.h,
-                        decoration: BoxDecoration(
-                          color: _isMicStreaming
-                              ? Colors.white.withValues(alpha: 0.5)
-                              : Colors.white.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Center(
-                          child: SvgPicture.asset(
-                          _isMicStreaming ? "assets/icons/mic.svg" : "assets/icons/mic-slash.svg",
-                            width: 34.w,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTap: () => unawaited(_toggleMicrophone()),
+                        child: Container(
+                          width: 82.w,
+                          height: 55.h,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.28),
+                            borderRadius: BorderRadius.circular(30),
                           ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 10.w),
-                    GestureDetector(
-                      onTap: _endCall,
-                      child: Container(
-                        width: 82.w,
-                        height: 55.h,
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Center(
-                          child: SvgPicture.asset(
-                            "assets/icons/call-slash.svg",
-                            width: 34.w,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 10.w),
-                    GestureDetector(
-                      onTap: _toggleSpeaker,
-                      child: Container(
-                        width: 82.w,
-                        height: 55.h,
-                        decoration: BoxDecoration(
-                          color: _isSpeakerOn
-                              ? Colors.white.withValues(alpha: 0.5)
-                              : Colors.white.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Center(
-                          child: SvgPicture.asset(_isSpeakerOn ? "assets/icons/hoporlor.svg" : "assets/icons/volume-slash.svg"),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-             ),
-              if (showCallingScreen)
-                Positioned.fill(
-                  child: BackgroundWidget(
-                    child: SizedBox.expand(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          AnimatedBuilder(
-                            animation: _pulseCtrl,
-                            builder: (context, _) {
-                              final double t = Curves.easeInOut.transform(
-                                _pulseCtrl.value,
-                              );
-                              const Color color = Color(0xFF9AA0A6);
-                              return SizedBox(
-                                width: 180.w,
-                                height: 180.w,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    Container(
-                                      width: 180.w,
-                                      height: 180.w,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: color.withOpacity(0.08 + 0.10 * t),
-                                      ),
-                                    ),
-                                    Container(
-                                      width: 155.w,
-                                      height: 155.w,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: color.withOpacity(0.16 + 0.12 * t),
-                                      ),
-                                    ),
-                                    Container(
-                                      width: 120.w,
-                                      height: 120.w,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: color, width: 3),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: color.withOpacity(0.35),
-                                            blurRadius: 18 + 6 * t,
-                                            spreadRadius: 1,
-                                          ),
-                                        ],
-                                      ),
-                                      child: ClipOval(
-                                        child: _buildPhotoFallback(agent),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                          SizedBox(height: 18.h),
-                          Text(
-                            agent?.name ?? _t("voice_call_title_fallback"),
-                            style: GoogleFonts.quicksand(
-                              color: Colors.white,
-                              fontSize: 28.sp,
-                              fontWeight: FontWeight.w700,
+                          child: Center(
+                            child: SvgPicture.asset(
+                              micActive
+                                  ? "assets/icons/mic.svg"
+                                  : "assets/icons/mic-slash.svg",
+                              width: 34.w,
                             ),
                           ),
-                          SizedBox(height: 8.h),
-                          Text(
-                            _t("voice_call_status_connecting"),
-                            style: GoogleFonts.quicksand(
-                              color: Colors.white70,
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          SizedBox(height: 22.h),
-                          SizedBox(
-                            width: 24.w,
-                            height: 24.h,
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 2.4,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+                      SizedBox(width: 10.w),
+                      GestureDetector(
+                        onTap: _endCall,
+                        child: Container(
+                          width: 82.w,
+                          height: 55.h,
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Center(
+                            child: SvgPicture.asset(
+                              "assets/icons/call-slash.svg",
+                              width: 34.w,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 10.w),
+                      GestureDetector(
+                        onTap: () => unawaited(_toggleSpeaker()),
+                        child: Container(
+                          width: 82.w,
+                          height: 55.h,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.28),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Center(
+                            child: SvgPicture.asset(
+                              _isSpeakerOn
+                                  ? "assets/icons/hoporlor.svg"
+                                  : "assets/icons/volume-slash.svg",
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+              ),
+              if (_isProximityNear && !_isSpeakerOn)
+                const Positioned.fill(child: ColoredBox(color: Colors.black)),
             ],
           ),
         ),

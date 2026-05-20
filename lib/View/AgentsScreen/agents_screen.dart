@@ -1,21 +1,21 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:heroicons/heroicons.dart';
-import 'package:http/http.dart' as http;
-import 'package:shimmer/shimmer.dart';
-
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/main.dart';
+import 'package:friendfy/Widgets/agent_character_description_text.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:friendfy/utils/hero_icon_converter.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:heroicons/heroicons.dart';
+import 'package:http/http.dart' as http;
+import 'package:shimmer/shimmer.dart';
 
 class AgentsScreen extends ConsumerStatefulWidget {
   /// Alt sekmede gösterildiğinde AppBar başlığı (Karakter Seç) gizlenir.
@@ -32,6 +32,7 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
   String? selectedGender; // null = Tümü, "Kadın", "Erkek"
   Set<String> selectedInterests = {};
   bool _isEditFlow = false;
+  String? _lastLocaleCode;
 
   @override
   void initState() {
@@ -42,6 +43,15 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final currentLocaleCode = Localizations.localeOf(context).languageCode;
+    if (_lastLocaleCode != null && _lastLocaleCode != currentLocaleCode) {
+      // Locale değişiminde ajanları tekrar çek.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        getAgents();
+      });
+    }
+    _lastLocaleCode = currentLocaleCode;
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map) {
       final editFlowArg = args['editFlow'];
@@ -97,9 +107,10 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    List<AgentModel> allAgents = (ref.watch(AllControllers.agentsViewController).agents ?? [])
-        .where((a) => a.system != 2)
-        .toList();
+    List<AgentModel> allAgents =
+        (ref.watch(AllControllers.agentsViewController).agents ?? [])
+            .where((a) => a.system != 2)
+            .toList();
     List<AgentModel> allUserAgents =
         ref.watch(AllControllers.agentsViewController).userAgents ?? [];
     bool loading = ref
@@ -113,30 +124,30 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: widget.embeddedInBottomNav
-            ? null
-            :  AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
+          ? null
+          : AppBar(
+              automaticallyImplyLeading: false,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              centerTitle: false,
 
-        title: widget.embeddedInBottomNav
-            ? null
-            : Text(
-                Translate.translate("select_character", context),
-                style: GoogleFonts.quicksand(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 17.sp,
-                ),
-              ),
-        /*     actions: [
+              title: widget.embeddedInBottomNav
+                  ? null
+                  : Text(
+                      Translate.translate("select_character", context),
+                      style: GoogleFonts.quicksand(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 17.sp,
+                      ),
+                    ),
+              /*     actions: [
           IconButton(
             onPressed: () => _showFilterBottomSheet(context), 
             icon: HeroIcon(HeroIcons.adjustmentsHorizontal)
           )
         ],  */
-      ),
+            ),
 
       body: loading
           ? Center(
@@ -150,6 +161,7 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
               ),
             )
           : SingleChildScrollView(
+              physics: ClampingScrollPhysics(),
               padding: EdgeInsets.only(bottom: 90.h),
               child: SafeArea(
                 child: Column(
@@ -175,11 +187,8 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                       ),
                       GridView.builder(
                         physics: NeverScrollableScrollPhysics(),
-                             
-                        padding: EdgeInsets.only(
-                          left: 10.w,
-                          right: 10.w,
-                        ),
+
+                        padding: EdgeInsets.only(left: 10.w, right: 10.w),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           mainAxisExtent: 262.h,
                           mainAxisSpacing: 10.w,
@@ -198,7 +207,7 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
 
                     // Others (System Agents) Section
                     if (agents.isNotEmpty) ...[
-                                            Padding(
+                      Padding(
                         padding: EdgeInsets.only(
                           left: 20.w,
                           right: 20.w,
@@ -272,7 +281,12 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
     List<String> interest = List.from(jsonDecode(agent.interestsType));
     for (var element in interest) {
       icons.add(
-        interestIcon(element, size: 18, color: Colors.white, style: HeroIconStyle.solid),
+        interestIcon(
+          element,
+          size: 18,
+          color: Colors.white,
+          style: HeroIconStyle.solid,
+        ),
       );
     }
 
@@ -312,7 +326,7 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                       fit: BoxFit.cover,
                       width: 186.w,
                       height: 171.h,
-                       alignment: Alignment(0, -1),
+                      alignment: Alignment(0, -1),
                       placeholder: (context, url) => Shimmer.fromColors(
                         baseColor: Colors.grey[300]!,
                         highlightColor: Colors.grey[100]!,
@@ -328,11 +342,7 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
               ),
             ),
             Padding(
-              padding: EdgeInsets.only(
-                right: 10.w,
-                left: 10.w,
-                top: 15.h,
-              ),
+              padding: EdgeInsets.only(right: 10.w, left: 10.w, top: 15.h),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -352,25 +362,22 @@ class _AgentsScreenState extends ConsumerState<AgentsScreen> {
                       ],
                     ),
                   ),
-                  if (agent.speakingStyle != null &&
-                      agent.speakingStyle!.isNotEmpty)
-                    Text(
-                      agent.speakingStyle ?? "",
-                      style: GoogleFonts.quicksand(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w400,
-                        fontSize: 10.sp,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            offset: Offset(0, 1),
-                            blurRadius: 3,
-                          ),
-                        ],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  AgentCharacterDescriptionText(
+                    agent: agent,
+                    maxLines: 2,
+                    style: GoogleFonts.quicksand(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w400,
+                      fontSize: 10.sp,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          offset: Offset(0, 1),
+                          blurRadius: 3,
+                        ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),

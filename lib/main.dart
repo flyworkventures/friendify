@@ -63,6 +63,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    Future.microtask(() => ref.read(appProvider).initLang());
     // RevenueCat purchase listener ekle (satın alma sonrası premium tanımlama için)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       RevenueCatService.addPurchaseListener(ref.container);

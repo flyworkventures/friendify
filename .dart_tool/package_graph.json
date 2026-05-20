@@ -20,10 +20,10 @@
         "ficonsax",
         "file_picker",
         "flutter",
-        "flutter_facebook_auth",
         "flutter_holo_date_picker",
         "flutter_local_notifications",
         "flutter_localization",
+        "flutter_pcm_sound",
         "flutter_popup",
         "flutter_riverpod",
         "flutter_screenutil",
@@ -53,6 +53,7 @@
         "speech_to_text",
         "substring_highlight",
         "timezone",
+        "translator",
         "url_launcher",
         "wave_player",
         "waved_audio_player"
@@ -85,6 +86,13 @@
         "stream_channel",
         "test_api",
         "vector_math"
+      ]
+    },
+    {
+      "name": "translator",
+      "version": "1.0.4+1",
+      "dependencies": [
+        "http"
       ]
     },
     {
@@ -131,6 +139,13 @@
     {
       "name": "ficonsax",
       "version": "0.0.3",
+      "dependencies": [
+        "flutter"
+      ]
+    },
+    {
+      "name": "flutter_pcm_sound",
+      "version": "3.3.3",
       "dependencies": [
         "flutter"
       ]
@@ -421,15 +436,6 @@
       ]
     },
     {
-      "name": "flutter_facebook_auth",
-      "version": "6.0.4",
-      "dependencies": [
-        "flutter",
-        "flutter_facebook_auth_platform_interface",
-        "flutter_facebook_auth_web"
-      ]
-    },
-    {
       "name": "google_sign_in",
       "version": "7.2.0",
       "dependencies": [
@@ -651,7 +657,7 @@
     },
     {
       "name": "matcher",
-      "version": "0.12.19",
+      "version": "0.12.18",
       "dependencies": [
         "async",
         "meta",
@@ -662,7 +668,7 @@
     },
     {
       "name": "test_api",
-      "version": "0.7.10",
+      "version": "0.7.9",
       "dependencies": [
         "async",
         "boolean_selector",
@@ -1256,24 +1262,6 @@
       ]
     },
     {
-      "name": "flutter_facebook_auth_web",
-      "version": "5.0.1",
-      "dependencies": [
-        "flutter",
-        "flutter_facebook_auth_platform_interface",
-        "flutter_web_plugins",
-        "js"
-      ]
-    },
-    {
-      "name": "flutter_facebook_auth_platform_interface",
-      "version": "5.0.0",
-      "dependencies": [
-        "flutter",
-        "plugin_platform_interface"
-      ]
-    },
-    {
       "name": "google_sign_in_web",
       "version": "1.1.0",
       "dependencies": [
@@ -1342,7 +1330,7 @@
     },
     {
       "name": "test",
-      "version": "1.30.0",
+      "version": "1.29.0",
       "dependencies": [
         "analyzer",
         "async",
@@ -1715,11 +1703,6 @@
       ]
     },
     {
-      "name": "js",
-      "version": "0.7.2",
-      "dependencies": []
-    },
-    {
       "name": "google_identity_services_web",
       "version": "0.3.3+1",
       "dependencies": [
@@ -1761,7 +1744,7 @@
     },
     {
       "name": "test_core",
-      "version": "0.6.16",
+      "version": "0.6.15",
       "dependencies": [
         "analyzer",
         "args",

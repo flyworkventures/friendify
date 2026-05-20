@@ -1161,8 +1161,7 @@ class _RegisterBirthdateSectionState extends State<_RegisterBirthdateSection> {
                   },
                   children: List.generate(
                     12,
-                    (i) => Align(
-                      alignment: Alignment.centerLeft,
+                    (i) => Center(
                       child: Text(
                         _monthNames[i],
                         style: GoogleFonts.quicksand(
