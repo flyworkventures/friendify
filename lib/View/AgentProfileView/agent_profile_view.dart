@@ -384,8 +384,8 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
                       SizedBox(width: 10.w),
                       Expanded(
                         child: MyGradientButton(
-                          onTap: () async {
-                            await ref
+                          onTap: () {
+                            ref
                                 .read(
                                   AllControllers
                                       .agentsProfileViewController
@@ -460,9 +460,9 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
 
   Widget callButton(AgentModel? agent) {
     return GestureDetector(
-      onTap: () async {
+      onTap: () {
         if (agent == null) return;
-        await ref
+        ref
             .read(AllControllers.agentsProfileViewController.notifier)
             .startVoiceCall(agent);
       },
@@ -502,22 +502,25 @@ class _AgentProfileViewState extends ConsumerState<AgentProfileView> {
 
   Widget onlineWidget() {
     return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
-          width: 4.w,
-          height: 4.h,
-          decoration: BoxDecoration(
-            color: Color(0xff34C759),
-            borderRadius: BorderRadius.circular(20).r,
+          width: 4,
+          height: 4,
+          decoration: const BoxDecoration(
+            color: Color(0xFF30B006),
+            shape: BoxShape.circle,
           ),
         ),
-        SizedBox(width: 3.w),
+        SizedBox(width: 5.w),
         Text(
           Translate.translate("agent_profile_online", context),
-          style: GoogleFonts.quicksand(
+          style: GoogleFonts.rubik(
             color: Colors.white,
-            fontSize: 12.sp,
-            fontWeight: FontWeight.w600,
+            fontSize: 10.sp,
+            fontWeight: FontWeight.w300,
+            height: 16 / 10,
           ),
         ),
       ],

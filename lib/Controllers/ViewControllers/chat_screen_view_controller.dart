@@ -1,15 +1,16 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
-import 'package:flutter/foundation.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
@@ -17,17 +18,16 @@ import 'package:friendfy/Http/http_service.dart';
 import 'package:friendfy/Models/agent_model.dart';
 import 'package:friendfy/Models/chat_model.dart';
 import 'package:friendfy/Models/message_model.dart';
+import 'package:friendfy/Services/local_service.dart';
+import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
+import 'package:friendfy/utils/call_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:friendfy/Services/premium_service.dart';
-import 'package:friendfy/Services/local_service.dart';
+import 'package:friendfy/Services/paywall_presentation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 
 class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
   Ref? ref;
@@ -184,9 +184,126 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
     );
   }
 
+  ConversationModel? _findConversationForAgent(int agentId) {
+    for (final c in state.conversations ?? const <ConversationModel>[]) {
+      if (c.agentModel?.id == agentId && c.chatModel != null) {
+        return c;
+      }
+    }
+    for (final c in state.filteredConversations ?? const <ConversationModel>[]) {
+      if (c.agentModel?.id == agentId && c.chatModel != null) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  Future<bool> _createChatForAgent(AgentModel agent) async {
+    final userId = ref?.read(AllControllers.userController)?.id;
+    if (userId == null) return false;
+    final httpService = HttpService(ref: ref);
+    final response = await httpService.post(
+      path: AppConstants.createChat,
+      body: {"userId": userId, "botId": agent.id},
+    );
+    if (response.statusCode != 200) {
+      log("createChat failed: ${response.statusCode}");
+      return false;
+    }
+    final json = jsonDecode(response.body);
+    final chatModel = ChatModel.fromMap(json["conversationData"]);
+    if (state.agent?.id != agent.id) return false;
+    changeChatModel(chatModel, agent);
+    return true;
+  }
+
+  /// Agent profile → arama: önce anında geçiş, sohbet oluşturma arka planda.
+  Future<dynamic> openVoiceCallFromAgent(AgentModel agent) {
+    _primeAgentForCallSync(agent);
+    final route = pushInstantVoiceCall(consultantId: agent.id);
+    unawaited(_ensureChatForCall(agent));
+    return route;
+  }
+
+  Future<dynamic> openVideoCallFromAgent(AgentModel agent) {
+    _primeAgentForCallSync(agent);
+    final route = pushInstantVideoCall();
+    unawaited(_ensureChatForCall(agent));
+    return route;
+  }
+
+  /// ChatView: agent/sohbet zaten yüklü — anında arama ekranına geç.
+  Future<dynamic> openVoiceCallFromChat() {
+    final agentId = state.agent?.id;
+    return pushInstantVoiceCall(consultantId: agentId);
+  }
+
+  Future<dynamic> openVideoCallFromChat() => pushInstantVideoCall();
+
+  void _primeAgentForCallSync(AgentModel agent) {
+    final existing = _findConversationForAgent(agent.id);
+    state = state.copyWith(
+      agent: agent,
+      chatModel: existing?.chatModel,
+    );
+  }
+
+  Future<void> _ensureChatForCall(AgentModel agent) async {
+    if (_findConversationForAgent(agent.id)?.chatModel != null) return;
+    if (state.agent?.id == agent.id && state.chatModel != null) return;
+    await _createChatForAgent(agent);
+  }
+
+  /// Home / agents: anında ChatView, sohbet oluşturma + mesajlar arka planda.
+  Future<void> openChatFromAgent(
+    AgentModel agent, {
+    bool onboardingFunnel = false,
+  }) async {
+    final existing = _findConversationForAgent(agent.id);
+    state = state.copyWith(
+      agent: agent,
+      chatModel: existing?.chatModel,
+      messages: const [],
+      messagesLoading: true,
+      chatOpenPendingBootstrap: true,
+      chatState: ChatState.normal,
+      responseWaiting: false,
+    );
+
+    navigatorKey.currentState?.pushNamed(
+      "/chatView",
+      arguments: onboardingFunnel ? {"onboardingFunnel": true} : null,
+    );
+
+    unawaited(_bootstrapChatForAgent(agent, existing?.chatModel));
+  }
+
+  Future<void> _bootstrapChatForAgent(
+    AgentModel agent,
+    ChatModel? knownChat,
+  ) async {
+    try {
+      if (knownChat == null) {
+        final ok = await _createChatForAgent(agent);
+        if (!ok || state.agent?.id != agent.id) return;
+      } else if (state.agent?.id == agent.id) {
+        changeChatModel(knownChat, agent);
+      }
+      await getMessages();
+    } finally {
+      if (state.agent?.id == agent.id) {
+        state = state.copyWith(
+          messagesLoading: false,
+          chatOpenPendingBootstrap: false,
+        );
+      }
+    }
+  }
+
   getMessages() async {
     final conversationId = state.chatModel?.id;
     if (conversationId == null) return;
+    state = state.copyWith(messagesLoading: true);
     HttpService httpService = HttpService(ref: ref);
     var res = await httpService.post(
       path: AppConstants.getMessage,
@@ -211,9 +328,10 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
         }
       });
 
-      state = state.copyWith(messages: messages);
+      state = state.copyWith(messages: messages, messagesLoading: false);
     } else {
       log("Mesajlar getirilirken hata oluştu");
+      state = state.copyWith(messagesLoading: false);
     }
   }
 
@@ -267,7 +385,15 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
         }
       });
 
-      ChatState chatState = _chatStateFormatter(json["conversation_state"]);
+      final serverChatState = _chatStateFormatter(
+        json["conversation_state"]?.toString(),
+      );
+      final chatState = _resolveChatStateAfterListen(
+        serverState: serverChatState,
+        currentState: state.chatState,
+        oldMessages: oldMessages,
+        newMessages: newMessages,
+      );
       state = state.copyWith(chatState: chatState, messages: mergedMessages);
       // Sadece mesajlar varsa debug print yap
       if (state.messages != null && state.messages!.isNotEmpty) {
@@ -317,7 +443,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
       // Free trial veya normal kullanıcı ise premium ekranına yönlendir
       try {
         log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
-        await RevenueCatUI.presentPaywall();
+        await PaywallPresentation.presentFromNavigator();
         log("✅ [PREMIUM CHECK] Premium ekranı açıldı");
       } catch (e) {
         log("⚠️ [PREMIUM CHECK] Premium ekranı açılamadı: $e");
@@ -371,7 +497,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
       // Free trial veya normal kullanıcı ise premium ekranına yönlendir
       try {
         log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
-        await RevenueCatUI.presentPaywall();
+        await PaywallPresentation.presentFromNavigator();
         log("✅ [PREMIUM CHECK] Premium ekranı açıldı");
       } catch (e) {
         log("⚠️ [PREMIUM CHECK] Premium ekranı açılamadı: $e");
@@ -449,7 +575,10 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
     }
 
     HttpService httpService = HttpService(ref: ref);
-    state = state.copyWith(responseWaiting: true);
+    state = state.copyWith(
+      responseWaiting: true,
+      chatState: ChatState.botWriting,
+    );
 
     String message = messageController.text.trim();
 
@@ -463,7 +592,10 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
         log(
           "❌ [IMAGE] Fotoğraf gönderilemedi - Limit aşıldı veya premium gerekli",
         );
-        state = state.copyWith(responseWaiting: false);
+        state = state.copyWith(
+          responseWaiting: false,
+          chatState: ChatState.normal,
+        );
         return;
       }
 
@@ -487,6 +619,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
 
         if (res != null && res.statusCode == 200) {
           log("✅ [IMAGE] Fotoğraf başarıyla gönderildi");
+          state = state.copyWith(chatState: ChatState.botWriting);
 
           // Günlük fotoğraf sayısını artır
           final prefs = await SharedPreferences.getInstance();
@@ -519,7 +652,12 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
         log("❌ [IMAGE] Fotoğraf gönderilirken hata: $e");
       }
 
-      state = state.copyWith(responseWaiting: false);
+      state = state.copyWith(
+        responseWaiting: false,
+        chatState: state.chatState == ChatState.botWriting
+            ? ChatState.botWriting
+            : ChatState.normal,
+      );
     } else if (message.isNotEmpty) {
       // Normal text mesaj gönder
       messageController.clear();
@@ -542,6 +680,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
 
         // Conversation listesini güncelle
         getConversations();
+        state = state.copyWith(responseWaiting: false);
       } else if (res.statusCode == 403) {
         // Misafir kullanıcı günlük limit hatası
         try {
@@ -553,29 +692,107 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
           log("Error parsing error response: $e");
         }
         _removeOptimisticUserMessage(message);
+        state = state.copyWith(
+          responseWaiting: false,
+          chatState: ChatState.normal,
+        );
       } else {
         _removeOptimisticUserMessage(message);
+        state = state.copyWith(
+          responseWaiting: false,
+          chatState: ChatState.normal,
+        );
       }
-
-      state = state.copyWith(responseWaiting: false);
     } else {
-      state = state.copyWith(responseWaiting: false);
+      state = state.copyWith(
+        responseWaiting: false,
+        chatState: ChatState.normal,
+      );
     }
   }
 
-  ChatState _chatStateFormatter(String state) {
-    if (state == "bot_typing") {
+  ChatState _chatStateFormatter(String? state) {
+    final normalized = state?.trim() ?? '';
+    if (normalized == "bot_typing") {
       return ChatState.botWriting;
-    } else if (state == "bot_record_audio") {
+    }
+    if (normalized == "bot_record_audio") {
       return ChatState.botAudioRecording;
-    } else {
+    }
+    return ChatState.normal;
+  }
+
+  /// Sunucu çoğu zaman `normal` döner; bot cevabı gelene kadar typing göster.
+  ChatState _resolveChatStateAfterListen({
+    required ChatState serverState,
+    required ChatState currentState,
+    required List<MessageModel> oldMessages,
+    required List<MessageModel> newMessages,
+  }) {
+    if (serverState == ChatState.botWriting ||
+        serverState == ChatState.botAudioRecording) {
+      return serverState;
+    }
+
+    if (currentState != ChatState.botWriting) {
+      return serverState;
+    }
+
+    final oldBotIds = oldMessages
+        .where((m) => m.sender == "bot")
+        .map((m) => m.id)
+        .toSet();
+    final hasNewBotMessage = newMessages.any(
+      (m) => m.sender == "bot" && !oldBotIds.contains(m.id),
+    );
+    if (hasNewBotMessage) {
       return ChatState.normal;
     }
+
+    return ChatState.botWriting;
   }
 
-  pushFromMessages(ChatModel chatModel, AgentModel selectedAgent) async {
+  /// Mesajlar sekmesi / geçmiş kartından açılış: mesajları controller yükler.
+  Future<void> pushFromMessages(
+    ChatModel chatModel,
+    AgentModel selectedAgent,
+  ) async {
+    final conversationId = chatModel.id;
+    final agentId = selectedAgent.id;
+
     changeChatModel(chatModel, selectedAgent);
-    await navigatorKey.currentState?.pushNamed("/chatView");
+    state = state.copyWith(
+      messagesLoading: true,
+      chatOpenPendingBootstrap: true,
+    );
+
+    navigatorKey.currentState?.pushNamed("/chatView");
+
+    unawaited(
+      _bootstrapExistingConversation(
+        conversationId: conversationId,
+        agentId: agentId,
+      ),
+    );
+  }
+
+  Future<void> _bootstrapExistingConversation({
+    required int conversationId,
+    required int agentId,
+  }) async {
+    try {
+      if (state.chatModel?.id != conversationId || state.agent?.id != agentId) {
+        return;
+      }
+      await getMessages();
+    } finally {
+      if (state.chatModel?.id == conversationId && state.agent?.id == agentId) {
+        state = state.copyWith(
+          messagesLoading: false,
+          chatOpenPendingBootstrap: false,
+        );
+      }
+    }
   }
 
   sendAudio(String path) async {
@@ -590,7 +807,10 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
     log("✅ [AUDIO] Sesli mesaj limiti kontrolü başarılı, gönderiliyor...");
 
     HttpService httpService = HttpService(ref: ref);
-    state = state.copyWith(responseWaiting: true);
+    state = state.copyWith(
+      responseWaiting: true,
+      chatState: ChatState.botWriting,
+    );
     messageController.clear();
 
     var res = await httpService.postAudioFile(
@@ -607,6 +827,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
 
       // Conversation listesini güncelle
       getConversations();
+      state = state.copyWith(responseWaiting: false);
     } else if (res != null && res.statusCode == 403) {
       // Sesli mesaj limiti hatası
       try {
@@ -627,7 +848,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
             // Standart paket veya free trial kullanıcı ise premium ekranına yönlendir
             try {
               log("💳 [AUDIO] Premium ekranı açılıyor...");
-              await RevenueCatUI.presentPaywall();
+              await PaywallPresentation.presentFromNavigator();
               log("✅ [AUDIO] Premium ekranı açıldı");
             } catch (e) {
               log("⚠️ [AUDIO] Premium ekranı açılamadı: $e");
@@ -638,14 +859,21 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
         log("Error parsing error response: $e");
         // Hata parse edilemezse bile premium ekranını göster
         try {
-          await RevenueCatUI.presentPaywall();
+          await PaywallPresentation.presentFromNavigator();
         } catch (e) {
           log("⚠️ [AUDIO] Premium ekranı açılamadı: $e");
         }
       }
+      state = state.copyWith(
+        responseWaiting: false,
+        chatState: ChatState.normal,
+      );
+    } else {
+      state = state.copyWith(
+        responseWaiting: false,
+        chatState: ChatState.normal,
+      );
     }
-
-    state = state.copyWith(responseWaiting: false);
   }
 
   /// Sesli mesaj gönderebilir mi kontrol eder
@@ -696,7 +924,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
       // Free trial veya normal kullanıcı ise premium ekranına yönlendir
       try {
         log("💳 [AUDIO CHECK] Premium ekranı açılıyor...");
-        await RevenueCatUI.presentPaywall();
+        await PaywallPresentation.presentFromNavigator();
         log("✅ [AUDIO CHECK] Premium ekranı açıldı");
       } catch (e) {
         log("⚠️ [AUDIO CHECK] Premium ekranı açılamadı: $e");
@@ -1235,6 +1463,9 @@ class ChatScreenViewModel {
   final RecordState recordState;
   final XFile? image;
   final String? recordedAudioPath; // Durdurulmuş kayıt path'i
+  final bool messagesLoading;
+  /// Home'dan açılışta mesajları controller bootstrap eder; ChatView init atlar.
+  final bool chatOpenPendingBootstrap;
   ChatScreenViewModel({
     this.chatModel,
     this.agent,
@@ -1247,6 +1478,8 @@ class ChatScreenViewModel {
     this.recordState = RecordState.none,
     this.image,
     this.recordedAudioPath,
+    this.messagesLoading = false,
+    this.chatOpenPendingBootstrap = false,
   });
 
   ChatScreenViewModel copyWith({
@@ -1262,12 +1495,14 @@ class ChatScreenViewModel {
     Object? image = const _Sentinel(),
     Object? recordedAudioPath =
         const _Sentinel(), // Object? kullanarak null değerini set edebilmek için
+    bool? messagesLoading,
+    bool? chatOpenPendingBootstrap,
   }) {
     return ChatScreenViewModel(
       chatModel: chatModel ?? this.chatModel,
       agent: agent ?? this.agent,
       messages: messages ?? this.messages,
-      chatState: chatState ?? ChatState.normal,
+      chatState: chatState ?? this.chatState,
       responseWaiting: responseWaiting ?? this.responseWaiting,
       conversations: conversations ?? this.conversations,
       filteredConversations:
@@ -1278,6 +1513,9 @@ class ChatScreenViewModel {
       recordedAudioPath: recordedAudioPath is _Sentinel
           ? this.recordedAudioPath
           : (recordedAudioPath as String?),
+      messagesLoading: messagesLoading ?? this.messagesLoading,
+      chatOpenPendingBootstrap:
+          chatOpenPendingBootstrap ?? this.chatOpenPendingBootstrap,
     );
   }
 }

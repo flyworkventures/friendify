@@ -8,6 +8,7 @@
       "version": "1.2.0+2",
       "dependencies": [
         "android_id",
+        "audio_session",
         "audio_waveforms",
         "audioplayers",
         "cached_network_image",
@@ -359,6 +360,16 @@
         "universal_io",
         "web",
         "yaml"
+      ]
+    },
+    {
+      "name": "audio_session",
+      "version": "0.1.25",
+      "dependencies": [
+        "flutter",
+        "flutter_web_plugins",
+        "meta",
+        "rxdart"
       ]
     },
     {
@@ -1084,6 +1095,11 @@
       ]
     },
     {
+      "name": "rxdart",
+      "version": "0.28.0",
+      "dependencies": []
+    },
+    {
       "name": "synchronized",
       "version": "3.4.0",
       "dependencies": []
@@ -1546,21 +1562,6 @@
       "version": "2.3.2",
       "dependencies": [
         "collection"
-      ]
-    },
-    {
-      "name": "rxdart",
-      "version": "0.28.0",
-      "dependencies": []
-    },
-    {
-      "name": "audio_session",
-      "version": "0.2.3",
-      "dependencies": [
-        "flutter",
-        "flutter_web_plugins",
-        "meta",
-        "rxdart"
       ]
     },
     {

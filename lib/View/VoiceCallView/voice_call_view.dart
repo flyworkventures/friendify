@@ -4,7 +4,9 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audio_session/audio_session.dart';
+import 'package:audioplayers/audioplayers.dart' hide AVAudioSessionCategory;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,7 +23,10 @@ import 'package:proximity_sensor/proximity_sensor.dart';
 import 'package:record/record.dart' hide IosAudioCategory;
 
 class VoiceCallView extends ConsumerStatefulWidget {
-  const VoiceCallView({super.key});
+  const VoiceCallView({super.key, this.consultantId});
+
+  /// Route arg — Riverpod state gecikse bile WS'te botId garanti.
+  final int? consultantId;
 
   @override
   ConsumerState<VoiceCallView> createState() => _VoiceCallViewState();
@@ -36,21 +41,24 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
       (_sampleRate * _channels * 2 * _frameMs) ~/ 1000; // 640
   static const int _speechMinStartMs = 60;
   static const int _speechSilenceStopMs = 900;
-  static const double _minVadThreshold = 120.0;
-  static const double _hardVoiceThreshold = 700.0;
+  static const double _minVadThreshold = 80.0;
+  static const double _hardVoiceThreshold = 450.0;
   static const double _noiseMultiplier = 2.2;
   static const int _bargeInMinStartMs = 260;
   static const double _bargeInEnergyMultiplier = 1.8;
-  static const double _bargeInMinEnergy = 1200.0;
+  static const double _bargeInMinEnergy = 850.0;
   static const int _ttsFeedbackGuardMs = 280;
   static const int _ttsPcmSampleRate = 24000;
-  static const bool _debugLogs = true;
+  static const bool _debugLogs = kDebugMode;
 
   final AudioPlayer _audioPlayer = AudioPlayer();
   final AudioPlayer _ringbackPlayer = AudioPlayer();
   final AudioRecorder _recorder = AudioRecorder();
   final List<int> _pcmBuffer = [];
   final Map<String, List<int>> _ttsBuffers = {};
+  final List<int> _orphanPcmBytes = <int>[];
+  bool _streamingTtsActive = false;
+  int _streamedTtsByteCount = 0;
 
   WebSocket? _socket;
   StreamSubscription? _wsSub;
@@ -95,14 +103,21 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     }
   }
 
+  void _setConversationPhase(String phase) {
+    _turnState = phase;
+    if (!mounted) return;
+    setState(() {});
+  }
+
   String _stateText() {
+    final name = _activeAgent?.name ?? _t("voice_call_title_fallback");
     switch (_turnState) {
       case "listening":
-        return _t("voice_call_status_listening_you");
+        return _fmt("voice_call_status_listening_you", {"name": name});
       case "thinking":
-        return _t("voice_call_status_ai_thinking");
+        return _fmt("voice_call_status_ai_thinking", {"name": name});
       case "speaking":
-        return _t("voice_call_status_ai_speaking");
+        return _fmt("voice_call_status_ai_speaking", {"name": name});
       default:
         return "";
     }
@@ -110,7 +125,9 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
 
   final String _sessionId = "sess-${DateTime.now().millisecondsSinceEpoch}";
   String? _currentUtteranceId;
+  String? _listenStreamUtteranceId;
   int _chunkSeq = 0;
+  int _listenChunkSeq = 0;
   int _reqCounter = 0;
   int _reconnectAttempts = 0;
   int _voicedFrames = 0;
@@ -128,6 +145,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   String _nextReq() => "r${++_reqCounter}";
   AgentModel? get _activeAgent =>
       ref.read(AllControllers.chatViewController).agent;
+  int? get _consultantId => widget.consultantId ?? _activeAgent?.id;
   int? get _activeConversationId =>
       ref.read(AllControllers.chatViewController).chatModel?.id;
   String _t(String key) => Translate.translate(key, context);
@@ -179,33 +197,38 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
 
   void _log(String message) {
     if (!_debugLogs) return;
-    debugPrint("[VoiceCall] ${DateTime.now().toIso8601String()} | $message");
+    debugPrint("[VoiceCall] $message");
+  }
+
+  Future<void> _configureCallAudioSession() async {
+    if (kIsWeb) return;
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(
+        AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+          avAudioSessionCategoryOptions: _isSpeakerOn
+              ? AVAudioSessionCategoryOptions.defaultToSpeaker |
+                    AVAudioSessionCategoryOptions.allowBluetooth
+              : AVAudioSessionCategoryOptions.allowBluetooth,
+          avAudioSessionMode: AVAudioSessionMode.voiceChat,
+          androidAudioAttributes: const AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.speech,
+            usage: AndroidAudioUsage.voiceCommunication,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+        ),
+      );
+      await session.setActive(true);
+      _log("Audio session voiceChat speaker=$_isSpeakerOn");
+    } catch (e, st) {
+      _log("Audio session error: $e\n$st");
+    }
   }
 
   Future<void> _applyAudioRoute() async {
-    try {
-      final route = _isSpeakerOn
-          ? AudioContextConfigRoute.speaker
-          : AudioContextConfigRoute.earpiece;
-      final audioCtx = AudioContextConfig(
-        route: route,
-        focus: AudioContextConfigFocus.gain,
-        respectSilence: false,
-        stayAwake: false,
-      ).build();
-      await _audioPlayer.setAudioContext(audioCtx);
-      await _ringbackPlayer.setAudioContext(audioCtx);
-      if (_pcmPlayerReady) {
-        try {
-          await FlutterPcmSound.release();
-        } catch (_) {}
-        _pcmPlayerReady = false;
-      }
-      _applyProximityScreenOff();
-      _log("Audio route -> ${_isSpeakerOn ? "speaker" : "earpiece"}");
-    } catch (e, st) {
-      _log("Audio route error: $e\n$st");
-    }
+    await _configureCallAudioSession();
+    _applyProximityScreenOff();
   }
 
   Future<void> _toggleMicrophone() async {
@@ -221,12 +244,11 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     }
   }
 
-  Future<void> _toggleSpeaker() async {
+  void _toggleSpeaker() {
     _isSpeakerOn = !_isSpeakerOn;
-    await _applyAudioRoute();
-    if (!mounted) return;
-    setState(() {});
+    if (mounted) setState(() {});
     _log("Speaker toggled -> ${_isSpeakerOn ? "on" : "off"}");
+    unawaited(_applyAudioRoute());
   }
 
   Future<void> _startRingback() async {
@@ -276,7 +298,8 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   }
 
   void _applyProximityScreenOff() {
-    final shouldEnable = !_isSpeakerOn;
+    if (!Platform.isIOS) return;
+    final shouldEnable = !_isSpeakerOn && _sessionReady;
     if (shouldEnable == _proximityScreenOffEnabled) return;
     _proximityScreenOffEnabled = shouldEnable;
     unawaited(
@@ -288,6 +311,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   }
 
   Future<void> _beginCallSetup() async {
+    await _configureCallAudioSession();
     unawaited(_startRingback());
     await _connectVoiceWs();
   }
@@ -303,15 +327,12 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _audioPlayer.onPlayerComplete.listen((_) {
       _isAiSpeaking = false;
       _sendPlaybackDone();
-      if (mounted) {
-        setState(() => _status = _t("voice_call_status_listening_active"));
-      }
+      _setConversationPhase("listening");
       _log("Audio player complete -> AI speaking false");
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_applyAudioRoute());
-      unawaited(_initProximitySensor());
       unawaited(_beginCallSetup());
     });
   }
@@ -327,7 +348,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
   String _buildWsUrl(String token) {
     final apiUri = Uri.parse(AppConstants.baseURL);
     final wsScheme = apiUri.scheme == "https" ? "wss" : "ws";
-    final consultantId = _activeAgent?.id.toString();
+    final consultantId = _consultantId?.toString();
     final lang =
         ref.read(appProvider).currentLang?.languageCode ??
         Localizations.localeOf(context).languageCode;
@@ -350,6 +371,16 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     if (token.isEmpty) {
       _log("Token not found");
       setState(() => _status = _t("voice_call_status_token_not_found"));
+      return;
+    }
+    if (_consultantId == null) {
+      _log("Consultant id missing — WS blocked");
+      setState(
+        () => _status = _fmt("voice_call_status_ws_connection_error", {
+          "error": "consultantId missing",
+          "endpoint": AppConstants.baseURL,
+        }),
+      );
       return;
     }
 
@@ -398,7 +429,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
       _status = _t("voice_call_status_connection_closed");
     });
     if (_manualClose) return;
-    unawaited(_endCall());
+    _scheduleReconnect();
   }
 
   void _scheduleReconnect() {
@@ -426,6 +457,30 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
       _log("-> [$type] #$_sentEventCounter ${jsonEncode(event)}");
     }
     _socket!.add(jsonEncode(event));
+  }
+
+  Future<int?> _waitForConversationId({
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    final existing = ref.read(AllControllers.chatViewController).chatModel?.id;
+    if (existing != null) return existing;
+
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (!mounted) return null;
+      final id = ref.read(AllControllers.chatViewController).chatModel?.id;
+      if (id != null) return id;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    return ref.read(AllControllers.chatViewController).chatModel?.id;
+  }
+
+  Future<void> _handleConnectionReady() async {
+    if (!mounted) return;
+    setState(() => _status = _t("voice_call_status_session_preparing"));
+    await _waitForConversationId();
+    if (!mounted || _socket == null) return;
+    _startSession();
   }
 
   void _startSession() {
@@ -470,9 +525,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
       _playbackDoneTimer = null;
       _sendPlaybackDone();
       _isAiSpeaking = false;
-      if (mounted) {
-        setState(() => _status = _t("voice_call_status_listening_active"));
-      }
+      _setConversationPhase("listening");
     });
   }
 
@@ -481,11 +534,75 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     await FlutterPcmSound.setup(
       sampleRate: _ttsPcmSampleRate,
       channelCount: 1,
-      iosAudioCategory: _isSpeakerOn
-          ? IosAudioCategory.playback
-          : IosAudioCategory.playAndRecord,
+      iosAudioCategory: IosAudioCategory.playAndRecord,
     );
     _pcmPlayerReady = true;
+  }
+
+  Future<void> _feedPcmToPlayer(List<int> bytes) async {
+    if (bytes.length < 2) return;
+    await _ensurePcmPlayer();
+    final bd = ByteData.sublistView(Uint8List.fromList(bytes));
+    final sampleCount = bytes.length ~/ 2;
+    final samples = List<int>.generate(
+      sampleCount,
+      (i) => bd.getInt16(i * 2, Endian.little),
+    );
+    await FlutterPcmSound.feed(PcmArrayInt16.fromList(samples));
+  }
+
+  Future<void> _beginTtsStream(String utteranceId) async {
+    if (utteranceId.isEmpty) return;
+    _streamingTtsActive = true;
+    _streamedTtsByteCount = 0;
+    _suppressVadUntilMs =
+        DateTime.now().millisecondsSinceEpoch + _ttsFeedbackGuardMs;
+    _isAiSpeaking = true;
+    _setConversationPhase("speaking");
+    try {
+      await _stopRingback();
+      await _ensurePcmPlayer();
+      await _audioPlayer.stop();
+      FlutterPcmSound.start();
+      if (_orphanPcmBytes.isNotEmpty) {
+        _ttsBuffers.putIfAbsent(utteranceId, () => <int>[]);
+        _ttsBuffers[utteranceId]!.addAll(_orphanPcmBytes);
+        _streamedTtsByteCount += _orphanPcmBytes.length;
+        await _feedPcmToPlayer(_orphanPcmBytes);
+        _orphanPcmBytes.clear();
+        _log("Flushed orphan PCM into stream utterance=$utteranceId");
+      }
+      _log("TTS stream started utterance=$utteranceId");
+    } catch (e, st) {
+      _streamingTtsActive = false;
+      _log("TTS stream start failed: $e\n$st");
+    }
+  }
+
+  Future<void> _finishTtsStream(
+    String utteranceId, {
+    required String reason,
+  }) async {
+    if (utteranceId.isEmpty) return;
+    if (_completedTtsUtterances.contains(utteranceId)) return;
+    _completedTtsUtterances.add(utteranceId);
+    _streamingTtsActive = false;
+    if (_activeTtsUtteranceId == utteranceId) {
+      _activeTtsUtteranceId = null;
+    }
+    final buffered = _ttsBuffers.remove(utteranceId);
+    final totalBytes = buffered?.length ?? _streamedTtsByteCount;
+    _streamedTtsByteCount = 0;
+    if (totalBytes < 2) {
+      _log("TTS stream empty utterance=$utteranceId reason=$reason");
+      _isAiSpeaking = false;
+      _setConversationPhase("listening");
+      return;
+    }
+    _log("TTS stream done utterance=$utteranceId bytes=$totalBytes reason=$reason");
+    final durationMs =
+        ((totalBytes / (_ttsPcmSampleRate * 2)) * 1000).round() + 700;
+    _schedulePlaybackDoneAfterMs(durationMs);
   }
 
   Future<void> _playTtsAsPcm(List<int> bytes) async {
@@ -589,15 +706,13 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _suppressVadUntilMs =
         DateTime.now().millisecondsSinceEpoch + _ttsFeedbackGuardMs;
     _isAiSpeaking = true;
-    if (mounted) {
-      setState(() => _status = _t("voice_call_status_ai_speaking"));
-    }
+    _setConversationPhase("speaking");
     try {
       if (_ttsUsesPcm) {
         try {
           await _playTtsAsPcm(bytes);
         } catch (pcmErr, pcmSt) {
-          _log("PCM playback failed, trying WAV fallback: $pcmErr\n$pcmSt");
+          _log("PCM batch failed, WAV fallback: $pcmErr\n$pcmSt");
           await _playTtsAsWavFromPcm(bytes);
         }
       } else {
@@ -609,17 +724,28 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
         setState(() => _status = _t("voice_call_status_audio_playback_error"));
       }
       _isAiSpeaking = false;
+      _setConversationPhase("listening");
     }
   }
 
   void _bufferWsPcmBinary(dynamic raw) {
-    final id = _activeTtsUtteranceId;
-    if (id == null || id.isEmpty) return;
     final bytes = raw is Uint8List
         ? raw
         : Uint8List.fromList(raw is List<int> ? raw : <int>[]);
     if (bytes.isEmpty) return;
+
+    final id = _activeTtsUtteranceId;
+    if (id == null || id.isEmpty) {
+      _orphanPcmBytes.addAll(bytes);
+      _log("Orphan PCM +${bytes.length} (waiting tts.start)");
+      return;
+    }
+
     _ttsBuffers.putIfAbsent(id, () => <int>[]).addAll(bytes);
+    _streamedTtsByteCount += bytes.length;
+    if (_streamingTtsActive) {
+      unawaited(_feedPcmToPlayer(bytes));
+    }
   }
 
   void _handleWsJson(Map<String, dynamic> data) {
@@ -634,8 +760,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
 
     switch (type) {
       case "connection.ready":
-        setState(() => _status = _t("voice_call_status_session_preparing"));
-        _startSession();
+        unawaited(_handleConnectionReady());
         break;
       case "session.ready":
         _stopRingback();
@@ -643,32 +768,27 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
         if (!mounted) return;
         setState(() {
           _sessionReady = true;
-          _turnState = "listening";
-          _status = _t("voice_call_status_listening_active");
         });
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        _setConversationPhase("listening");
+        unawaited(_initProximitySensor());
+        _applyProximityScreenOff();
+        // Karşılama TTS'si için mic'i biraz geciktir (iOS oturum çakışması).
+        Future<void>.delayed(const Duration(milliseconds: 400), () {
           if (!mounted || !_micUserWantsOn || _isMicStreaming) return;
           unawaited(_startMicStreaming());
         });
         break;
       case "turn.state":
         final state = (payload["state"] ?? "").toString();
-        _turnState = state;
         if (state == "listening") {
           _isAiSpeaking = false;
-          if (mounted) {
-            setState(() => _status = _t("voice_call_status_listening_you"));
-          }
+          _setConversationPhase("listening");
         } else if (state == "thinking") {
           _isAiSpeaking = false;
-          if (mounted)
-            setState(() => _status = _t("voice_call_status_ai_thinking"));
+          _setConversationPhase("thinking");
         } else if (state == "speaking") {
           _isAiSpeaking = true;
-          if (mounted)
-            setState(() => _status = _t("voice_call_status_ai_speaking"));
-        } else if (mounted) {
-          setState(() {});
+          _setConversationPhase("speaking");
         }
         break;
       case "stt.partial":
@@ -695,8 +815,12 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
           _ttsUsesPcm = format.contains("pcm");
           _completedTtsUtterances.remove(utteranceId);
           _ttsBuffers[utteranceId] = <int>[];
-          _isAiSpeaking = true;
-          setState(() => _status = _t("voice_call_status_ai_speaking"));
+          if (_ttsUsesPcm) {
+            unawaited(_beginTtsStream(utteranceId));
+          } else {
+            _isAiSpeaking = true;
+            _setConversationPhase("speaking");
+          }
         }
         break;
       case "tts.chunk":
@@ -714,19 +838,27 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
           );
         }
         if (utteranceId.isNotEmpty && isLast) {
-          _finalizeAndPlayTts(utteranceId, reason: "tts.chunk.isLast");
+          if (_streamingTtsActive) {
+            unawaited(_finishTtsStream(utteranceId, reason: "tts.chunk.isLast"));
+          } else {
+            unawaited(_finalizeAndPlayTts(utteranceId, reason: "tts.chunk.isLast"));
+          }
         }
         break;
       case "tts.end":
         final utteranceId = (payload["utteranceId"] ?? "").toString();
-        _finalizeAndPlayTts(utteranceId, reason: "tts.end");
+        if (_streamingTtsActive) {
+          unawaited(_finishTtsStream(utteranceId, reason: "tts.end"));
+        } else {
+          unawaited(_finalizeAndPlayTts(utteranceId, reason: "tts.end"));
+        }
         break;
       case "ai.interrupted":
         _playbackDoneTimer?.cancel();
         _audioPlayer.stop();
         _stopPcmPlayback();
         _isAiSpeaking = false;
-        setState(() => _status = _t("voice_call_status_ai_interrupted"));
+        _setConversationPhase("listening");
         break;
       case "tts.stop":
         _playbackDoneTimer?.cancel();
@@ -789,6 +921,23 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     }
   }
 
+  void _sendListenPcmFrame(List<int> frame) {
+    final streamId =
+        _listenStreamUtteranceId ?? "listen-${_sessionId.substring(0, 12)}";
+    _sendEvent("audio.chunk", {
+      "utteranceId": streamId,
+      "chunkSeq": _listenChunkSeq++,
+      "language": "tr-TR",
+      "audio": {
+        "codec": "pcm16le",
+        "sampleRate": _sampleRate,
+        "channels": _channels,
+        "frameMs": _frameMs,
+      },
+      "audioBase64": base64Encode(frame),
+    });
+  }
+
   void _sendPcmFrame(List<int> frame) {
     if (_currentUtteranceId == null) return;
     _sendEvent("audio.chunk", {
@@ -824,8 +973,12 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _sendEvent("speech.start", {"utteranceId": _currentUtteranceId});
     if (_isAiSpeaking) {
       _log("Barge-in confirmed -> stopping local playback");
+      _playbackDoneTimer?.cancel();
       _audioPlayer.stop();
+      unawaited(_stopPcmPlayback());
       _isAiSpeaking = false;
+      _sendEvent("barge_in_request", {});
+      _sendPlaybackDone();
     }
   }
 
@@ -839,7 +992,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _currentUtteranceId = null;
     _chunkSeq = 0;
     _voicedFrames = 0;
-    setState(() => _status = _t("voice_call_status_waiting_ai_response"));
+    _setConversationPhase("thinking");
   }
 
   void _consumePcm(Uint8List bytes) {
@@ -867,12 +1020,6 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
         _noiseFloor = (_noiseFloor * 0.97) + (energy * 0.03);
       }
     }
-    if (_chunkLogCounter % 25 == 0) {
-      _log(
-        "VAD frame: energy=${energy.toStringAsFixed(1)} noise=${_noiseFloor.toStringAsFixed(1)} threshold=${dynamicThreshold.toStringAsFixed(1)} hardVoiced=$hardVoiced voiced=$isVoiced active=$_isSpeechActive",
-      );
-    }
-
     if (isVoiced) {
       _voicedFrames += 1;
       _lastVoiceMs = nowMs;
@@ -900,6 +1047,13 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
       if (_isSpeechActive) {
         _chunkLogCounter++;
         _sendPcmFrame(frame);
+      } else if (!_isAiSpeaking) {
+        // OpenAI Realtime server VAD — dinleme modunda sürekli PCM gönder.
+        _listenChunkSeq++;
+        if (_listenChunkSeq % 50 == 1) {
+          _log("Listen PCM streaming seq=$_listenChunkSeq");
+        }
+        _sendListenPcmFrame(frame);
       }
     }
 
@@ -937,6 +1091,9 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _noiseFloor = 80.0;
     _isSpeechActive = false;
     _currentUtteranceId = null;
+    _listenStreamUtteranceId =
+        "listen-${DateTime.now().millisecondsSinceEpoch}";
+    _listenChunkSeq = 0;
 
     final stream = await _recorder.startStream(
       const RecordConfig(
@@ -964,10 +1121,12 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     setState(() {
       _isMicStreaming = true;
       if (!preserveConversationUi) {
-        _status = _t("voice_call_status_listening_active");
         _userText = _userLine("...");
       }
     });
+    if (!preserveConversationUi) {
+      _setConversationPhase("listening");
+    }
   }
 
   Future<void> _stopMicStreaming({bool preserveConversationUi = false}) async {
@@ -1235,7 +1394,7 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
                       ),
                       SizedBox(width: 10.w),
                       GestureDetector(
-                        onTap: () => unawaited(_toggleSpeaker()),
+                        onTap: _toggleSpeaker,
                         child: Container(
                           width: 82.w,
                           height: 55.h,

@@ -19,7 +19,7 @@ import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:intl/intl.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:friendfy/Services/paywall_presentation.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_holo_date_picker/widget/date_picker_widget.dart';
@@ -1063,27 +1063,15 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
                             noteController: noteController,
                             sheetContext: sheetContext,
                             onMonthlyPlanTap: () async {
-                              try {
-                                final offerings = await Purchases.getOfferings();
-                                final specialOffer = offerings.getOffering("special_offer");
-                                if (specialOffer != null) {
-                                  final result = await RevenueCatUI.presentPaywall(
-                                    offering: specialOffer,
+                              final result =
+                                  await PaywallPresentation.presentSpecialOffer(
+                                    sheetContext,
+                                    offeringId: "special_offer",
                                     displayCloseButton: true,
                                   );
-                                  if (result == PaywallResult.purchased || result == PaywallResult.restored) {
-                                    Navigator.of(sheetContext).pop();
-                                  }
-                                } else {
-                                  final result = await RevenueCatUI.presentPaywall(
-                                    displayCloseButton: true,
-                                  );
-                                  if (result == PaywallResult.purchased || result == PaywallResult.restored) {
-                                    Navigator.of(sheetContext).pop();
-                                  }
-                                }
-                              } catch (e) {
-                                debugPrint("⚠️ Special offer paywall error: $e");
+                              if (result == PaywallResult.purchased ||
+                                  result == PaywallResult.restored) {
+                                Navigator.of(sheetContext).pop();
                               }
                             },
                             onSelectReason: (value) {
@@ -1438,27 +1426,14 @@ class _ProfileSettingsState extends ConsumerState<ProfileSettings> {
           ctaText: Translate.translate(TranslateKeys.deleteFlowSureCta, context),
           isSixtyPercentOffer: true,
           onCtaTap: () async {
-            try {
-              final offerings = await Purchases.getOfferings();
-              final specialOffer = offerings.getOffering("Special Offer");
-              if (specialOffer != null) {
-                final result = await RevenueCatUI.presentPaywall(
-                  offering: specialOffer,
-                  displayCloseButton: true,
-                );
-                if (result == PaywallResult.purchased || result == PaywallResult.restored) {
-                  Navigator.of(sheetContext).pop();
-                }
-              } else {
-                final result = await RevenueCatUI.presentPaywall(
-                  displayCloseButton: true,
-                );
-                if (result == PaywallResult.purchased || result == PaywallResult.restored) {
-                  Navigator.of(sheetContext).pop();
-                }
-              }
-            } catch (e) {
-              debugPrint("⚠️ Special offer paywall error: $e");
+            final result = await PaywallPresentation.presentSpecialOffer(
+              sheetContext,
+              offeringId: "Special Offer",
+              displayCloseButton: true,
+            );
+            if (result == PaywallResult.purchased ||
+                result == PaywallResult.restored) {
+              Navigator.of(sheetContext).pop();
             }
           },
         );

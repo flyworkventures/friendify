@@ -358,7 +358,7 @@
   "voice_call_status_reconnecting": "재연결 중...",
   "voice_call_status_audio_playback_error": "오디오 재생 오류",
   "voice_call_status_session_preparing": "세션 준비 중...",
-  "voice_call_status_listening_you": "듣고 있어요...",
+  "voice_call_status_listening_you": "%%name%% 님이 듣고 있어요...",
   "voice_call_status_ai_thinking": "%%name%% 님이 생각 중입니다...",
   "voice_call_status_ai_speaking": "%%name%% 님이 말하는 중입니다...",
   "voice_call_status_ai_interrupted": "AI 중단됨, 당신의 말을 듣고 있어요...",

@@ -1,4 +1,3 @@
-import 'package:friendfy/Themes/colors.dart';
 import 'package:flutter/material.dart';
 
 class BackgroundWidget extends StatelessWidget {
@@ -7,10 +6,15 @@ class BackgroundWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return  Stack(
+    return Stack(
       children: [
-        Image.asset("assets/images/bckg.png",width: MediaQuery.sizeOf(context).width,height: MediaQuery.sizeOf(context).height,fit: BoxFit.cover,),
-        child
+        Image.asset(
+          "assets/images/bckg.png",
+          width: MediaQuery.sizeOf(context).width,
+          height: MediaQuery.sizeOf(context).height,
+          fit: BoxFit.cover,
+        ),
+        child,
       ],
     );
   }

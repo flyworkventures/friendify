@@ -22,7 +22,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:gradient_borders/gradient_borders.dart';
 import 'package:heroicons/heroicons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
+import 'package:friendfy/Services/paywall_presentation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -332,7 +332,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
       return;
     }
 
-    await RevenueCatUI.presentPaywall(displayCloseButton: true);
+    await PaywallPresentation.present(context, displayCloseButton: true);
     /*
   Navigator.of(context).push(
   PageRouteBuilder(

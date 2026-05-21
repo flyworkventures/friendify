@@ -358,7 +358,7 @@
   "voice_call_status_reconnecting": "Переподключение...",
   "voice_call_status_audio_playback_error": "Ошибка воспроизведения аудио",
   "voice_call_status_session_preparing": "Подготовка сеанса...",
-  "voice_call_status_listening_you": "Слушаю вас...",
+  "voice_call_status_listening_you": "%%name%% слушает вас...",
   "voice_call_status_ai_thinking": "%%name%% думает...",
   "voice_call_status_ai_speaking": "%%name%% говорит...",
   "voice_call_status_ai_interrupted": "ИИ прерван, слушаю вас...",

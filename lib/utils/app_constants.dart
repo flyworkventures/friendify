@@ -25,11 +25,10 @@ import 'package:friendfy/View/VoiceCallView/voice_call_view.dart';
 
 class AppConstants {
   static const String appName = "friendfy";
-  // 10.0.2.2:
 
-  static const String baseURL = "http://localhost:3000";
-  // "http://localhost:3000";
-  // "https://friendfy.fly-work.com"
+  // Fiziksel cihaz — Mac ile aynı Wi‑Fi, IP değişirse burayı güncelle
+  static const String baseURL = "http://192.168.1.112:3000";
+  // Prod: "https://friendfy.fly-work.com"
   static const String configURL = "/server/config";
   static const String loginURL = "/auth/login";
   static const String signupURL = "/auth/signup";
@@ -75,16 +74,8 @@ class AppConstants {
       "sk_b13afa6a80b9ff28788cd259e6d75005cdd74059e84f4913";
   static const String elevenLabsVoiceId = "21m00Tcm4TlvDq8ikWAM";
 
-  /// Voice WS URL (duz sabit URL kullanimi).
-  /// Lokal: ws://127.0.0.1:3000/ws/voice
-  /// Gercek cihaz: ws://<LAN_IP>:3000/ws/voice
-  /// Prod: wss://friendfy.fly-work.com/ws/voice
-  static const String voiceWsUrl = "ws://friendfy.fly-work.com/ws/voice";
-
-  /// Lokal: ws://localhost:3000/ws/video
-  /// Gercek cihaz: ws://<LAN_IP>:3000/ws/video
-  /// Prod: wss://friendfy.fly-work.com/ws/video
-  static const String videoWsUrl = "ws://friendfy.fly-work.com/ws/video";
+  static const String voiceWsUrl = "ws://192.168.1.112:3000/ws/voice";
+  static const String videoWsUrl = "ws://192.168.1.112:3000/ws/video";
 
   /// Realtime V2 WS endpoint (/realtime).
   static String get realtimeWsUrl {

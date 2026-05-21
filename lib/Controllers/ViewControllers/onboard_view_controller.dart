@@ -8,14 +8,13 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Http/http_service.dart';
 import 'package:friendfy/Models/user_model.dart';
+import 'package:friendfy/Repository/auth_repository.dart';
 import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-
-import 'package:friendfy/Repository/auth_repository.dart';
-import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:http/http.dart';
+import 'package:friendfy/Services/paywall_presentation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class OnboardViewController extends StateNotifier<OnboardViewModel> {
@@ -37,7 +36,9 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
 
     if (action == "go_premium") {
       try {
-        await RevenueCatUI.presentPaywall(displayCloseButton: true);
+        await PaywallPresentation.presentFromNavigator(
+          displayCloseButton: true,
+        );
       } catch (e) {
         debugPrint("⚠️ Paywall could not be shown: $e");
       }
@@ -76,8 +77,12 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
           if (refreshToken != null && refreshToken.isNotEmpty) {
             userModel = userModel.copyWith(refreshToken: refreshToken);
           }
-          ref.read(AllControllers.userController.notifier).updateUserModel(userModel);
-          debugPrint("✅ [RegisterFlow] User model refreshed with ID: ${userModel.id}");
+          ref
+              .read(AllControllers.userController.notifier)
+              .updateUserModel(userModel);
+          debugPrint(
+            "✅ [RegisterFlow] User model refreshed with ID: ${userModel.id}",
+          );
         }
       } catch (e) {
         debugPrint("⚠️ [RegisterFlow] verifyToken error: $e");
@@ -87,9 +92,7 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
     await ref
         .read(AllControllers.chatViewController.notifier)
         .getConversations();
-    await ref
-        .read(AllControllers.agentsViewController.notifier)
-        .getAgents();
+    await ref.read(AllControllers.agentsViewController.notifier).getAgents();
     await ref
         .read(AllControllers.agentsViewController.notifier)
         .getRecentAgents();
@@ -143,11 +146,16 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
           debugPrint("✨ [Google Auth] New user detected (status 200)");
 
           final prefs = await SharedPreferences.getInstance();
-          final localAnswers = LocalService(prefs: prefs).getOnboardingAnswers();
-          final hasLocalAnswers = localAnswers != null && localAnswers.isNotEmpty;
+          final localAnswers = LocalService(
+            prefs: prefs,
+          ).getOnboardingAnswers();
+          final hasLocalAnswers =
+              localAnswers != null && localAnswers.isNotEmpty;
 
           if (!hasLocalAnswers) {
-            debugPrint("📝 [Google Auth] Onboarding cevapları yok – register akışına yönlendiriliyor");
+            debugPrint(
+              "📝 [Google Auth] Onboarding cevapları yok – register akışına yönlendiriliyor",
+            );
             await localService.saveOnboardingPendingAuth({
               "email": googleSignInAccount.email,
               "credential": "google",
@@ -234,8 +242,6 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
     }
   }
 
-
-
   appleAuth() async {
     try {
       debugPrint("🍎 appleAuth started");
@@ -277,11 +283,16 @@ class OnboardViewController extends StateNotifier<OnboardViewModel> {
           debugPrint("✨ Apple Account 200 - New user creating account");
 
           final applePrefs = await SharedPreferences.getInstance();
-          final appleLocalAnswers = LocalService(prefs: applePrefs).getOnboardingAnswers();
-          final appleHasLocalAnswers = appleLocalAnswers != null && appleLocalAnswers.isNotEmpty;
+          final appleLocalAnswers = LocalService(
+            prefs: applePrefs,
+          ).getOnboardingAnswers();
+          final appleHasLocalAnswers =
+              appleLocalAnswers != null && appleLocalAnswers.isNotEmpty;
 
           if (!appleHasLocalAnswers) {
-            debugPrint("📝 [Apple Auth] Onboarding cevapları yok – register akışına yönlendiriliyor");
+            debugPrint(
+              "📝 [Apple Auth] Onboarding cevapları yok – register akışına yönlendiriliyor",
+            );
             final resolvedEmail =
                 email ?? "$userIdentifier@privaterelay.appleid.com";
             await localService.saveOnboardingPendingAuth({

@@ -358,7 +358,7 @@
   "voice_call_status_reconnecting": "Verbindung wird wiederhergestellt...",
   "voice_call_status_audio_playback_error": "Audio-Wiedergabefehler",
   "voice_call_status_session_preparing": "Sitzung wird vorbereitet...",
-  "voice_call_status_listening_you": "Höre dir zu...",
+  "voice_call_status_listening_you": "%%name%% hört dir zu...",
   "voice_call_status_ai_thinking": "%%name%% denkt nach...",
   "voice_call_status_ai_speaking": "%%name%% spricht...",
   "voice_call_status_ai_interrupted": "KI unterbrochen, höre dir zu...",

@@ -16,14 +16,13 @@ import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/Services/revenuecat_service.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/View/EditAgentView/edit_agent_view.dart';
-import 'package:friendfy/View/PremiumScreen/premium_screen.dart';
 import 'package:friendfy/Widgets/HomeWidgets/feel_widget.dart';
 import 'package:friendfy/Widgets/HomeWidgets/your_matches.dart';
 import 'package:friendfy/main.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gradient_borders/gradient_borders.dart';
 import 'package:heroicons/heroicons.dart';
-import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
+import 'package:friendfy/Services/paywall_presentation.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
@@ -117,14 +116,10 @@ class _HomeViewState extends ConsumerState<HomeView> {
       }
 
       debugPrint("💰 Premium paywall açılıyor...");
-      // Android'de close butonu gözükmediği için PremiumScreen kullanıyoruz
-      if (Platform.isAndroid) {
-        await Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (context) => PremiumScreen()));
-      } else {
-        await RevenueCatUI.presentPaywall(displayCloseButton: true);
-      }
+      await PaywallPresentation.presentPlatformPaywall(
+        context,
+        displayCloseButton: true,
+      );
       debugPrint(
         "💰 Premium paywall kapandı, customerInfo kontrol ediliyor...",
       );

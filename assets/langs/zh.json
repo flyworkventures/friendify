@@ -358,7 +358,7 @@
   "voice_call_status_reconnecting": "重新连接中...",
   "voice_call_status_audio_playback_error": "音频播放错误",
   "voice_call_status_session_preparing": "正在准备会话...",
-  "voice_call_status_listening_you": "正在听你说话...",
+  "voice_call_status_listening_you": "%%name%%正在听你说...",
   "voice_call_status_ai_thinking": "%%name%%正在思考...",
   "voice_call_status_ai_speaking": "%%name%%正在说话...",
   "voice_call_status_ai_interrupted": "AI被中断，正在听你说话...",

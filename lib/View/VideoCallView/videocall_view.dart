@@ -84,8 +84,14 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   // utterance'lar için toplam byte sayısı (playback_done timer'ı için).
   // _finalizeAndPlayTts bu mapte varsa replay yapmaz, sadece state finalize eder.
   final Map<String, int> _streamedUtteranceBytes = <String, int>{};
+  // Binary PCM tts.start'tan önce gelirse düşmesin (WS sırası).
+  final List<int> _orphanPcmBeforeUtterance = <int>[];
   // Streaming için utterance başlangıç zamanı — viseme schedule referansı.
   final Map<String, DateTime> _streamedUtteranceStart = <String, DateTime>{};
+  // Stream'lenen PCM chunk'larının sırasını korumak için seri future zinciri.
+  // Birden fazla binary chunk paralel gelirse `unawaited` feed'leri sıra dışı
+  // tamamlanıp ses parçalanabilirdi; bu zincir feed'leri sıraya sokar.
+  Future<void> _pcmStreamSerializer = Future.value();
   bool _isMicStreaming = false;
   bool _isSpeechActive = false;
   bool _isAiSpeaking = false;
@@ -113,10 +119,10 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   bool _localizedTextsInitialized = false;
   bool _sessionStartSent = false;
   bool _riveAvatarReady = false;
-  List<CameraDescription> _availableCameras = [];
-  CameraLensDirection _previewLensDirection = CameraLensDirection.front;
   CameraController? _cameraController;
   bool _isCameraPreviewReady = false;
+  bool _selfPreviewEnabled = true;
+  bool _cameraInitInFlight = false;
   Timer? _onboardingSheetTimer;
   Timer? _riveReadyFallbackTimer;
   bool _onboardingSheetShown = false;
@@ -150,6 +156,26 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
         return _t("video_call_turn_speaking");
       default:
         return _t("video_call_turn_idle");
+    }
+  }
+
+  void _setConversationPhase(String phase) {
+    _turnState = phase;
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  String _stateText() {
+    final name = _activeAgent?.name ?? _t("video_call_title_fallback");
+    switch (_turnState) {
+      case "listening":
+        return _fmt("video_call_status_listening_you", {"name": name});
+      case "thinking":
+        return _fmt("video_call_status_ai_thinking", {"name": name});
+      case "speaking":
+        return _fmt("video_call_status_ai_speaking", {"name": name});
+      default:
+        return "";
     }
   }
 
@@ -195,16 +221,52 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     );
   }
 
+  /// Rive tam yüklenirken aynı utterance için hem buffer hem stream
+  /// karışmasın — buffer'daki PCM'i tek seferde player'a aktar.
+  void _flushActiveUtteranceBufferToStreamIfNeeded() {
+    final id = _activeTtsUtteranceId;
+    if (id == null || id.isEmpty) return;
+    final buf = _ttsBuffers[id];
+    if (buf == null || buf.isEmpty) return;
+    final bytes = List<int>.from(buf);
+    buf.clear();
+    _streamedUtteranceStart.putIfAbsent(id, () => DateTime.now());
+    _streamedUtteranceBytes[id] = _streamedUtteranceBytes[id] ?? 0;
+    unawaited(_ensurePcmPlayer().then((_) async {
+      await _audioPlayer.stop();
+      FlutterPcmSound.start();
+      const chunkSize = 4800;
+      for (var i = 0; i < bytes.length; i += chunkSize) {
+        final end =
+            i + chunkSize < bytes.length ? i + chunkSize : bytes.length;
+        final chunk = Uint8List.fromList(bytes.sublist(i, end));
+        await _feedPcmChunkImmediate(chunk);
+        _streamedUtteranceBytes[id] =
+            (_streamedUtteranceBytes[id] ?? 0) + chunk.length;
+      }
+      _log(
+        "Buffered PCM flushed to stream on Rive ready: utterance=$id bytes=${bytes.length}",
+      );
+    }));
+    _isAiSpeaking = true;
+  }
+
   void _onRiveAvatarReady() {
     if (_riveAvatarReady) return;
     if (!mounted) return;
+    _riveAvatarReady = true;
+    _log(
+      "Rive avatar reported ready (connected=$_connected serverReady=$_serverReportedReady sessionReady=$_sessionReady)",
+    );
+    _flushActiveUtteranceBufferToStreamIfNeeded();
+    unawaited(_playDeferredAudioNow());
+    _signalAvatarReadyToServer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _riveAvatarReady) return;
-      setState(() => _riveAvatarReady = true);
-      _signalAvatarReadyToServer();
+      if (!mounted) return;
+      setState(() {});
       _tryActivateCallUi();
       _ensureSessionStarted("rive_ready");
-      _flushDeferredAgentAudio();
+      _signalAvatarReadyToServer();
     });
   }
 
@@ -214,38 +276,178 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   }
 
   void _signalAvatarReadyToServer() {
-    if (_avatarReadySentToServer || !_connected) return;
-    // Güvenlik kemeri: Rive avatar'lı agent için Rive gerçekten görünür
-    // olmadan sinyal gönderme. Aksi halde sunucu greeting'i Rive
-    // yüklenmeden başlatır.
-    if (!_isAvatarReadyForSession()) return;
+    if (_avatarReadySentToServer) return;
+    if (!_connected || _socket == null) {
+      _log(
+        "Defer avatar.ready signal: connected=$_connected socket=${_socket != null} rive=$_riveAvatarReady",
+      );
+      return;
+    }
+    if (!_isAvatarReadyForSession()) {
+      _log(
+        "Defer avatar.ready signal: avatar not ready (rive=$_riveAvatarReady hasRive=${_activeAgent?.riveAvatar?.trim().isNotEmpty == true})",
+      );
+      return;
+    }
     _avatarReadySentToServer = true;
     _sendEvent("avatar.ready", {"sessionId": _sessionId});
     _log("Signaled avatar.ready to server");
+    _cancelAvatarReadyFallback();
+  }
+
+  Timer? _avatarReadyFallbackTimer;
+
+  void _scheduleAvatarReadyFallback() {
+    _avatarReadyFallbackTimer?.cancel();
+    _avatarReadyFallbackTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      if (_avatarReadySentToServer) return;
+      _log(
+        "Avatar ready fallback firing — Rive likely cached/instant or onReady missed",
+      );
+      _riveAvatarReady = true;
+      _signalAvatarReadyToServer();
+      _tryActivateCallUi();
+    });
+  }
+
+  void _cancelAvatarReadyFallback() {
+    _avatarReadyFallbackTimer?.cancel();
+    _avatarReadyFallbackTimer = null;
   }
 
   void _tryActivateCallUi() {
-    if (!_connected || !_serverReportedReady || !_isAvatarReadyForSession()) {
+    if (!_connected || !_serverReportedReady) return;
+    if (_sessionReady) {
+      if (_isAvatarReadyForSession()) {
+        _signalAvatarReadyToServer();
+      }
+      _maybeStopRingbackIfReady();
+      _scheduleSelfPreviewCamera();
       return;
     }
-    if (!_avatarReadySentToServer) {
-      _signalAvatarReadyToServer();
-    }
-    if (_sessionReady) return;
     setState(() {
       _sessionReady = true;
       _turnState = "listening";
       _status = _t("video_call_status_listening_active");
     });
+    if (_isAvatarReadyForSession()) {
+      _signalAvatarReadyToServer();
+    }
     _maybeStopRingbackIfReady();
+    _scheduleSelfPreviewCamera();
   }
 
-  void _flushDeferredAgentAudio() {
+  /// Ön kamera yalnızca kullanıcı kendini görsün — WS/arka plan yükünden sonra, düşük çözünürlük.
+  void _scheduleSelfPreviewCamera() {
+    if (!_selfPreviewEnabled || _cameraInitInFlight || _cameraController != null) {
+      return;
+    }
+    if (!_connected || !_sessionReady) return;
+    _cameraInitInFlight = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_selfPreviewEnabled) {
+        _cameraInitInFlight = false;
+        return;
+      }
+      unawaited(
+        _initSelfPreviewCamera().whenComplete(() {
+          _cameraInitInFlight = false;
+        }),
+      );
+    });
+  }
+
+  Future<void> _stopSelfPreviewCamera() async {
+    final old = _cameraController;
+    _cameraController = null;
+    _isCameraPreviewReady = false;
+    if (mounted) setState(() {});
+    try {
+      await old?.dispose();
+    } catch (_) {}
+  }
+
+  Future<void> _toggleSelfPreview() async {
+    if (_selfPreviewEnabled) {
+      _selfPreviewEnabled = false;
+      await _stopSelfPreviewCamera();
+      return;
+    }
+    _selfPreviewEnabled = true;
+    if (mounted) setState(() {});
+    _scheduleSelfPreviewCamera();
+  }
+
+  /// Rive hazır olunca buffer'daki PCM'i anında çal (TTS Rive yüklenirken üretilmiş olabilir).
+  Future<void> _playDeferredAudioNow() async {
     if (!_isAvatarReadyForSession()) return;
     final pending = List<String>.from(_deferredPlaybackUtterances);
     _deferredPlaybackUtterances.clear();
+    if (pending.isEmpty) return;
+
+    unawaited(_stopRingback());
     for (final utteranceId in pending) {
-      if (utteranceId.isEmpty || _completedTtsUtterances.contains(utteranceId)) {
+      if (utteranceId.isEmpty) continue;
+      final bytes = _ttsBuffers[utteranceId];
+      if (bytes != null && bytes.isNotEmpty) {
+        _completedTtsUtterances.remove(utteranceId);
+        _streamedUtteranceStart[utteranceId] = DateTime.now();
+        _streamedUtteranceBytes[utteranceId] = 0;
+        _isAiSpeaking = true;
+        if (mounted) {
+          setState(() => _status = _t("video_call_status_ai_speaking"));
+        }
+        try {
+          await _ensurePcmPlayer();
+          await _audioPlayer.stop();
+          FlutterPcmSound.start();
+          const chunkSize = 4800;
+          for (var i = 0; i < bytes.length; i += chunkSize) {
+            final end = i + chunkSize < bytes.length ? i + chunkSize : bytes.length;
+            final chunk = bytes.sublist(i, end);
+            await _feedPcmChunkImmediate(Uint8List.fromList(chunk));
+            _streamedUtteranceBytes[utteranceId] =
+                (_streamedUtteranceBytes[utteranceId] ?? 0) + chunk.length;
+          }
+          _ttsBuffers.remove(utteranceId);
+          _log(
+            "Deferred PCM playback started: utterance=$utteranceId bytes=${_streamedUtteranceBytes[utteranceId]}",
+          );
+          final totalBytes = _streamedUtteranceBytes[utteranceId] ?? 0;
+          if (totalBytes > 0) {
+            final audioStartAt =
+                _streamedUtteranceStart[utteranceId] ?? DateTime.now();
+            final durationMs =
+                ((totalBytes / (_ttsPcmSampleRate * 2)) * 1000).round() + 450;
+            _schedulePlaybackDoneAfterMs(durationMs);
+            final visemes =
+                _visemeBuffers[utteranceId] ?? const <_TtsFrame>[];
+            final hasTimeline =
+                _visemeTimelineLastFlags.containsKey(utteranceId);
+            if (visemes.isNotEmpty) {
+              _scheduleVisemesForUtterance(
+                utteranceId: utteranceId,
+                frames: visemes,
+                audioStartAt: audioStartAt,
+              );
+            } else {
+              _scheduleFallbackVisemesForUtterance(
+                utteranceId: utteranceId,
+                audioStartAt: audioStartAt,
+                reason: hasTimeline
+                    ? "viseme.timeline.empty"
+                    : "viseme.timeline.missing",
+              );
+            }
+          }
+        } catch (e, st) {
+          _log("Deferred PCM playback failed: $e\n$st");
+          _ttsBuffers[utteranceId] = bytes;
+          unawaited(
+            _finalizeAndPlayTts(utteranceId, reason: "rive_ready_flush_fallback"),
+          );
+        }
         continue;
       }
       unawaited(_finalizeAndPlayTts(utteranceId, reason: "rive_ready_flush"));
@@ -253,10 +455,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   }
 
   void _maybeStopRingbackIfReady() {
-    final hasRiveAvatar =
-        _activeAgent?.riveAvatar?.trim().isNotEmpty == true;
-    final isAvatarReady = hasRiveAvatar ? _riveAvatarReady : true;
-    if (_connected && _sessionReady && isAvatarReady) {
+    if (_connected && _sessionReady && _isAvatarReadyForSession()) {
       if (_ringbackActive) _stopRingback();
       _startChatWhenReady();
     }
@@ -328,20 +527,16 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     }
   }
 
-  Future<void> _toggleCameraLens() async {
-    if (_availableCameras.length < 2) {
-      _log("Camera flip skipped: only ${_availableCameras.length} camera(s)");
-      return;
-    }
-    final nextLens = _previewLensDirection == CameraLensDirection.front
-        ? CameraLensDirection.back
-        : CameraLensDirection.front;
-    try {
-      await _switchCameraPreviewTo(nextLens);
-      _log("Camera lens -> $nextLens");
-    } catch (e, st) {
-      _log("Camera flip error: $e\n$st");
-    }
+  Future<void> _beginCallSetup() async {
+    unawaited(_configureAudioPlayerSession());
+    unawaited(_startRingback());
+    unawaited(_connectVoiceWs());
+    _setupOnboardingGateIfNeeded();
+    _riveReadyFallbackTimer = Timer(const Duration(seconds: 8), () {
+      if (!mounted || _riveAvatarReady) return;
+      _log("Rive load slow — using photo fallback UI");
+      _onRiveAvatarReady();
+    });
   }
 
   @override
@@ -353,28 +548,12 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
       _visemeNotifier.value = 0;
       _visemeTimeNotifier.value = 0;
       _sendPlaybackDone();
-      if (mounted) {
-        setState(() => _status = _t("video_call_status_listening_active"));
-      }
+      _setConversationPhase("listening");
       _log("Audio player complete -> AI speaking false");
     });
-    _configureAudioPlayerSession();
-    _startRingback();
-    unawaited(_initCameraPreview());
-    _connectVoiceWs();
-    _setupOnboardingGateIfNeeded();
-    // Dış güvenlik kemeri. İç katmanlar:
-    //   - `_NetworkRiveAvatar` widget timeout: 45sn (photo fallback'a düşer ve
-    //      `widget.onReady()` çağırır → buradaki `_onRiveAvatarReady`).
-    //   - Backend greeting fallback: 75sn (`voiceChatServerV2.js`).
-    // Bu timer Rive widget'ı hiç onReady çağırmazsa devreye giren son çare.
-    // Önce 12sn idi → Rive yavaş yüklenirken Rive görünmeden avatar.ready
-    // gönderiyor, server da greeting'i Rive yüklenmeden başlatıyordu.
-    // 60sn → iç widget'ın 45sn'lik fallback'ine net bir tampon bırakır.
-    _riveReadyFallbackTimer = Timer(const Duration(seconds: 60), () {
-      if (!mounted || _riveAvatarReady) return;
-      _log("Rive outer fallback (60s) — forcing avatar.ready");
-      _onRiveAvatarReady();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_beginCallSetup());
     });
   }
 
@@ -850,46 +1029,56 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     );
   }
 
-  Future<void> _initCameraPreview() async {
+  Future<void> _initSelfPreviewCamera() async {
+    if (!_selfPreviewEnabled || !mounted) return;
     try {
-      _availableCameras = await availableCameras();
-      if (_availableCameras.isEmpty) {
-        _log("No camera available for local preview");
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        _log("Self preview: no camera");
         return;
       }
-      await _switchCameraPreviewTo(_previewLensDirection);
+      CameraDescription? front;
+      for (final c in cameras) {
+        if (c.lensDirection == CameraLensDirection.front) {
+          front = c;
+          break;
+        }
+      }
+      front ??= cameras.first;
+      final controller = CameraController(
+        front,
+        ResolutionPreset.low,
+        enableAudio: false,
+      );
+      await controller.initialize();
+      if (!mounted || !_selfPreviewEnabled) {
+        await controller.dispose();
+        return;
+      }
+      await _cameraController?.dispose();
+      if (!mounted || !_selfPreviewEnabled) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _cameraController = controller;
+        _isCameraPreviewReady = true;
+      });
+      _log("Self preview ready (front, low)");
     } catch (e, st) {
-      _log("Camera init error: $e\n$st");
+      _log("Self preview init error: $e\n$st");
     }
-  }
-
-  Future<void> _switchCameraPreviewTo(CameraLensDirection lens) async {
-    if (_availableCameras.isEmpty) return;
-    final camera = _availableCameras.firstWhere(
-      (c) => c.lensDirection == lens,
-      orElse: () => _availableCameras.first,
-    );
-    final old = _cameraController;
-    final controller = CameraController(
-      camera,
-      ResolutionPreset.medium,
-      enableAudio: false,
-    );
-    await controller.initialize();
-    if (!mounted) {
-      await controller.dispose();
-      return;
-    }
-    await old?.dispose();
-    setState(() {
-      _cameraController = controller;
-      _previewLensDirection = camera.lensDirection;
-      _isCameraPreviewReady = true;
-    });
-    _log("Camera preview ready (${camera.lensDirection})");
   }
 
   Widget _buildLocalCameraPreview() {
+    if (!_selfPreviewEnabled) {
+      return Container(
+        color: Colors.black.withValues(alpha: 0.55),
+        child: const Center(
+          child: Icon(Icons.videocam_off, color: Colors.white54, size: 28),
+        ),
+      );
+    }
     final controller = _cameraController;
     if (controller == null ||
         !_isCameraPreviewReady ||
@@ -897,7 +1086,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
       return Container(
         color: Colors.black.withValues(alpha: 0.45),
         child: const Center(
-          child: Icon(Icons.videocam_off, color: Colors.white70, size: 28),
+          child: Icon(Icons.videocam, color: Colors.white38, size: 24),
         ),
       );
     }
@@ -961,8 +1150,16 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
         _avatarReadySentToServer = false;
         _status = _t("video_call_status_connected_session_starting");
       });
+      unawaited(_ensurePcmPlayer());
+      // WS açıldıktan sonra Rive zaten yüklü kalmış olabilir — sinyali yeniden dene.
+      if (_riveAvatarReady) {
+        _signalAvatarReadyToServer();
+      }
+      // Rive yüklenmesi başarısız olur veya onReady kaçırılırsa: 4sn sonra
+      // fallback ile avatar.ready gönder, kullanıcı sessizlikte kalmasın.
+      _scheduleAvatarReadyFallback();
       // Fallback: bazı backend sürümlerinde connection.ready event'i gelmeyebilir.
-      _ensureSessionStarted("on_connect");
+      unawaited(_ensureSessionStarted("on_connect"));
     } catch (e) {
       _log("WS connect failed: $e");
       if (!mounted) return;
@@ -1049,15 +1246,36 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     });
   }
 
-  void _ensureSessionStarted(String source) {
-    if (_sessionStartSent || !_connected || _sessionReady) return;
-    if (!_isAvatarReadyForSession()) {
-      _log("Delaying session.start until Rive ready (from $source)");
-      return;
+  bool _sessionStartInFlight = false;
+
+  Future<int?> _waitForConversationId({
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    final existing = ref.read(AllControllers.chatViewController).chatModel?.id;
+    if (existing != null) return existing;
+
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (!mounted) return null;
+      final id = ref.read(AllControllers.chatViewController).chatModel?.id;
+      if (id != null) return id;
+      await Future.delayed(const Duration(milliseconds: 100));
     }
-    _sessionStartSent = true;
-    _log("Ensuring session.start from $source");
-    _startSession();
+    return ref.read(AllControllers.chatViewController).chatModel?.id;
+  }
+
+  Future<void> _ensureSessionStarted(String source) async {
+    if (_sessionStartSent || _sessionStartInFlight || !_connected) return;
+    _sessionStartInFlight = true;
+    _log("Preparing session.start from $source");
+    try {
+      await _waitForConversationId();
+      if (!mounted || !_connected || _sessionStartSent) return;
+      _sessionStartSent = true;
+      _startSession();
+    } finally {
+      _sessionStartInFlight = false;
+    }
   }
 
   void _sendPlaybackDone() {
@@ -1075,9 +1293,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
       _isAiSpeaking = false;
       _visemeNotifier.value = 0;
       _visemeTimeNotifier.value = 0;
-      if (mounted) {
-        setState(() => _status = _t("video_call_status_listening_active"));
-      }
+      _setConversationPhase("listening");
     });
   }
 
@@ -1170,18 +1386,26 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   }
 
   void _bufferWsPcmBinary(dynamic raw) {
-    final id = _activeTtsUtteranceId;
-    if (id == null || id.isEmpty) return;
     final bytes = raw is Uint8List
         ? raw
         : Uint8List.fromList(raw is List<int> ? raw : <int>[]);
     if (bytes.isEmpty) return;
 
-    // Rive avatar henüz görünür değilse audio'yu ertele — buffer'da biriksin,
-    // Rive hazır olduğunda `_flushDeferredAgentAudio` finalize edip oynatır.
+    final id = _activeTtsUtteranceId;
+    if (id == null || id.isEmpty) {
+      _orphanPcmBeforeUtterance.addAll(bytes);
+      _log(
+        "PCM buffered before tts.start: +${bytes.length}B (orphan=${_orphanPcmBeforeUtterance.length}B)",
+      );
+      return;
+    }
+
+    // Rive yüklenirken ses çalma — buffer'da biriktir, hazır olunca flush.
     if (!_isAvatarReadyForSession()) {
       _ttsBuffers.putIfAbsent(id, () => <int>[]).addAll(bytes);
       _deferredPlaybackUtterances.add(id);
+      _streamedUtteranceBytes.remove(id);
+      _streamedUtteranceStart.remove(id);
       return;
     }
 
@@ -1201,7 +1425,10 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
         setState(() => _status = _t("video_call_status_ai_speaking"));
       }
     }
-    unawaited(_feedPcmChunkImmediate(bytes));
+    _pcmStreamSerializer = _pcmStreamSerializer.then(
+      (_) => _feedPcmChunkImmediate(bytes),
+      onError: (Object e) => _log("PCM stream chain error: $e"),
+    );
   }
 
   Future<void> _feedPcmChunkImmediate(Uint8List bytes) async {
@@ -1227,6 +1454,13 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   }) async {
     if (utteranceId.isEmpty) return;
     if (_completedTtsUtterances.contains(utteranceId)) return;
+    if (!_isAvatarReadyForSession()) {
+      _deferredPlaybackUtterances.add(utteranceId);
+      _log(
+        "Deferring TTS until Rive ready: utterance=$utteranceId reason=$reason",
+      );
+      return;
+    }
     final bytes = _ttsBuffers.remove(utteranceId);
     if (utteranceId == _activeTtsUtteranceId) {
       _activeTtsUtteranceId = null;
@@ -1366,6 +1600,70 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     _visemeTimelineLastFlags.remove(utteranceId);
   }
 
+  List<_TtsFrame> _parseVisemeTimelineEntries(List<dynamic> rawList) {
+    final frames = <_TtsFrame>[];
+    for (final entry in rawList) {
+      if (entry is! Map) continue;
+      final m = Map<String, dynamic>.from(entry);
+      final id = ((m["id"] as num?)?.toInt() ?? 0).clamp(0, 21);
+      double timeSec = 0;
+      final time = m["time"];
+      final t = m["t"];
+      if (time is num) {
+        timeSec = time.toDouble();
+        if (timeSec > 120) timeSec /= 1000;
+      } else if (t is num) {
+        timeSec = t.toDouble();
+        if (timeSec > 120) timeSec /= 1000;
+      }
+      frames.add(_TtsFrame(time: timeSec, id: id));
+    }
+    frames.sort((a, b) => a.time.compareTo(b.time));
+    return frames;
+  }
+
+  List<_TtsFrame> _scaleVisemeFramesToAudio(
+    List<_TtsFrame> frames,
+    int utteranceBytes,
+  ) {
+    if (frames.isEmpty || utteranceBytes <= 0) return frames;
+    final audioSec = utteranceBytes / (_ttsPcmSampleRate * 2);
+    final maxSec = frames.last.time;
+    if (maxSec <= 0.05 || audioSec <= maxSec) return frames;
+    final scale = audioSec / maxSec;
+    return frames
+        .map((f) => _TtsFrame(time: f.time * scale, id: f.id))
+        .toList();
+  }
+
+  void _ingestVisemeTimeline({
+    required String utteranceId,
+    required List<_TtsFrame> frames,
+    bool isLast = true,
+  }) {
+    if (utteranceId.isEmpty || frames.isEmpty) return;
+    final bytes = _streamedUtteranceBytes[utteranceId] ??
+        _ttsBuffers[utteranceId]?.length ??
+        0;
+    final scaled = _scaleVisemeFramesToAudio(frames, bytes);
+    _visemeBuffers[utteranceId] = scaled;
+    _visemeTimelineLastFlags[utteranceId] = isLast;
+    _log(
+      "Viseme ingested: utterance=$utteranceId frames=${scaled.length} "
+      "ids=${scaled.map((f) => f.id).take(8).join(',')}",
+    );
+
+    if (_completedTtsUtterances.contains(utteranceId) ||
+        _streamedUtteranceStart.containsKey(utteranceId) ||
+        utteranceId == _activeTtsUtteranceId) {
+      _scheduleVisemesForUtterance(
+        utteranceId: utteranceId,
+        frames: scaled,
+        audioStartAt: _streamedUtteranceStart[utteranceId] ?? DateTime.now(),
+      );
+    }
+  }
+
   void _scheduleVisemesForUtterance({
     required String utteranceId,
     required List<_TtsFrame> frames,
@@ -1376,19 +1674,20 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
       _log("No viseme frames for utterance=$utteranceId (fallback lip-sync)");
       return;
     }
-    _visemeNotifier.value = 0;
-    _visemeTimeNotifier.value = 0;
+
+    final bytes = _streamedUtteranceBytes[utteranceId] ?? _lastTtsBytes;
+    final scaled = _scaleVisemeFramesToAudio(frames, bytes);
 
     final timers = <Timer>[];
     _visemeNotifier.value = 0;
-    for (final frame in frames) {
+    _visemeTimeNotifier.value = 0;
+    for (final frame in scaled) {
       final ms = (frame.time * 1000).round();
-      final timer = Timer(Duration(milliseconds: ms), () {
-        _applyVisemeFrame(frame);
-      });
-      timers.add(timer);
+      timers.add(
+        Timer(Duration(milliseconds: ms), () => _applyVisemeFrame(frame)),
+      );
     }
-    final totalMs = (frames.last.time * 1000).round() + 120;
+    final totalMs = (scaled.last.time * 1000).round() + 120;
     timers.add(
       Timer(Duration(milliseconds: totalMs), () {
         _visemeNotifier.value = 0;
@@ -1397,7 +1696,8 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     );
     _visemeTimers[utteranceId] = timers;
     _log(
-      "Scheduled visemes: utterance=$utteranceId frames=${frames.length} start=${audioStartAt.toIso8601String()}",
+      "Scheduled visemes: utterance=$utteranceId frames=${scaled.length} "
+      "start=${audioStartAt.toIso8601String()}",
     );
   }
 
@@ -1412,14 +1712,13 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     required String reason,
   }) {
     _clearVisemeTimers(utteranceId);
-    const pattern = <int>[0, 2, 8, 11, 8, 2];
+    const pattern = <int>[0, 8, 2, 18, 11, 8, 1, 15, 6, 12, 8, 2];
     final timers = <Timer>[];
-    for (var i = 0; i < 24; i++) {
+    for (var i = 0; i < 28; i++) {
       final frameId = pattern[i % pattern.length];
       timers.add(
-        Timer(Duration(milliseconds: i * 90), () {
-          _visemeNotifier.value = frameId;
-          _visemeTimeNotifier.value = (i * 90) / 1000.0;
+        Timer(Duration(milliseconds: i * 85), () {
+          _applyVisemeFrame(_TtsFrame(time: (i * 85) / 1000.0, id: frameId));
         }),
       );
     }
@@ -1495,7 +1794,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     switch (type) {
         case "connection.ready":
           setState(() => _status = _t("video_call_status_session_preparing"));
-          _ensureSessionStarted("connection.ready");
+          unawaited(_ensureSessionStarted("connection.ready"));
           break;
         case "session.ready":
           _serverReportedReady = true;
@@ -1544,17 +1843,28 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
         case "tts.start":
           final utteranceId = (payload["utteranceId"] ?? "").toString();
           final format = (payload["format"] ?? "").toString();
-          unawaited(_stopRingback());
           if (utteranceId.isNotEmpty) {
             _activeTtsUtteranceId = utteranceId;
             _ttsUsesPcm = format.contains("pcm");
             _completedTtsUtterances.remove(utteranceId);
             _ttsBuffers[utteranceId] = <int>[];
+            if (_orphanPcmBeforeUtterance.isNotEmpty) {
+              _ttsBuffers[utteranceId]!.addAll(_orphanPcmBeforeUtterance);
+              _log(
+                "Merged orphan PCM into utterance=$utteranceId bytes=${_orphanPcmBeforeUtterance.length}",
+              );
+              _orphanPcmBeforeUtterance.clear();
+            }
             _visemeBuffers[utteranceId] = <_TtsFrame>[];
             _visemeTimelineLastFlags.remove(utteranceId);
             _clearVisemeTimers(utteranceId);
-            _isAiSpeaking = true;
-            setState(() => _status = _t("video_call_status_ai_speaking"));
+            unawaited(_stopRingback());
+            if (!_isAvatarReadyForSession()) {
+              _deferredPlaybackUtterances.add(utteranceId);
+            } else {
+              _isAiSpeaking = true;
+              setState(() => _status = _t("video_call_status_ai_speaking"));
+            }
           }
           break;
         case "tts.chunk":
@@ -1567,11 +1877,16 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
           if (utteranceId.isNotEmpty && b64.isNotEmpty) {
             _ttsBuffers.putIfAbsent(utteranceId, () => <int>[]);
             _ttsBuffers[utteranceId]!.addAll(base64Decode(b64));
+            if (!_isAvatarReadyForSession()) {
+              _deferredPlaybackUtterances.add(utteranceId);
+            }
             _log(
               "TTS chunk buffered: utterance=$utteranceId size=${_ttsBuffers[utteranceId]!.length} isLast=$isLast",
             );
           }
-          if (utteranceId.isNotEmpty && isLast) {
+          // PCM akışında isLast, son binary chunk'tan önce gelebilir — yalnızca
+          // tts.end ile finalize et (boş buffer + erken idle riski).
+          if (utteranceId.isNotEmpty && isLast && !_ttsUsesPcm) {
             unawaited(
               _finalizeAndPlayTts(utteranceId, reason: "tts.chunk.isLast"),
             );
@@ -1581,25 +1896,38 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
           final utteranceId = (payload["utteranceId"] ?? "").toString();
           _finalizeAndPlayTts(utteranceId, reason: "tts.end");
           break;
+        case "viseme_timeline":
+          final rootUtteranceId = (data["utteranceId"] ?? "").toString();
+          final rootList =
+              (data["timeline"] as List?) ?? (data["visemes"] as List?) ?? const [];
+          final utteranceId = rootUtteranceId.isNotEmpty
+              ? rootUtteranceId
+              : (_activeTtsUtteranceId ?? "");
+          final frames = _parseVisemeTimelineEntries(rootList);
+          if (utteranceId.isNotEmpty && frames.isNotEmpty) {
+            _ingestVisemeTimeline(
+              utteranceId: utteranceId,
+              frames: frames,
+              isLast: true,
+            );
+          }
+          break;
         case "viseme.timeline":
-          final utteranceId = (payload["utteranceId"] ?? "").toString();
+          final utteranceId = (payload["utteranceId"] ??
+                  _activeTtsUtteranceId ??
+                  "")
+              .toString();
           final rawList = (payload["visemes"] as List?) ?? const [];
           if (utteranceId.isEmpty) {
             _log("Viseme timeline ignored: empty utteranceId");
             break;
           }
-          final frames = rawList.map((e) {
-            final m = (e as Map).cast<String, dynamic>();
-            return _TtsFrame(
-              time: (m["time"] as num?)?.toDouble() ?? 0,
-              id: (m["id"] as num?)?.toInt() ?? 0,
-            );
-          }).toList()..sort((a, b) => a.time.compareTo(b.time));
-          final isLast = payload["isLast"] == true;
-          _visemeBuffers[utteranceId] = frames;
-          _visemeTimelineLastFlags[utteranceId] = isLast;
-          _log(
-            "Viseme timeline received: utterance=$utteranceId frames=${frames.length} isLast=$isLast",
+          final frames = _parseVisemeTimelineEntries(rawList);
+          if (frames.isEmpty) break;
+          _ingestVisemeTimeline(
+            utteranceId: utteranceId,
+            frames: frames,
+            isLast: payload["isLast"] == true,
           );
           break;
         case "viseme.unavailable":
@@ -1666,7 +1994,11 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
           // ilk gerçek konuşmada (`tts.start` / `ai_speaking_start`) kapanır.
           break;
         case "ai_speaking_start":
-          unawaited(_stopRingback());
+          if (_isAvatarReadyForSession()) {
+            unawaited(_stopRingback());
+          }
+          _isAiSpeaking = true;
+          _setConversationPhase("speaking");
           break;
         case "ai_response_complete":
         case "playback_done":
@@ -1717,6 +2049,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
       unawaited(_stopPcmPlayback());
       _isAiSpeaking = false;
       _stopAllVisemePlayback(reason: "barge-in.user-speech");
+      _sendPlaybackDone();
     }
   }
 
@@ -1758,12 +2091,6 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
         _noiseFloor = (_noiseFloor * 0.97) + (energy * 0.03);
       }
     }
-    if (_chunkLogCounter % 25 == 0) {
-      _log(
-        "VAD frame: energy=${energy.toStringAsFixed(1)} noise=${_noiseFloor.toStringAsFixed(1)} threshold=${dynamicThreshold.toStringAsFixed(1)} hardVoiced=$hardVoiced voiced=$isVoiced active=$_isSpeechActive",
-      );
-    }
-
     if (isVoiced) {
       _voicedFrames += 1;
       _lastVoiceMs = nowMs;
@@ -1896,6 +2223,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   void dispose() {
     _log("VideocallView dispose");
     _riveReadyFallbackTimer?.cancel();
+    _avatarReadyFallbackTimer?.cancel();
     _manualClose = true;
     _reconnectTimer?.cancel();
     _playbackDoneTimer?.cancel();
@@ -1906,7 +2234,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
     _clearAllVisemeTimers();
     _visemeNotifier.dispose();
     _visemeTimeNotifier.dispose();
-    _cameraController?.dispose();
+    unawaited(_stopSelfPreviewCamera());
     _ringbackActive = false;
     _audioPlayer.dispose();
     _ringbackPlayer.dispose();
@@ -1921,15 +2249,13 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
   @override
   Widget build(BuildContext context) {
     final agent = ref.watch(AllControllers.chatViewController).agent;
-    final hasRiveAvatar = (agent?.riveAvatar?.trim().isNotEmpty ?? false);
-    final isAvatarReady = hasRiveAvatar ? _riveAvatarReady : true;
     final showCallingScreen =
-        !(_connected && _serverReportedReady && isAvatarReady && _sessionReady);
+        !(_connected && _serverReportedReady && _sessionReady);
     final connectingLabel = !_connected
         ? _t("video_call_status_connecting")
-        : (!isAvatarReady
-            ? _t("video_call_status_loading_avatar")
-            : _t("video_call_status_connected_session_starting"));
+        : (!_sessionReady
+            ? _t("video_call_status_connected_session_starting")
+            : _t("video_call_status_listening_active"));
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -2030,7 +2356,7 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   GestureDetector(
-                    onTap: () => unawaited(_toggleCameraLens()),
+                    onTap: () => unawaited(_toggleSelfPreview()),
                     child: Container(
                       width: 52.r,
                       height: 52.r,
@@ -2039,9 +2365,12 @@ class _VideocallViewState extends ConsumerState<VideocallView> {
                         shape: BoxShape.circle,
                       ),
                       child: Center(
-                        child: SvgPicture.asset(
-                          "assets/icons/vieo_call.svg",
-                          width: 28.r,
+                        child: Icon(
+                          _selfPreviewEnabled
+                              ? Icons.videocam
+                              : Icons.videocam_off,
+                          color: Colors.white,
+                          size: 28.r,
                         ),
                       ),
                     ),
@@ -2226,6 +2555,7 @@ class _NetworkRiveAvatarState extends State<_NetworkRiveAvatar> {
   void _applyViseme(int id) {
     if (_viewModel == null) return;
     _updateRiveProperty("visemeNum", id.toDouble());
+    _updateRiveProperty("duration", 55.0);
     _updateRiveProperty("visemdurationeNum", widget.visemeTimeNotifier.value);
     _updateRiveProperty("talk", true);
     Future.delayed(const Duration(milliseconds: 45), () {

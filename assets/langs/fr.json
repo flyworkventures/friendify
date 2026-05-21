@@ -358,7 +358,7 @@
   "voice_call_status_reconnecting": "Reconnexion...",
   "voice_call_status_audio_playback_error": "Erreur de lecture audio",
   "voice_call_status_session_preparing": "Préparation de la session...",
-  "voice_call_status_listening_you": "À votre écoute...",
+  "voice_call_status_listening_you": "%%name%% vous écoute...",
   "voice_call_status_ai_thinking": "%%name%% réfléchit...",
   "voice_call_status_ai_speaking": "%%name%% parle...",
   "voice_call_status_ai_interrupted": "IA interrompue, à votre écoute...",

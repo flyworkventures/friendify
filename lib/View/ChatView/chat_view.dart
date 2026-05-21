@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
@@ -59,6 +61,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
   String? _localAgentPhotoUrl;
   bool _isListeningMessages = false;
   int? _boundConversationId;
+  MessageModel? _messageActionTarget;
+  Rect? _messageActionAnchorRect;
+  bool _messageActionIsBotRow = false;
+  final GlobalKey _chatOverlayStackKey = GlobalKey();
 
   @override
   void initState() {
@@ -68,7 +74,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
         .read(AllControllers.chatViewController)
         .chatModel
         ?.id;
-    getMessages().then((_) => startStream());
+    final chatCtrl = ref.read(AllControllers.chatViewController);
+    if (!chatCtrl.chatOpenPendingBootstrap) {
+      getMessages().then((_) => startStream());
+    }
   }
 
   @override
@@ -156,6 +165,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   @override
   void dispose() {
     timer?.cancel();
+    _boundConversationId = null;
     _scrollController.dispose();
     // Sayfadan çıkınca tüm oynatılan sesleri durdur
     _globalAudioPlayer.stop();
@@ -226,7 +236,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
       return;
     }
     await ref.read(AllControllers.chatViewController.notifier).sendMessage();
-    // Gönderim sonrası anında güncelleme için bir kez daha çek.
+    // Typing hemen görünsün; listenMessages bot cevabı gelene kadar
+    // botWriting'i koruyacak şekilde güncellendi.
+    if (ref.read(AllControllers.chatViewController).chatState ==
+        ChatState.botWriting) {
+      if (mounted) setState(() {});
+      scrollToBottom();
+    }
     await listenMessages();
     _evaluateOnboardingVideoCta();
     // Kullanıcı mesaj attığında her zaman aşağı scroll yap
@@ -656,7 +672,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   label,
                   style: GoogleFonts.quicksand(
                     color: Colors.white,
-                    fontSize: 10.sp,
+                    fontSize: 12.sp,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -720,7 +736,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                             .pickImage();
                       },
                     ),
-                    SizedBox(width: 24.w),
+                    SizedBox(width: 36.w),
                     attachmentItem(
                       icon: "assets/icons/camera.svg",
                       label: Translate.translate("camera", context),
@@ -732,7 +748,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                             .pickImageFromCamera();
                       },
                     ),
-                    SizedBox(width: 24.w),
+                    SizedBox(width: 36.w),
                     attachmentItem(
                       icon: "assets/icons/document.svg",
                       label: Translate.translate("document", context),
@@ -760,10 +776,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
       previous,
       next,
     ) {
+      if (previous?.messagesLoading == true && !next.messagesLoading) {
+        _previousMessageCount = next.messages?.length ?? 0;
+        _previousChatState = next.chatState;
+        _boundConversationId = next.chatModel?.id;
+        startStream();
+        scrollToBottom();
+      }
+
       final prevId = previous?.chatModel?.id;
       final nextId = next.chatModel?.id;
-      if (prevId == null || nextId == null || prevId == nextId) return;
-      if (_boundConversationId == nextId) return;
+      if (nextId == null || prevId == nextId) return;
+      if (next.chatOpenPendingBootstrap) return;
       _boundConversationId = nextId;
       timer?.cancel();
       _previousMessageCount = 0;
@@ -857,21 +881,26 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     if (controller.chatState == ChatState.botWriting)
                       Text(
                         Translate.translate("typing", context),
-                        style: GoogleFonts.quicksand(
-                          color: Colors.grey,
-                          fontSize: 12.sp,
-                          fontWeight: FontWeight.w500,
+                        style: GoogleFonts.rubik(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 10.sp,
+                          fontWeight: FontWeight.w300,
+                          height: 16 / 10,
                         ),
-                      ),
-                    if (controller.chatState == ChatState.botAudioRecording)
+                      )
+                    else if (controller.chatState ==
+                        ChatState.botAudioRecording)
                       Text(
                         Translate.translate("recording_audio", context),
-                        style: GoogleFonts.quicksand(
-                          color: Colors.grey,
-                          fontSize: 12.sp,
-                          fontWeight: FontWeight.w500,
+                        style: GoogleFonts.rubik(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 10.sp,
+                          fontWeight: FontWeight.w300,
+                          height: 16 / 10,
                         ),
-                      ),
+                      )
+                    else
+                      onlineWidget(),
                   ],
                 ),
               ],
@@ -880,13 +909,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 ? []
                 : [
                     IconButton(
-                      onPressed: () async {
+                      onPressed: () {
                         timer?.cancel();
-                        await navigatorKey.currentState?.pushNamed(
-                          "/voiceCallView",
-                        );
-                        if (!mounted) return;
-                        startStream();
+                        ref
+                            .read(AllControllers.chatViewController.notifier)
+                            .openVoiceCallFromChat()
+                            .then((_) {
+                          if (!mounted) return;
+                          startStream();
+                        });
                       },
                       icon: SvgPicture.asset(
                         "assets/icons/call.svg",
@@ -894,13 +925,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () async {
+                      onPressed: () {
                         timer?.cancel();
-                        await navigatorKey.currentState?.pushNamed(
-                          "/videoCallView",
-                        );
-                        if (!mounted) return;
-                        startStream();
+                        ref
+                            .read(AllControllers.chatViewController.notifier)
+                            .openVideoCallFromChat()
+                            .then((_) {
+                          if (!mounted) return;
+                          startStream();
+                        });
                       },
                       icon: SvgPicture.asset("assets/icons/vieo_call.svg"),
                     ),
@@ -909,78 +942,94 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
           // --- BODY ---
           body: SafeArea(
-            child: Column(
+            child: Stack(
+              key: _chatOverlayStackKey,
               children: [
-                // Mesaj Listesi
-                Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(
-                      vertical: 15.h,
-                      horizontal: 10.w,
+                Column(
+                  children: [
+                    // Mesaj Listesi
+                    Expanded(
+                      child: controller.messagesLoading && messages.isEmpty
+                          ? _buildMessagesShimmer()
+                          : ListView.builder(
+                              controller: _scrollController,
+                              padding: EdgeInsets.symmetric(
+                                vertical: 15.h,
+                                horizontal: 10.w,
+                              ),
+                              itemCount:
+                                  messages.length +
+                                  (controller.chatState == ChatState.botWriting
+                                      ? 1
+                                      : 0),
+                              itemBuilder: (context, index) {
+                                if (controller.chatState ==
+                                        ChatState.botWriting &&
+                                    index == messages.length) {
+                                  return _buildTypingIndicator(controller);
+                                }
+
+                                final msg = messages[index];
+                                return Align(
+                                  alignment: msg.sender == "user"
+                                      ? Alignment.centerRight
+                                      : Alignment.centerLeft,
+                                  child: _chatBubble(msg),
+                                );
+                              },
+                            ),
                     ),
-                    itemCount:
-                        messages.length +
-                        (controller.chatState == ChatState.botWriting ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (controller.chatState == ChatState.botWriting &&
-                          index == messages.length) {
-                        return _buildTypingIndicator(controller);
-                      }
 
-                      final msg = messages[index];
-                      return Align(
-                        alignment: msg.sender == "user"
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: _chatBubble(msg),
-                      );
-                    },
-                  ),
-                ),
-
-                // Yazı alanı
-                if (_onboardingFunnelActive && _showOnboardingVideoCta)
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 8.h),
-                    child: MyGradientButton(
-                      onTap: () async {
-                        final prefs = await SharedPreferences.getInstance();
-                        final localService = LocalService(prefs: prefs);
-                        await localService.setOnboardingVideoGatePending(true);
-                        timer?.cancel();
-                        final result = await navigatorKey.currentState
-                            ?.pushNamed("/videoCallView");
-                        if (!mounted) return;
-                        if (result == "onboarding_gate_expired") {
-                          _showOnboardingGateSheet();
-                          return;
-                        }
-                        startStream();
-                      },
-                      radius: BorderRadius.circular(40.r),
-                      size: Size(double.infinity, 48.h),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SvgPicture.asset("assets/icons/videocallmagic.svg"),
-                          SizedBox(width: 8.w),
-                          Text(
-                            Translate.translate(
-                              "chat_join_video_call",
-                              context,
-                            ),
-                            style: GoogleFonts.quicksand(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 18.sp,
-                            ),
+                    // Yazı alanı
+                    if (_onboardingFunnelActive && _showOnboardingVideoCta)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 8.h),
+                        child: MyGradientButton(
+                          onTap: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            final localService = LocalService(prefs: prefs);
+                            await localService.setOnboardingVideoGatePending(
+                              true,
+                            );
+                            timer?.cancel();
+                            final result = await ref
+                                .read(AllControllers.chatViewController.notifier)
+                                .openVideoCallFromChat();
+                            if (!mounted) return;
+                            if (result == "onboarding_gate_expired") {
+                              _showOnboardingGateSheet();
+                              return;
+                            }
+                            startStream();
+                          },
+                          radius: BorderRadius.circular(40.r),
+                          size: Size(double.infinity, 48.h),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SvgPicture.asset(
+                                "assets/icons/videocallmagic.svg",
+                              ),
+                              SizedBox(width: 8.w),
+                              Text(
+                                Translate.translate(
+                                  "chat_join_video_call",
+                                  context,
+                                ),
+                                style: GoogleFonts.quicksand(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 18.sp,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
-                _messageInput(controller.responseWaiting!),
+                    _messageInput(controller.responseWaiting!),
+                  ],
+                ),
+                if (_messageActionTarget != null) _buildMessageActionOverlay(),
               ],
             ),
           ),
@@ -997,56 +1046,61 @@ class _ChatViewState extends ConsumerState<ChatView> {
           if (isUser)
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onLongPressStart: null,
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 12.w,
-                    vertical: 8.h,
-                  ),
-                  margin: EdgeInsets.only(
-                    top: 8.h,
-                    bottom: 8.h,
-                    right: 12.w,
-                    left: 50.w,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xffAB10E2)),
-                    color: const Color(0xffAB10E2).withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16).r,
-                      topRight: const Radius.circular(0).r,
-                      bottomLeft: const Radius.circular(16).r,
-                      bottomRight: const Radius.circular(16),
+              child: Builder(
+                builder: (bubbleContext) => GestureDetector(
+                  onTap: () =>
+                      _openMessageActionOverlay(message, bubbleContext),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 12.w,
+                      vertical: 8.h,
                     ),
+                    margin: EdgeInsets.only(
+                      top: 8.h,
+                      bottom: 8.h,
+                      right: 12.w,
+                      left: 50.w,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xffAB10E2)),
+                      color: const Color(0xffAB10E2).withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(16).r,
+                        topRight: const Radius.circular(0).r,
+                        bottomLeft: const Radius.circular(16).r,
+                        bottomRight: const Radius.circular(16),
+                      ),
+                    ),
+                    child: _buildTextWithLinks(message.message, Colors.white),
                   ),
-                  child: _buildTextWithLinks(message.message, Colors.white),
                 ),
               ),
             )
           else
-            Container(
-              margin: EdgeInsets.only(
+            Padding(
+              padding: EdgeInsets.only(
                 top: 8.h,
                 bottom: 8.h,
                 left: 12.w,
                 right: 50.w,
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Align(
-                    alignment: Alignment.topCenter,
-                    child: _buildBotAvatar(),
+              child: Builder(
+                builder: (rowContext) => GestureDetector(
+                  onTap: () => _openMessageActionOverlay(
+                    message,
+                    rowContext,
+                    isBotRow: true,
                   ),
-                  SizedBox(width: 10.w),
-                  Expanded(
-                    child: GestureDetector(
-                      onLongPressStart: (details) => _showMessageActionMenu(
-                        globalPosition: details.globalPosition,
-                        messageText: message.message,
-                      ),
-                      child: Container(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildBotAvatar(),
+                      SizedBox(width: 10.w),
+                      Container(
+                        constraints: BoxConstraints(
+                          maxWidth: _botBubbleMaxWidth(context),
+                        ),
                         padding: EdgeInsets.symmetric(
                           horizontal: 12.w,
                           vertical: 8.h,
@@ -1068,9 +1122,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           Colors.white,
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
         ],
@@ -1161,62 +1215,221 @@ class _ChatViewState extends ConsumerState<ChatView> {
     );
   }
 
-  Future<void> _showMessageActionMenu({
-    required Offset globalPosition,
-    required String messageText,
-  }) async {
-    final selectedAction = await showMenu<String>(
-      context: context,
-      color: const Color(0xff242424),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
-      position: RelativeRect.fromLTRB(
-        globalPosition.dx,
-        globalPosition.dy,
-        MediaQuery.of(context).size.width - globalPosition.dx,
-        MediaQuery.of(context).size.height - globalPosition.dy,
-      ),
-      items: [
-        PopupMenuItem<String>(
-          value: 'speak',
-          child: SizedBox(
-            width: 150.w,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text('Seslendir', style: TextStyle(color: Colors.white)),
-                Icon(Icons.volume_up_outlined, color: Colors.white),
-              ],
+  Rect? _anchorRectInOverlayStack(RenderBox anchorBox) {
+    final stackBox =
+        _chatOverlayStackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (stackBox == null || !stackBox.hasSize) return null;
+    final topLeft = stackBox.globalToLocal(
+      anchorBox.localToGlobal(Offset.zero),
+    );
+    return Rect.fromLTWH(
+      topLeft.dx,
+      topLeft.dy,
+      anchorBox.size.width,
+      anchorBox.size.height,
+    );
+  }
+
+  void _openMessageActionOverlay(
+    MessageModel message,
+    BuildContext anchorContext, {
+    bool isBotRow = false,
+  }) {
+    if (message.messageType != "text") return;
+    final text = message.message?.trim() ?? "";
+    if (text.isEmpty) return;
+
+    final anchorBox = anchorContext.findRenderObject() as RenderBox?;
+    if (anchorBox == null || !anchorBox.hasSize) return;
+    final anchorRect = _anchorRectInOverlayStack(anchorBox);
+    if (anchorRect == null) return;
+
+    _textFieldFocusNode.unfocus();
+    setState(() {
+      _messageActionTarget = message;
+      _messageActionAnchorRect = anchorRect;
+      _messageActionIsBotRow = isBotRow;
+    });
+  }
+
+  void _closeMessageActionOverlay() {
+    if (_messageActionTarget == null) return;
+    setState(() {
+      _messageActionTarget = null;
+      _messageActionAnchorRect = null;
+      _messageActionIsBotRow = false;
+    });
+  }
+
+  /// Bot satırında menü yalnızca metin balonunun altında (avatar hariç).
+  Rect _messageActionMenuRect(Rect anchor, bool isBotRow) {
+    if (!isBotRow) return anchor;
+    final avatarW = 40.w;
+    final gap = 10.w;
+    final bubbleW = (anchor.width - avatarW - gap).clamp(0.0, anchor.width);
+    return Rect.fromLTWH(
+      anchor.left + avatarW + gap,
+      anchor.top,
+      bubbleW,
+      anchor.height,
+    );
+  }
+
+  Widget _buildMessageActionOverlay() {
+    final message = _messageActionTarget!;
+    final anchor = _messageActionAnchorRect!;
+    final text = message.message?.trim() ?? "";
+    final menuAnchor = _messageActionMenuRect(anchor, _messageActionIsBotRow);
+    final menuTop = anchor.bottom + 10.h;
+
+    return Positioned.fill(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _closeMessageActionOverlay,
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(color: Colors.black.withValues(alpha: 0.55)),
+                ),
+              ),
             ),
+          ),
+          Positioned(
+            left: anchor.left,
+            top: anchor.top,
+            width: anchor.width,
+            child: IgnorePointer(
+              child: _buildFocusedMessageBubble(message, width: anchor.width),
+            ),
+          ),
+          Positioned(
+            left: menuAnchor.left,
+            top: menuTop,
+            width: menuAnchor.width,
+            child: _buildMessageActionsCard(messageText: text),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFocusedMessageBubble(
+    MessageModel message, {
+    required double width,
+  }) {
+    final isUser = message.sender == "user";
+    final text = message.message ?? "";
+
+    if (isUser) {
+      return Container(
+        width: width,
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xffAB10E2)),
+          color: const Color(0xffAB10E2).withValues(alpha: 0.5),
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(16.r),
+            topRight: const Radius.circular(0),
+            bottomLeft: Radius.circular(16.r),
+            bottomRight: Radius.circular(16.r),
           ),
         ),
-        PopupMenuItem<String>(
-          value: 'copy',
-          child: SizedBox(
-            width: 150.w,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text('Kopyala', style: TextStyle(color: Colors.white)),
-                Icon(Icons.copy_rounded, color: Colors.white),
-              ],
+        child: _buildTextWithLinks(text, Colors.white),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildBotAvatar(),
+        SizedBox(width: 10.w),
+        Container(
+          constraints: BoxConstraints(maxWidth: width - 44.w - 10.w),
+          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+            color: Colors.black.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(0),
+              topRight: Radius.circular(16.r),
+              bottomLeft: Radius.circular(16.r),
+              bottomRight: Radius.circular(16.r),
             ),
           ),
+          child: _buildTextWithLinks(text, Colors.white),
         ),
       ],
     );
+  }
 
-    if (!mounted || selectedAction == null) return;
+  Widget _buildMessageActionsCard({required String messageText}) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xff242424),
+          borderRadius: BorderRadius.circular(16.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildMessageActionRow(
+              label: 'Seslendir',
+              icon: Icons.volume_up_outlined,
+              onTap: () async {
+                _closeMessageActionOverlay();
+                await _speakMessageWithAgentVoice(messageText);
+              },
+            ),
+            Divider(height: 1, color: Colors.white.withValues(alpha: 0.12)),
+            _buildMessageActionRow(
+              label: 'Kopyala',
+              icon: Icons.copy_rounded,
+              onTap: () async {
+                await Clipboard.setData(ClipboardData(text: messageText));
+                _closeMessageActionOverlay();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Mesaj kopyalandi')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-    if (selectedAction == 'copy') {
-      await Clipboard.setData(ClipboardData(text: messageText));
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Mesaj kopyalandi')));
-      return;
-    }
-
-    await _speakMessageWithAgentVoice(messageText);
+  Widget _buildMessageActionRow({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16.r),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.quicksand(
+                color: Colors.white,
+                fontSize: 15.sp,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Icon(icon, color: Colors.white, size: 22.sp),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _speakMessageWithAgentVoice(String text) async {
@@ -1272,8 +1485,27 @@ class _ChatViewState extends ConsumerState<ChatView> {
         return;
       }
 
+      // iOS'ta BytesSource geçici cache dosyasına uzantısız yazılıyor;
+      // AVPlayer "Failed to set source" veriyor — .mp3 dosyasına yaz.
+      await _globalAudioPlayer.stop();
+      if (_currentlyPlayingMessageId != null && mounted) {
+        setState(() => _currentlyPlayingMessageId = null);
+      }
       await _ttsPlayer.stop();
-      await _ttsPlayer.play(ap.BytesSource(audioBytes));
+      final tempFile = File(
+        '${Directory.systemTemp.path}/chat_tts_${DateTime.now().millisecondsSinceEpoch}.mp3',
+      );
+      await tempFile.writeAsBytes(audioBytes, flush: true);
+      if (!await tempFile.exists() || await tempFile.length() == 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ses dosyasi olusturulamadi')),
+        );
+        return;
+      }
+      await _ttsPlayer.play(
+        ap.DeviceFileSource(tempFile.path, mimeType: 'audio/mpeg'),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -1385,20 +1617,27 @@ class _ChatViewState extends ConsumerState<ChatView> {
     );
 
     if (message.sender == "bot") {
-      return Container(
-        margin: EdgeInsets.only(left: 12.w, right: 50.w),
+      return Padding(
+        padding: EdgeInsets.only(left: 12.w, right: 50.w),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildBotAvatar(),
             SizedBox(width: 10.w),
-            Expanded(child: content),
+            content,
           ],
         ),
       );
     }
 
     return content;
+  }
+
+  /// Bot metin balonu: kullanıcı mesajları gibi içeriğe göre genişler, bu kadarı geçmez.
+  double _botBubbleMaxWidth(BuildContext context) {
+    final screenW = MediaQuery.sizeOf(context).width;
+    return screenW - 12.w - 50.w - 44.w - 10.w;
   }
 
   Widget _buildBotAvatar() {
@@ -1539,36 +1778,58 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return "$hour:$minute";
   }
 
+  Widget _buildMessagesShimmer() {
+    Widget bubble({required bool isUser, required double widthFactor}) {
+      return Align(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: Shimmer.fromColors(
+          baseColor: Colors.white.withValues(alpha: 0.08),
+          highlightColor: Colors.white.withValues(alpha: 0.22),
+          child: Container(
+            width: MediaQuery.sizeOf(context).width * widthFactor,
+            height: 52.h,
+            margin: EdgeInsets.symmetric(vertical: 6.h),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20.r),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: EdgeInsets.symmetric(vertical: 15.h, horizontal: 10.w),
+      children: [
+        bubble(isUser: false, widthFactor: 0.62),
+        bubble(isUser: true, widthFactor: 0.48),
+        bubble(isUser: false, widthFactor: 0.55),
+        bubble(isUser: true, widthFactor: 0.58),
+        bubble(isUser: false, widthFactor: 0.45),
+        bubble(isUser: true, widthFactor: 0.52),
+      ],
+    );
+  }
+
   Widget _buildTypingIndicator(ChatScreenViewModel controller) {
-    final imageUrl = _agentPhotoUrl(controller);
     return Container(
       margin: EdgeInsets.only(left: 12.w, right: 50.w, top: 8.h, bottom: 8.h),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(40.r),
-            child: CachedNetworkImage(
-              imageUrl: imageUrl,
-              width: 44.w,
-              height: 44.w,
-              alignment: Alignment(0, -1),
-              fit: BoxFit.cover,
-              errorWidget: (context, url, error) => Container(
-                width: 44.w,
-                height: 44.w,
-                color: Colors.grey[300],
-                child: Icon(Icons.person, size: 24.sp),
-              ),
-            ),
-          ),
+          _buildBotAvatar(),
           SizedBox(width: 10.w),
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+            padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
-              borderRadius: BorderRadius.circular(24.r),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+              color: Colors.black.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(0),
+                topRight: Radius.circular(16.r),
+                bottomLeft: Radius.circular(16.r),
+                bottomRight: Radius.circular(16.r),
+              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
             ),
             child: const _ChatTypingDots(),
           ),
@@ -1976,22 +2237,25 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   Widget onlineWidget() {
     return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
-          width: 4.w,
-          height: 4.h,
-          decoration: BoxDecoration(
-            color: Color(0xff34C759),
-            borderRadius: BorderRadius.circular(20).r,
+          width: 4,
+          height: 4,
+          decoration: const BoxDecoration(
+            color: Color(0xFF30B006),
+            shape: BoxShape.circle,
           ),
         ),
-        SizedBox(width: 3.w),
+        SizedBox(width: 5.w),
         Text(
           Translate.translate("agent_profile_online", context),
-          style: GoogleFonts.quicksand(
+          style: GoogleFonts.rubik(
             color: Colors.white,
-            fontSize: 12.sp,
-            fontWeight: FontWeight.w600,
+            fontSize: 10.sp,
+            fontWeight: FontWeight.w300,
+            height: 16 / 10,
           ),
         ),
       ],
@@ -2487,7 +2751,7 @@ class _ChatTypingDotsState extends State<_ChatTypingDots>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1400),
     )..repeat();
   }
 
@@ -2497,26 +2761,41 @@ class _ChatTypingDotsState extends State<_ChatTypingDots>
     super.dispose();
   }
 
+  double _dotWave(int index) {
+    // Her nokta 120° faz kaymalı — keskin sıçrama yok, sürekli nabız.
+    final phase = (_controller.value * 2 * math.pi) - (index * 2 * math.pi / 3);
+    return (math.sin(phase) + 1) * 0.5;
+  }
+
   @override
   Widget build(BuildContext context) {
+    const dotColor = Color(0xFFD9D9D9);
+    const maxSize = 11.0;
+    const minSize = 7.0;
     return SizedBox(
-      width: 52.w,
-      height: 16.h,
+      height: maxSize.h,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: List.generate(3, (index) {
           return AnimatedBuilder(
             animation: _controller,
             builder: (context, child) {
-              final phase = (_controller.value - (index * 0.16)) % 1.0;
-              final opacity = phase < 0.5 ? 0.35 + (phase * 1.3) : 1 - phase;
+              final wave = Curves.easeInOut.transform(_dotWave(index));
+              final diameter = minSize + (maxSize - minSize) * wave;
+              final opacity = 0.5 + (0.5 * wave);
               return Container(
-                margin: EdgeInsets.symmetric(horizontal: 4.w),
-                width: 10.w,
-                height: 10.w,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: opacity.clamp(0.25, 1)),
+                margin: EdgeInsets.symmetric(horizontal: 3.w),
+                width: maxSize.w,
+                height: maxSize.h,
+                alignment: Alignment.center,
+                child: Container(
+                  width: diameter.w,
+                  height: diameter.w,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: dotColor.withValues(alpha: opacity),
+                  ),
                 ),
               );
             },

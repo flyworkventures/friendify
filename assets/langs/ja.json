@@ -358,7 +358,7 @@
   "voice_call_status_reconnecting": "再接続中...",
   "voice_call_status_audio_playback_error": "オーディオ再生エラー",
   "voice_call_status_session_preparing": "セッションを準備中...",
-  "voice_call_status_listening_you": "あなたを聞いています...",
+  "voice_call_status_listening_you": "%%name%%があなたの話を聞いています...",
   "voice_call_status_ai_thinking": "%%name%%が思考中...",
   "voice_call_status_ai_speaking": "%%name%%がスピーキング中...",
   "voice_call_status_ai_interrupted": "AIが中断されました、あなたを聞いています...",

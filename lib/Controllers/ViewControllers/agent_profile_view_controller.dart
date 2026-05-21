@@ -8,14 +8,13 @@ import 'package:friendfy/Controllers/all_controllers.dart';
 import 'package:friendfy/Http/http_service.dart';
 
 import 'package:friendfy/Models/agent_model.dart';
-import 'package:friendfy/Models/chat_model.dart';
 import 'package:friendfy/Models/user_model.dart';
 import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/main.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:friendfy/Services/premium_service.dart';
 import 'package:http/http.dart';
-import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
+import 'package:friendfy/Services/paywall_presentation.dart';
 import 'package:flutter/material.dart';
 import 'package:friendfy/AppLocalizations/translate.dart';
 import 'package:friendfy/AppLocalizations/translate_keys.dart';
@@ -78,51 +77,24 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
     state = state.copyWith(agent: agent);
   }
 
-  Future<bool> _prepareChatForAgent(AgentModel selectedAgent) async {
-    state = state.copyWith(loadingScreen: true);
-    HttpService httpService = HttpService(ref: ref);
-    var response = await httpService.post(
-      path: AppConstants.createChat,
-      body: {
-        "userId": ref?.read(AllControllers.userController)!.id,
-        "botId": selectedAgent.id,
-      },
-    );
-
-    if (response.statusCode == 200) {
-      var json = jsonDecode(response.body);
-      _printConversationState(json["msg"]);
-      ChatModel chatModel = ChatModel.fromMap(json["conversationData"]);
-      ref
-          ?.read(AllControllers.chatViewController.notifier)
-          .changeChatModel(chatModel, selectedAgent);
-      state = state.copyWith(loadingScreen: false);
-      return true;
-    } else {
-      state = state.copyWith(loadingScreen: false);
-      return false;
-    }
-  }
-
   Future<void> startChat(AgentModel selectedAgent, {bool onboardingFunnel = false}) async {
-    final prepared = await _prepareChatForAgent(selectedAgent);
-    if (!prepared) return;
-    await navigatorKey.currentState?.pushNamed(
-      "/chatView",
-      arguments: onboardingFunnel ? {"onboardingFunnel": true} : null,
-    );
+    await ref
+        ?.read(AllControllers.chatViewController.notifier)
+        .openChatFromAgent(selectedAgent, onboardingFunnel: onboardingFunnel);
   }
 
-  Future<void> startVoiceCall(AgentModel selectedAgent) async {
-    final prepared = await _prepareChatForAgent(selectedAgent);
-    if (!prepared) return;
-    await navigatorKey.currentState?.pushNamed("/voiceCallView");
+  Future<dynamic> startVoiceCall(AgentModel selectedAgent) {
+    return ref
+            ?.read(AllControllers.chatViewController.notifier)
+            .openVoiceCallFromAgent(selectedAgent) ??
+        Future.value(null);
   }
 
-  Future<void> startVideoCall(AgentModel selectedAgent) async {
-    final prepared = await _prepareChatForAgent(selectedAgent);
-    if (!prepared) return;
-    await navigatorKey.currentState?.pushNamed("/videoCallView");
+  Future<dynamic> startVideoCall(AgentModel selectedAgent) {
+    return ref
+            ?.read(AllControllers.chatViewController.notifier)
+            .openVideoCallFromAgent(selectedAgent) ??
+        Future.value(null);
   }
 
   int _extractSavedAgentId(String responseBody, {required int fallbackAgentId}) {
@@ -310,7 +282,7 @@ class AgentProfileViewController extends StateNotifier<AgentProfileViewModel> {
 
           try {
             log("💳 [PREMIUM CHECK] Premium ekranı açılıyor...");
-            await RevenueCatUI.presentPaywall();
+            await PaywallPresentation.presentFromNavigator();
             log("✅ [PREMIUM CHECK] Premium ekranı açıldı");
           } catch (e) {
             log("⚠️ [PREMIUM CHECK] Premium ekranı açılamadı: $e");

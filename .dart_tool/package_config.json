@@ -39,9 +39,9 @@
     },
     {
       "name": "audio_session",
-      "rootUri": "file:///Users/furkankazimcam/.pub-cache/hosted/pub.dev/audio_session-0.2.3",
+      "rootUri": "file:///Users/furkankazimcam/.pub-cache/hosted/pub.dev/audio_session-0.1.25",
       "packageUri": "lib/",
-      "languageVersion": "3.6"
+      "languageVersion": "3.4"
     },
     {
       "name": "audio_waveforms",

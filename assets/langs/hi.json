@@ -358,7 +358,7 @@
   "voice_call_status_reconnecting": "पुनः कनेक्ट हो रहा है...",
   "voice_call_status_audio_playback_error": "ऑडियो प्लेबैक त्रुटि",
   "voice_call_status_session_preparing": "सत्र तैयार हो रहा है...",
-  "voice_call_status_listening_you": "आपको सुन रहा हूँ...",
+  "voice_call_status_listening_you": "%%name%% आपको सुन रहा है...",
   "voice_call_status_ai_thinking": "%%name%% सोच रहा है...",
   "voice_call_status_ai_speaking": "%%name%% बोल रहा है...",
   "voice_call_status_ai_interrupted": "AI बाधित, आपको सुन रहा हूँ...",
