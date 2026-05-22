@@ -27,7 +27,7 @@ class AppConstants {
   static const String appName = "friendfy";
 
   // Fiziksel cihaz — Mac ile aynı Wi‑Fi, IP değişirse burayı güncelle
-  static const String baseURL = "http://192.168.1.112:3000";
+  static const String baseURL = "https://friendfy.fly-work.com";
   // Prod: "https://friendfy.fly-work.com"
   static const String configURL = "/server/config";
   static const String loginURL = "/auth/login";
@@ -74,8 +74,8 @@ class AppConstants {
       "sk_b13afa6a80b9ff28788cd259e6d75005cdd74059e84f4913";
   static const String elevenLabsVoiceId = "21m00Tcm4TlvDq8ikWAM";
 
-  static const String voiceWsUrl = "ws://192.168.1.112:3000/ws/voice";
-  static const String videoWsUrl = "ws://192.168.1.112:3000/ws/video";
+  static const String voiceWsUrl = "ws://friendfy.fly-work.com/ws/voice";
+  static const String videoWsUrl = "ws://friendfy.fly-work.com/ws/video";
 
   /// Realtime V2 WS endpoint (/realtime).
   static String get realtimeWsUrl {

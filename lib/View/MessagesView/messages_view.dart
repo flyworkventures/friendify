@@ -53,14 +53,14 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
         child: SafeArea(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-              10.w,
+              16.w,
               0,
-              10.w,
+              16.w,
               displayConversations.length >= 9 ? 100.h : 0,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-      
+
               children: [
                 Text(
                   Translate.translate("messages_quick_message_title", context),
@@ -146,7 +146,10 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
                     width: double.infinity,
                     child: Center(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20,vertical: 70).r,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 70,
+                        ).r,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -192,7 +195,8 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
 
   String _conversationTimeLabel(ConversationModel conversation) {
     final raw =
-        conversation.chatModel?.lastMessageAt ?? conversation.chatModel?.startedAt;
+        conversation.chatModel?.lastMessageAt ??
+        conversation.chatModel?.startedAt;
     if (raw == null) return "";
     final parsed = DateTime.tryParse(raw.toString());
     if (parsed == null) return "";
@@ -341,7 +345,10 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
             ),
             Text(
               _conversationTimeLabel(conversation),
-              style: GoogleFonts.quicksand(color: Colors.white,fontSize: 10.sp),
+              style: GoogleFonts.quicksand(
+                color: Colors.white,
+                fontSize: 10.sp,
+              ),
             ),
           ],
         ),

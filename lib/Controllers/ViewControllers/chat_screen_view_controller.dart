@@ -22,6 +22,7 @@ import 'package:friendfy/Services/local_service.dart';
 import 'package:friendfy/Services/premium_service.dart';
 import 'package:friendfy/Themes/colors.dart';
 import 'package:friendfy/main.dart';
+import 'package:friendfy/View/ChatView/chat_view.dart';
 import 'package:friendfy/utils/app_constants.dart';
 import 'package:friendfy/utils/call_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -184,6 +185,25 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
     );
   }
 
+  /// ChatView'a animasyonsuz, anında geçiş. `pushNamed("/chatView")` default
+  /// MaterialPageRoute slide animasyonunu kullanıyor (~300ms iOS'ta) → kullanıcı
+  /// "yükleniyor" hissi alıyor. Bunun yerine zero-duration PageRouteBuilder ile
+  /// sayfa bir frame'de açılır; ChatView'ın kendi shimmer'ı içeriği yüklenirken
+  /// görünür → anlık geçiş + uygun loading state.
+  void _pushChatViewInstant({Map<String, dynamic>? arguments}) {
+    final navigator = navigatorKey.currentState;
+    if (navigator == null) return;
+    navigator.push(
+      PageRouteBuilder(
+        settings: RouteSettings(name: '/chatView', arguments: arguments),
+        pageBuilder: (_, __, ___) => const ChatView(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 250),
+        opaque: true,
+      ),
+    );
+  }
+
   ConversationModel? _findConversationForAgent(int agentId) {
     for (final c in state.conversations ?? const <ConversationModel>[]) {
       if (c.agentModel?.id == agentId && c.chatModel != null) {
@@ -270,8 +290,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
       responseWaiting: false,
     );
 
-    navigatorKey.currentState?.pushNamed(
-      "/chatView",
+    _pushChatViewInstant(
       arguments: onboardingFunnel ? {"onboardingFunnel": true} : null,
     );
 
@@ -766,7 +785,7 @@ class ChatScreenViewController extends StateNotifier<ChatScreenViewModel> {
       chatOpenPendingBootstrap: true,
     );
 
-    navigatorKey.currentState?.pushNamed("/chatView");
+    _pushChatViewInstant();
 
     unawaited(
       _bootstrapExistingConversation(

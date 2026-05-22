@@ -235,13 +235,15 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     _micUserWantsOn = !_micUserWantsOn;
     if (!mounted) return;
     setState(() {});
-    if (!_micUserWantsOn) {
-      await _stopMicStreaming(preserveConversationUi: true);
-      return;
-    }
-    if (_sessionReady && !_isMicStreaming) {
-      await _startMicStreaming(preserveConversationUi: true);
-    }
+    // ÖNEMLİ: iOS'ta `_recorder.stop()` AVAudioSession'ı reconfigure
+    // ediyor (playAndRecord ↔ playback geçişi) → PCM player'ın
+    // çaldığı AI sesi anlık olarak kesiliyor. Mic kapatmak için
+    // recorder'ı durdurma; gelen PCM chunk'larını OpenAI'ya iletmeyi
+    // bırakman yeterli (`_consumePcm` içinde `_micUserWantsOn` kontrolü).
+    // Bu sayede:
+    //   - AI sesi kesintisiz çalmaya devam eder
+    //   - Echo cancel / noise suppress oturumu açık kalır
+    //   - Tekrar açıldığında 0 latency
   }
 
   void _toggleSpeaker() {
@@ -325,10 +327,22 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
     )..repeat(reverse: true);
     _log("VoiceCallView init");
     _audioPlayer.onPlayerComplete.listen((_) {
+      // ÖNEMLİ: `_audioPlayer` bu view'da iki şey için kullanılıyor:
+      //   1) Ringback (loop) — `_stopRingback` çağrıldığında onComplete fırlar
+      //   2) MP3 fallback TTS (PCM kullanılmıyorsa)
+      // PCM streaming yolu için onComplete'ı dinlemek yanlış: ringback
+      // durdurma sinyali playback_done olarak server'a gidiyor, server
+      // erkenden `ai_response_complete` + `turn.state=listening` yolluyor →
+      // UI "AI konuşurken dinliyor" görüntüsü verir. Sadece MP3 fallback
+      // yolunda valid; o da `_ttsUsesPcm == false`.
+      if (_ttsUsesPcm || _streamingTtsActive) {
+        _log("Audio player complete IGNORED (PCM streaming path)");
+        return;
+      }
       _isAiSpeaking = false;
       _sendPlaybackDone();
       _setConversationPhase("listening");
-      _log("Audio player complete -> AI speaking false");
+      _log("Audio player complete -> AI speaking false (mp3 path)");
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -997,6 +1011,15 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
 
   void _consumePcm(Uint8List bytes) {
     if (!_isMicStreaming) return;
+    // Mute: kullanıcı mic'i kapattıysa chunk'ları drop et (recorder yine de
+    // çalışıyor ki AVAudioSession reconfigure olmasın → AI sesi kesilmesin).
+    // Aktif konuşmadaysak speech.stop sinyalini gönderip turn'ü kapatalım.
+    if (!_micUserWantsOn) {
+      if (_isSpeechActive) _stopSpeechTurn();
+      _voicedFrames = 0;
+      _lastVoiceMs = 0;
+      return;
+    }
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final energy = _meanAbsPcm16(bytes);
     if (_isAiSpeaking && !_isSpeechActive && nowMs < _suppressVadUntilMs) {
@@ -1124,7 +1147,11 @@ class _VoiceCallViewState extends ConsumerState<VoiceCallView>
         _userText = _userLine("...");
       }
     });
-    if (!preserveConversationUi) {
+    // ÖNEMLİ: session.ready sonrası mic 400ms gecikmeyle başlar; o sırada
+    // AI greeting'i konuşuyor olabilir. Burada koşulsuz "listening"e set
+    // etmek AI konuşurken UI'yi yanlış state'e atıyordu.
+    // Sadece AI gerçekten konuşmuyorsa state'i listening'e al.
+    if (!preserveConversationUi && !_isAiSpeaking && !_streamingTtsActive) {
       _setConversationPhase("listening");
     }
   }

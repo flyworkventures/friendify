@@ -164,7 +164,12 @@ class _HomeViewState extends ConsumerState<HomeView> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(AllControllers.userController);
-    final isPremiumUser = PremiumService.hasUnlockedPremiumFeatures(user);
+    // King ikonu sadece gerçek (paid) premium kullanıcılarda görünmeli.
+    // `hasUnlockedPremiumFeatures` trial veya `canUseFreeTrial` durumlarında
+    // da true dönüyor → cihaz trial'ı kullanılmış yeni kullanıcılarda
+    // (lokal flag senkron olmadığında) king ikonu yanlışlıkla çıkıyordu.
+    // Profile badge ile tutarlılık için `isPremiumActive` (sadece paid).
+    final isPremiumUser = PremiumService.isPremiumActive(user);
     final showPremiumPlanCta = !PremiumService.isPremiumActive(user);
     List<ConversationModel> conversations =
         ref.watch(AllControllers.chatViewController).conversations ?? [];

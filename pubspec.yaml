@@ -1,7 +1,7 @@
 name: friendfy
 description: "Friendify"
 
-version: 1.2.0+2
+version: 1.2.0+20
 
 environment:
   sdk: ^3.9.2
